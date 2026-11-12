@@ -3,7 +3,7 @@
 **Bundle:** `nirnay-quant-production-upgrade-2026-11-13-r0.zip`
 **Bundle SHA-256:** published as `nirnay-quant-production-upgrade-2026-11-13-r0.zip.sha256` beside the archive, written by `scripts/make_bundle.py` from the archive itself. A file cannot contain its own archive hash, so this document does not quote one.
 **Contents:** `nirnay-quant/`, `artifacts/`, `sbom.cdx.json`, `BUILD-RESULTS.md`, `SOURCE-MANIFEST.sha256`
-**Source manifest:** `SOURCE-MANIFEST.sha256`, 330 file hashes over `nirnay-quant/`, `artifacts/` and `sbom.cdx.json`; digest `4fbf11c4d7dba1df1cbd0ccf16b888fad4de7e9ddbbd2f75f5aed0efe537f998`. The bundler also writes `<archive>.manifest.sha256` beside the archive, so a release publishes the same manifest it verified against.
+**Source manifest:** `SOURCE-MANIFEST.sha256`, 330 file hashes over `nirnay-quant/`, `artifacts/` and `sbom.cdx.json`; digest `3e264ab8b16f129048a03f0ca7c5f13df1650416fba87945a9f05d5ab234d3d9`. The bundler also writes `<archive>.manifest.sha256` beside the archive, so a release publishes the same manifest it verified against.
 **Date:** 2026-11-13
 **Environment:** macOS 27.0.1 arm64; AppleClang 21.0.0.21000334; Apple Swift 6.4; Homebrew GCC 16.2.0; CMake 4.4.3; pinned Rust 1.99.1; Python 3.14.8; pytest 9.2.0; PyArrow 26.0.1; clang-format 21.1.8; uv 0.11.27.
 
@@ -78,7 +78,15 @@ tag
 
 Publication is downstream of the same ten checks that guard a pull request, and the two jobs that touch the release are serialised. The reusable-workflow reference is local (`./.github/workflows/ci.yml`) and is not a remote action to pin — 43 remote action references remain SHA-pinned.
 
-**The first tag never published.** `v0.1.0` pointed at a workflow that could not complete: the provenance step referenced `SOURCE-MANIFEST.sha256` in the workspace, but the bundler wrote that file only *inside* the archive, so the tag produced no release and no assets. The bundler now writes `<archive>.manifest.sha256` beside the archive and the release uploads that. `v0.1.0` is retired unpublished; the first published release is `v0.1.1` from the commit that carries the fix.
+**The tags before this one.** Three tag attempts, each failing for a different reason, each recorded rather than tidied away:
+
+| Tag | Outcome | Cause |
+|---|---|---|
+| `v0.1.0` | retired, nothing published | the provenance step referenced `SOURCE-MANIFEST.sha256` in the workspace; the bundler wrote that file only inside the archive |
+| `v0.1.1` | published, Linux assets and provenance only | `release.yml` still requested `macos-14`, which provisions no runner, so the macOS job was cancelled before its first step |
+| `v0.1.2` | both platforms | bundler writes `<archive>.manifest.sha256` beside the archive; release assets run on `macos-latest` and assert arm64 |
+
+`v0.1.0` was deleted because it produced no release object; deleting a published release was not an option, so `v0.1.1` stays with what it actually published. This record describes the tree at `v0.1.2`, which is the first complete release.
 
 **Provenance without GitHub attestations.** `actions/attest-build-provenance` refuses user-owned private repositories: the release run failed at that step with *"Feature not available for user-owned private repositories"*, before publishing anything. The repository stays private, so the workflow now records an unsigned in-toto statement instead — `scripts/record_provenance.py` writes `provenance.json` with the builder run id, the commit and ref as materials, and the SHA-256 of every published artifact — and uploads it beside the assets. The attestation step remains wired and pinned behind the repository variable `ENABLE_GITHUB_ATTESTATIONS`, off until the plan supports it. An unsigned statement is weaker than an attestation and is labelled as such wherever it appears.
 
