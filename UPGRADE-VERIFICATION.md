@@ -75,6 +75,26 @@ An independent review of the r2 archive found two identity defects. Both are fix
 
 New CI surface: `packaging` (clean rebuild, cache rejection, clean-environment install and CLI smoke), `macos` (Apple silicon Rust workspace, AppleClang for both C++ targets, Swift typecheck and compile, macOS wheel build and install), and a tag-triggered `release.yml` that rebuilds from the tagged commit, re-verifies the bundle as a consumer would, and attests the archive, wheels, binaries and SBOM with `actions/attest-build-provenance` pinned to `4d101475…` (v4.2.2).
 
+### Executable modes and release gating (r0, 2026-11-13)
+
+Review of r3 found two further defects. Both are fixed at the source, not papered over.
+
+| Property | r3 | r0 |
+|---|---|---|
+| Archive member permissions | one constant `0o644 << 16` for every member, so all five binaries extracted non-executable | the staged file's own mode; `0o755` when any execute bit is set — 7 members |
+| Executable-mode gate | none | `verify_bundle.py` rejects ELF/Mach-O bytes stored or extracted without an execute bit, and `--self-test` proves the check can fail |
+| Release and CI relationship | independent workflows; a tag could publish on a red build | `ci.yml` is reusable (`workflow_call`); `release.yml` gates publication behind it |
+| Release job ordering | `bundle` and `macos-assets` ran concurrently and both called `gh release create` | `quality` → `bundle` → `macos-assets`, serialised |
+
+| Gate | Result |
+|---|---|
+| Archived modes | **PASS — 5 binaries and 2 executable scripts at `0o755`; `unzip` restores them executable** |
+| `python3 scripts/verify_bundle.py --bundle <tree> --zip <archive>` | **PASS — 343 entries, 345 members, hashes and modes** |
+| Negative control: `--self-test` | **PASS — the cleared-bit copy fails verification** |
+| Negative control: a binary `chmod 644` before bundling | **FAILS as intended** — archive and extracted mode, two named errors |
+| Negative control: extracted file loses its mode | **FAILS as intended** — one named error |
+| Workflow inventory | `ci.yml` 9 jobs (10 executions), `nightly.yml` 5, `release.yml` 3; all YAML parses |
+
 Not established: no new job has run on a hosted runner, no attestation has been produced, and no release-signing identity exists.
 
 ## Implemented in the active repository

@@ -1,7 +1,10 @@
 name: CI
+# Also reusable, so release.yml can make these gates a precondition of any tag
+# publication rather than a workflow that merely runs alongside it.
 on:
   push:
   pull_request:
+  workflow_call:
 permissions:
   contents: read
 jobs:
@@ -244,6 +247,7 @@ jobs:
       # verified here because this is the only platform where it can run.
       - name: Typecheck and compile the Keychain helper
         run: |
+          mkdir -p build
           xcrun swiftc -version
           xcrun swiftc -typecheck apps/kite-ops/src/kite_ops/native/keychain.swift
           xcrun swiftc -O apps/kite-ops/src/kite_ops/native/keychain.swift -o build/nirnay-keychain-helper

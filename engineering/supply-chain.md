@@ -111,9 +111,9 @@ construction rather than by care.
 
 **One file list feeds both artefacts.** `scripts/make_bundle.py` stages the
 tree, writes `SOURCE-MANIFEST.sha256` from the staged list, and then writes the
-archive *from that same list*, with fixed member timestamps and permissions. A
-manifest path and an archive member name therefore cannot diverge, and the same
-inputs produce the same archive bytes. r2 shipped `SBOM.cdx.json` while its
+archive *from that same list*, with fixed member timestamps and each member's
+own permission bits. A manifest path and an archive member name therefore
+cannot diverge, and the same inputs produce the same archive bytes. r2 shipped `SBOM.cdx.json` while its
 manifest listed `sbom.cdx.json`; on APFS `shasum -c` resolved the name happily,
 while a case-sensitive runner would not have.
 
@@ -126,9 +126,30 @@ python3 scripts/verify_bundle.py --bundle /path/to/extracted --zip /path/to/bund
 It checks each manifest path against the exact listed path, hashes every file
 both in the tree and inside the archive, and requires the archive's member list
 to equal the manifest's path list plus `BUILD-RESULTS.md` and the manifest
-itself. It needs no case-sensitive filesystem, so the same command is valid on
-macOS and on the Ubuntu runner. Run against the superseded r2 archive it fails
-with four named errors, which is the evidence that the gate can fail.
+itself. It also refuses an ELF or Mach-O payload that is stored or extracted
+without an execute bit — r3 wrote `0o644` for every member, so all five compiled
+binaries extracted non-executable. It needs no case-sensitive filesystem, so the
+same command is valid on macOS and on the Ubuntu runner. Run against the
+superseded r2 archive it fails with four named errors, and `--self-test` clears
+one execute bit in a copy of the archive and requires the run to fail: both are
+evidence that the gates can fail.
+
+**Source permissions survive the trip.** `make_bundle.py` derives the archived
+mode from the staged file (`0o755` when any execute bit is set, `0o644`
+otherwise) and writes `(stat.S_IFREG | mode) << 16`. Seven members are
+`0o755` in r0. Nothing in the toolchain rewrites them afterwards, and Git
+records the modes of the source tree as they are on disk, so an executable that
+is committed keeps `100755`.
+
+**A tag cannot publish on a red build.** `ci.yml` declares `workflow_call`, so
+`release.yml` can call it as a reusable workflow. Its first job, `quality`, runs
+the same ten checks that guard a pull request; `bundle` needs `quality`, and
+`macos-assets` needs `bundle`, so the two jobs that call `gh release create` run
+serially instead of racing. The chain is:
+
+```
+tag -> quality (ci.yml) -> bundle (linux) -> macos-assets (arm64)
+```
 
 **Release assets come from CI.** `.github/workflows/release.yml` triggers on
 `v*` tags: it rebuilds the wheels and binaries from the tagged commit, runs the

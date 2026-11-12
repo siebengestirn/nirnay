@@ -48,7 +48,7 @@ BUNDLE_ARTIFACTS ?= ../artifacts
 bundle:
 	python3 scripts/make_bundle.py --source-dir . --artifacts $(BUNDLE_ARTIFACTS) --output $(BUNDLE_OUT)
 bundle-verify:
-	python3 scripts/verify_bundle.py --bundle $(BUNDLE_DIR) --zip $(BUNDLE_OUT)
+	python3 scripts/verify_bundle.py --bundle $(BUNDLE_DIR) --zip $(BUNDLE_OUT) --self-test
 CPP_BUILD_DIR ?= /tmp/nirnay-cpp-oracle-$(shell pwd | cksum | cut -d' ' -f 1)
 EXTRAS_CPP_BUILD_DIR ?= /tmp/nirnay-extras-cpp-$(shell pwd | cksum | cut -d' ' -f 1)
 cpp-test:

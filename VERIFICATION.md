@@ -54,6 +54,23 @@ Both are fixed structurally, and both fixes have a negative control showing the 
 
 The release workflow (`release.yml`, `v*` tags) rebuilds wheels and binaries from the tagged commit, re-verifies the bundle, and attests assets with `actions/attest-build-provenance@4d101475…` (v4.2.2). No hosted run and no attestation exists yet.
 
+## 2026-11-13 r0 — executable modes and release gating
+
+Two defects survived r3: the bundler wrote a constant `0o644` for every archive member, so all five compiled binaries extracted non-executable; and `release.yml` ran independently of `ci.yml`, so a tag could publish while the gates were red, with both release jobs racing to create the same release.
+
+Executable bits now come from the staged file (`0o755` when any execute bit is set), the verifier rejects ELF/Mach-O payloads stored without one, and `--self-test` clears a bit in a copy of the archive and requires the check to fail. `ci.yml` gained `workflow_call`; `release.yml` opens with a `quality` job that calls it, `bundle` needs `quality`, and `macos-assets` needs `bundle`.
+
+| Check | Command | Result |
+|---|---|---|
+| Executable members preserved | `make_bundle.py`, then archive mode dump | **PASS — 7 members at `0o755`, `unzip` restores them executable** |
+| Bundle verification, modes included | `python3 scripts/verify_bundle.py --bundle <tree> --zip <archive>` | **PASS — 343 entries, 345 members, per-member hashes, modes** |
+| Negative control, cleared bit | same verifier, `--self-test` | **PASS — clearing the bit fails verification** |
+| Negative control, binary `chmod 644` before bundling | build and verify | **FAILS as intended — 2 named errors** |
+| Negative control, extracted file loses its bit | verifier on the extracted tree | **FAILS as intended — 1 named error** |
+| Release chain | YAML parse of `release.yml` | **PASS — `quality` → `bundle` → `macos-assets`** |
+
+Workflow inventory: `ci.yml` 9 job definitions (10 executions), `nightly.yml` 5, `release.yml` 3; 43 remote action references pinned.
+
 The remaining tables below are retained as historical records for 2026-11-12. Their counts, environment notes and Parquet skip are superseded by this section.
 
 ## Executed checks — original 2026-11-12 Linux environment (historical)

@@ -5,8 +5,9 @@ The r2 bundle was assembled with ad-hoc `zip` invocations, so the archive could
 carry a member name the manifest did not know about (`SBOM.cdx.json` versus
 `sbom.cdx.json`). Here the manifest is written from the staged file list and the
 archive is written *from that same list*, so the two cannot diverge. Members are
-stored with a fixed timestamp and permission bits, so the same inputs always
-produce the same archive bytes.
+stored with a fixed timestamp, and with the source file's own executable bit, so
+the same inputs always produce the same archive bytes and the compiled binaries
+extract executable.
 
     python scripts/make_bundle.py --source-dir . --artifacts ../artifacts \
         --output ../nirnay-quant-production-upgrade-2026-11-13-r3.zip
@@ -26,6 +27,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import shutil
+import stat
 import sys
 import tempfile
 import zipfile
@@ -44,9 +46,16 @@ EXCLUDED_DIRS = {
 EXCLUDED_FILES = {".DS_Store"}
 EXCLUDED_SUFFIXES = (".pyc", ".pyo", ".swp")
 
-# Fixed metadata keeps the archive reproducible across rebuilds.
+# Fixed timestamps keep the archive reproducible across rebuilds. Permissions are
+# *not* fixed: the archive carries the staged file's own mode, because a bundle of
+# 0o644 binaries extracts into files nobody can execute.
 ZIP_EPOCH = (1980, 1, 1, 0, 0, 0)
-ZIP_MODE = 0o644 << 16
+
+
+def archive_mode(path: Path) -> int:
+    """0o755 for anything executable in the source, 0o644 otherwise."""
+    original = stat.S_IMODE(path.stat().st_mode)
+    return 0o755 if original & 0o111 else 0o644
 
 
 def fail(messages: list[str]) -> int:
@@ -113,7 +122,7 @@ def write_archive(stage: Path, output: Path, paths: list[str]) -> None:
         for name in members:
             info = zipfile.ZipInfo(name, date_time=ZIP_EPOCH)
             info.compress_type = zipfile.ZIP_DEFLATED
-            info.external_attr = ZIP_MODE
+            info.external_attr = (stat.S_IFREG | archive_mode(stage / name)) << 16
             archive.writestr(info, (stage / name).read_bytes())
 
 
@@ -182,6 +191,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"manifest sha256  {sha256(staging / MANIFEST_NAME)}")
         print(f"archive sha256   {digest}")
         print(f"archive entries  {len(paths) + 2}")
+        executables = [
+            name
+            for name in paths
+            if stat.S_IMODE((staging / name).stat().st_mode) & 0o111
+        ]
+        print(f"executable       {len(executables)} member(s)")
         print(f"wrote            {args.output.resolve()}")
         print(f"wrote            {sidecar}")
         missing = [name for name in RECORD_FILES if not (staging / name).is_file()]
