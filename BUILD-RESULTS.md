@@ -3,7 +3,7 @@
 **Bundle:** `nirnay-quant-production-upgrade-2026-11-13-r0.zip`
 **Bundle SHA-256:** published as `nirnay-quant-production-upgrade-2026-11-13-r0.zip.sha256` beside the archive, written by `scripts/make_bundle.py` from the archive itself. A file cannot contain its own archive hash, so this document does not quote one.
 **Contents:** `nirnay-quant/`, `artifacts/`, `sbom.cdx.json`, `BUILD-RESULTS.md`, `SOURCE-MANIFEST.sha256`
-**Source manifest:** `SOURCE-MANIFEST.sha256`, 329 file hashes over `nirnay-quant/`, `artifacts/` and `sbom.cdx.json`; digest `7aff27d0f4f2ffebe7a41753e9d472505887086f40dc41317148e937b2878726`
+**Source manifest:** `SOURCE-MANIFEST.sha256`, 330 file hashes over `nirnay-quant/`, `artifacts/` and `sbom.cdx.json`; digest `1f9013db19f0504011a6e2e60fbdc8435ace305c3525e271c6ada0066c66aa0f`
 **Date:** 2026-11-13
 **Environment:** macOS 27.0.1 arm64; AppleClang 21.0.0.21000334; Apple Swift 6.4; Homebrew GCC 16.2.0; CMake 4.4.3; pinned Rust 1.99.1; Python 3.14.8; pytest 9.2.0; PyArrow 26.0.1; clang-format 21.1.8; uv 0.11.27.
 
@@ -76,13 +76,15 @@ tag
          └─ macos-assets (arm64: binaries, swift helper, attest, publish)
 ```
 
-Publication is downstream of the same ten checks that guard a pull request, and the two jobs that touch the release are serialised. `actions/attest-build-provenance` remains pinned at `4d101475…` (v4.2.2); the reusable-workflow reference is local (`./.github/workflows/ci.yml`) and is not a remote action to pin — 43 remote action references remain SHA-pinned.
+Publication is downstream of the same ten checks that guard a pull request, and the two jobs that touch the release are serialised. The reusable-workflow reference is local (`./.github/workflows/ci.yml`) and is not a remote action to pin — 43 remote action references remain SHA-pinned.
+
+**Provenance without GitHub attestations.** `actions/attest-build-provenance` refuses user-owned private repositories: the release run failed at that step with *"Feature not available for user-owned private repositories"*, before publishing anything. The repository stays private, so the workflow now records an unsigned in-toto statement instead — `scripts/record_provenance.py` writes `provenance.json` with the builder run id, the commit and ref as materials, and the SHA-256 of every published artifact — and uploads it beside the assets. The attestation step remains wired and pinned behind the repository variable `ENABLE_GITHUB_ATTESTATIONS`, off until the plan supports it. An unsigned statement is weaker than an attestation and is labelled as such wherever it appears.
 
 | Gate | Result |
 |---|---|
 | `scripts/check_wheels.py --dist dist` | **PASS — 3 wheels, zero cache entries, each installed and ran its console script in a fresh venv** |
 | Negative control: a `__pycache__` member injected into a wheel | **FAILS as intended — 2 named errors** |
-| `scripts/verify_bundle.py --bundle … --zip …` | **PASS — 329 manifest entries, members, per-member hashes, executable modes** |
+| `scripts/verify_bundle.py --bundle … --zip …` | **PASS — 330 manifest entries, members, per-member hashes, executable modes** |
 | `scripts/verify_bundle.py … --self-test` | **PASS — clearing an execute bit fails verification** |
 | Negative control: one binary `chmod 644` before bundling | **FAILS as intended — 2 named errors**, archive and extracted mode |
 | Negative control: verifier against the r2 archive | **FAILS as intended — 4 named errors**, including `sbom.cdx.json` versus `SBOM.cdx.json` |
@@ -90,6 +92,7 @@ Publication is downstream of the same ten checks that guard a pull request, and 
 | `scripts/make_bundle.py` run twice on identical inputs | **PASS — identical archive SHA-256** |
 | Workflow graph | **PASS — `quality` → `bundle` → `macos-assets`; `ci.yml` accepts `workflow_call`** |
 | `python3 scripts/check_git_policy.py --strict` | **PASS — branch, subjects, tracked paths, inventory** |
+| `python3 scripts/record_provenance.py --output … --subject …` | **PASS — 12 subjects, in-toto statement with builder, commit and per-file digests; a subject pattern matching nothing fails** |
 | `xcrun swiftc -typecheck` and `-O` on the bundled Keychain helper | **PASS — Swift 6.4, Mach-O arm64** |
 
 ## 2026-11-13 verification
@@ -134,10 +137,10 @@ Every row was executed against this tree on 2026-11-13, in this environment. Cou
 | Swift helper | `xcrun swiftc -typecheck` and `-O` | **PASS — Swift 6.4, Mach-O arm64** |
 | Artifact hashes | `shasum -a 256 -c artifacts/SHA256SUMS` | **PASS — 8/8** |
 | Deterministic demo | `quantlab demo` twice | **PASS — identical SHA-256 `2a214de59eee15cbe5d4b7e3c698463d43df48b36076d1bea7e3ba3b47e16084`** |
-| Bundle identity | `scripts/verify_bundle.py --bundle … --zip … --self-test` | **PASS — 329 manifest entries, 331 archive members, modes, self-test** |
+| Bundle identity | `scripts/verify_bundle.py --bundle … --zip … --self-test` | **PASS — 330 manifest entries, 332 archive members, modes, self-test** |
 | Archive integrity | `unzip -t` | **PASS** |
 
-**Composition:** 319 files inside `nirnay-quant/`, 9 in `artifacts/`, and `sbom.cdx.json` at the bundle root — 329 manifest entries and 331 archive members, the two extra being `BUILD-RESULTS.md` and the manifest itself. Every one of the 319 is a file the commit contains (320 minus `BUILD-RESULTS.md`, which ships at the bundle root instead). Seven archive members are `0o755`. Neither record file is inside the manifest, so this document can quote the digest above without invalidating it. The archive is reproducible: two runs on identical inputs produce the same SHA-256.
+**Composition:** 320 files inside `nirnay-quant/`, 9 in `artifacts/`, and `sbom.cdx.json` at the bundle root — 330 manifest entries and 332 archive members, the two extra being `BUILD-RESULTS.md` and the manifest itself. Every one of the 320 is a file the commit contains (321 minus `BUILD-RESULTS.md`, which ships at the bundle root instead). Seven archive members are `0o755`. Neither record file is inside the manifest, so this document can quote the digest above without invalidating it. The archive is reproducible: two runs on identical inputs produce the same SHA-256.
 
 ### Compiler contract
 
@@ -186,8 +189,9 @@ Git is governed by `engineering/git-policy.json` and `engineering/git-workflow.m
 
 ## Remaining work
 
-- **Attestation and hosted release evidence** for the tagged commit, including the `gh attestation verify` output, recorded in `VERIFICATION.md`.
-- **Server-side protection.** Rulesets and classic branch protection both require GitHub Pro on a private repository; the API refuses them today. Until then the pull-request rule is discipline, not enforcement.
+- **Hosted release evidence** for the tagged commit: the published assets and the unsigned provenance statement, recorded in `VERIFICATION.md`.
+- **Signed attestation.** Blocked by the platform, not by the repository: GitHub refuses attestations for user-owned private repositories. The step is wired behind `ENABLE_GITHUB_ATTESTATIONS` and enables by itself the day the account supports it.
+- **Server-side protection.** Rulesets and classic branch protection both require GitHub Pro on a private repository, and the repository stays private by decision. Until the plan changes, the pull-request rule is discipline, and `scripts/check_git_policy.py` is what actually enforces the shape of `main`.
 - **Release authority.** Attestation binds bytes to a workflow run via OIDC; it does not establish who may tag. That needs the tag ruleset, which has the same plan dependency.
 - **Wheel-hash pinning** in the constraint sets (needs multi-platform CI to be honest about it).
 - **Parquet compatibility** beyond the synthetic round-trip: schema evolution, compression, row-group sizing, corrupted and interrupted writes, cross-version reads.

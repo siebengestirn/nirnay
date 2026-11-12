@@ -125,15 +125,23 @@ inventory above. Failures are named; the exit status is non-zero.
 Two things it cannot check, and this is deliberate honesty rather than a gap in
 the script:
 
-- **Server-side protection.** Required checks and rulesets need GitHub Pro on a
-  private repository. On the current plan the API refuses both, so the pull
-  request requirement holds by discipline, not by enforcement. The ruleset
-  definitions to apply the moment the repository moves to a plan that supports
-  them are in `engineering/repo-rulesets.json`.
-- **Who may create a release tag.** Tag rulesets are subject to the same plan
-  restriction. The release authority is a convention recorded in this document
-  until it can be a rule: only the repository owner tags `v*`, and only from a
-  merge commit on `main` whose checks are green.
+- **Server-side protection.** GitHub refuses both rulesets and classic branch
+  protection for user-owned private repositories on the free plan: the API
+  answers `403 Upgrade to GitHub Pro or make this repository public`. The
+  repository stays private by decision — source confidentiality is worth more
+  than platform enforcement of a rule one maintainer already follows — so the
+  pull-request requirement holds by discipline, not by enforcement. The ruleset
+  definitions are kept in `engineering/repo-rulesets.json`, ready to apply when
+  the plan changes.
+- **Who may create a release tag.** Tag rulesets are subject to the same
+  restriction. The release authority is a convention until it can be a rule:
+  only the repository owner tags `v*`, and only from a merge commit on `main`
+  whose checks are green.
+
+What the validator does enforce is the part a platform rule cannot help with
+anyway: the shape of `main`. A rewritten history, an unsquashed merge series, a
+commit subject that reports a release as one thing locally and another
+publicly, or a tracked build directory all fail locally, before a push.
 
 ## Releases
 

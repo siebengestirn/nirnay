@@ -1,5 +1,6 @@
 {
-  "_comment": "Apply with: gh api --method POST /repos/<owner>/<repo>/rulesets --input <file>. Requires a plan that supports rulesets on private repositories (GitHub Pro or higher, or a public repository); the GitHub API refuses both rulesets on the free plan. Apply the branch ruleset first, then the tag ruleset.",
+  "_comment": "Apply with: gh api --method POST /repos/<owner>/<repo>/rulesets --input <file>. Requires a plan that supports rulesets on private repositories (GitHub Pro or higher, or a public repository); the free plan refuses both with `403 Upgrade to GitHub Pro or make this repository public`. The repository stays private by owner decision, so these are deferred, not abandoned. Apply the branch ruleset first, then the tag ruleset.",
+  "_status": "Deferred by owner decision on 2026-11-13: keeping the repository private was chosen over enabling server-side enforcement. Re-apply when the account moves to GitHub Pro (branch and tag rulesets) or Enterprise Cloud (attestations as well).",
   "branch_ruleset": {
     "name": "main: protected release source",
     "target": "branch",

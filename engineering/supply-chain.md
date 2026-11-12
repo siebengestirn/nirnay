@@ -154,11 +154,34 @@ tag -> quality (ci.yml) -> bundle (linux) -> macos-assets (arm64)
 **Release assets come from CI.** `.github/workflows/release.yml` triggers on
 `v*` tags: it rebuilds the wheels and binaries from the tagged commit, runs the
 packaging gate, assembles and re-verifies the bundle as a consumer would, and
-attests the archive, wheels, binaries and SBOM with
-`actions/attest-build-provenance@4d101475…` (v4.2.2) under `id-token: write` and
-`attestations: write`. A second job does the same for the macOS arm64 binaries
-and the Keychain helper, which are suffixed so they cannot overwrite the Linux
-assets.
+publishes the archive, its sidecar, the manifest, the SBOM and the binaries. A
+second job does the same for the macOS arm64 binaries and the Keychain helper,
+which are suffixed so they cannot overwrite the Linux assets.
 
-The attestation is what binds bytes to a repository, a commit and a workflow run.
-A SHA-256 sidecar only proves the bytes survived the transfer.
+**Provenance is recorded, not attested.** GitHub refuses
+`actions/attest-build-provenance` for user-owned private repositories — the step
+fails with *"Feature not available for user-owned private repositories"* — and
+this repository is private by decision, to protect unpublished work. Publishing
+with no provenance at all would be worse than publishing with an unsigned one,
+so `scripts/record_provenance.py` writes an in-toto statement
+(`https://in-toto.io/Statement/v1`, predicate `https://slsa.dev/provenance/v1`)
+and the workflow uploads it beside the assets:
+
+| Field | Content |
+|---|---|
+| builder | `{server}/{repository}/actions/runs/{run_id}` |
+| materials | the commit SHA and ref the run started from |
+| external parameters | workflow path, event, ref |
+| subjects | every published artifact with its SHA-256, computed after the build |
+
+It is **unsigned**. It states what the workflow observed, and anyone can write
+such a file; what authenticates it is the run id, which the platform owns, not
+the file. A SHA-256 sidecar proves only that bytes survived the transfer, and an
+unsigned statement proves only what the run claimed about itself.
+
+The attestation path stays wired and opt-in: setting the repository variable
+`ENABLE_GITHUB_ATTESTATIONS=true` re-enables
+`actions/attest-build-provenance@4d101475…` (v4.2.2) under `id-token: write` and
+`attestations: write`. It is off because it cannot succeed on this plan, not
+because it is unwanted — a skipped step would still have reported the release as
+attested.
