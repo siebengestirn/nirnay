@@ -107,7 +107,9 @@ jobs:
     # Serialised behind the Linux bundle: both jobs create the same GitHub release,
     # so running them concurrently races `gh release create`.
     needs: bundle
-    runs-on: macos-14
+    # `macos-14` no longer provisions a runner, so this job was cancelled before
+    # its first step on both attempts; the assertion below proves arm64 instead.
+    runs-on: macos-latest
     permissions:
       contents: write
       id-token: write
