@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kj111422.github.io/schemas/execution/order-intent.v1.json",
+  "title": "Order Intent v1",
+  "description": "Frozen contract (P0-07). What a strategy submits to the platform. The strategy never names a broker API; the OMS routes an authorized intent. Quantities are integer lots; prices are integer paise.",
+  "type": "object",
+  "required": [
+    "intent_id",
+    "strategy",
+    "instrument_id",
+    "venue",
+    "side",
+    "quantity_lots",
+    "order_type",
+    "time_in_force"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "intent_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$",
+      "description": "Client-side idempotency key; stable across retries."
+    },
+    "strategy": {
+      "type": "string",
+      "minLength": 1,
+      "description": "strategy (frozen v1 semantics)"
+    },
+    "instrument_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$",
+      "description": "instrument id (frozen v1 semantics)"
+    },
+    "venue": {
+      "type": "string",
+      "enum": [
+        "NSE",
+        "BSE"
+      ],
+      "description": "venue (frozen v1 semantics)"
+    },
+    "side": {
+      "type": "string",
+      "enum": [
+        "buy",
+        "sell"
+      ],
+      "description": "side (frozen v1 semantics)"
+    },
+    "quantity_lots": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "quantity lots (frozen v1 semantics)"
+    },
+    "order_type": {
+      "type": "string",
+      "enum": [
+        "market",
+        "limit",
+        "stop_loss_market",
+        "stop_loss_limit"
+      ],
+      "description": "order type (frozen v1 semantics)"
+    },
+    "limit_price_paise": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "description": "Required for limit/stop_loss_limit."
+    },
+    "trigger_price_paise": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "description": "Required for stop_loss_*."
+    },
+    "time_in_force": {
+      "type": "string",
+      "enum": [
+        "day",
+        "ioc",
+        "gtt"
+      ],
+      "description": "time in force (frozen v1 semantics)"
+    },
+    "max_notional_paise": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "description": "Optional client-side bound the risk layer may tighten."
+    },
+    "created_at_utc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "created at utc (frozen v1 semantics)"
+    }
+  }
+}

@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kj111422.github.io/schemas/execution/order-state.v1.json",
+  "title": "Canonical Order State v1",
+  "description": "Frozen contract (P0-07). The OMS's authoritative state machine. Unknown is a first-class state: a lost submission response must be reconciled through the broker order/trade books before any resend. Exactly-once execution across an external broker API cannot be assumed.",
+  "type": "object",
+  "required": [
+    "intent_id",
+    "state",
+    "filled_quantity_lots",
+    "updated_at_utc",
+    "history"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "intent_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$",
+      "description": "intent id (frozen v1 semantics)"
+    },
+    "broker": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "zerodha",
+        "groww",
+        null
+      ],
+      "description": "broker (frozen v1 semantics)"
+    },
+    "account": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "account (frozen v1 semantics)"
+    },
+    "broker_order_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Assigned by broker; absent before acknowledgement."
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "risk_rejected",
+        "approved",
+        "pending_new",
+        "open",
+        "partially_filled",
+        "filled",
+        "pending_cancel",
+        "canceled",
+        "rejected",
+        "unknown"
+      ],
+      "description": "state (frozen v1 semantics)"
+    },
+    "filled_quantity_lots": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "filled quantity lots (frozen v1 semantics)"
+    },
+    "average_fill_price_paise": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "description": "average fill price paise (frozen v1 semantics)"
+    },
+    "updated_at_utc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "updated at utc (frozen v1 semantics)"
+    },
+    "history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "state",
+          "at_utc",
+          "source"
+        ],
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "oms",
+              "broker_ack",
+              "broker_report",
+              "reconciliation"
+            ]
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "history (frozen v1 semantics)"
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nirnay.dev/schemas/research/dataset-signature.v1.schema.json",
+  "title": "Nirnay detached point-in-time dataset signature v1",
+  "description": "Detached Ed25519 signature over a domain-separated SHA-256 digest of the canonical publication manifest. The signature proves publisher-key control and manifest integrity, not source authenticity, entitlements or data completeness.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "algorithm", "key_id", "manifest_sha256", "signature_b64"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "algorithm": {"const": "Ed25519"},
+    "key_id": {"type": "string", "minLength": 1},
+    "manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "signature_b64": {"type": "string", "pattern": "^[A-Za-z0-9+/]{86}==$"}
+  }
+}

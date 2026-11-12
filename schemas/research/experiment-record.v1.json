@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kj111422.github.io/schemas/research/experiment-record.v1.json",
+  "title": "Experiment Record v1",
+  "description": "Frozen contract (P0-07). One reproducible research trial. Failed and rejected experiments are recorded permanently; the factory must never delete losing trials and report only winners.",
+  "type": "object",
+  "required": [
+    "experiment_id",
+    "hypothesis_family",
+    "dataset_ref",
+    "dataset_point_in_time",
+    "config",
+    "result",
+    "ran_at_utc"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "experiment_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$",
+      "description": "experiment id (frozen v1 semantics)"
+    },
+    "hypothesis_family": {
+      "type": "string",
+      "enum": [
+        "momentum",
+        "mean_reversion",
+        "statistical_arbitrage",
+        "factor",
+        "microstructure",
+        "volatility",
+        "event_driven",
+        "options",
+        "portfolio"
+      ],
+      "description": "hypothesis family (frozen v1 semantics)"
+    },
+    "dataset_ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "dataset ref (frozen v1 semantics)"
+    },
+    "dataset_point_in_time": {
+      "type": "boolean",
+      "description": "True only if every feature used only data available at decision time."
+    },
+    "config": {
+      "type": "object",
+      "description": "Complete parameterization; sufficient to reproduce exactly."
+    },
+    "result": {
+      "type": "object",
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "completed",
+            "failed",
+            "rejected_by_validation"
+          ]
+        },
+        "sharpe_in_sample": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "sharpe_out_sample": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "max_drawdown": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "turnover": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "costs_paid_paise": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "notes": {
+          "type": "string"
+        }
+      },
+      "description": "result (frozen v1 semantics)"
+    },
+    "ran_at_utc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ran at utc (frozen v1 semantics)"
+    },
+    "code_commit_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "code commit sha (frozen v1 semantics)"
+    }
+  }
+}

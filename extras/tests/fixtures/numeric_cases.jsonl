@@ -1,0 +1,8 @@
+{"input": "0", "scale": 6, "expect": 0}
+{"input": "0.08", "scale": 6, "expect": 80000}
+{"input": "-54.00", "scale": 6, "expect": -54000000}
+{"input": "0.123456789", "scale": 9, "expect": 123456789}
+{"input": "-0.000000001", "scale": 9, "expect": -1}
+{"input": "9000000000.123456789", "scale": 9, "expect": 9000000000123456789}
+{"input": "1.0000001", "scale": 6, "error": true}
+{"input": "1e-3", "scale": 6, "error": true}

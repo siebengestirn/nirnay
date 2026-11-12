@@ -1,0 +1,3 @@
+# FYERS exchange:tradingsymbol format. Confirm symbol names before use.
+NSE:SBIN-EQ
+NSE:RELIANCE-EQ

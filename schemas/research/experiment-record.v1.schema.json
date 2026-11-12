@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/nirnay/schemas/research/experiment-record.v1.schema.json",
+  "title": "Pre-registered Experiment Record v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "experiment_id",
+    "hypothesis",
+    "economic_rationale",
+    "dataset_ref",
+    "dataset_manifest_sha256",
+    "dataset_point_in_time",
+    "code_revision",
+    "config",
+    "status",
+    "registered_at_utc",
+    "falsification_rule"
+  ],
+  "properties": {
+    "experiment_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "hypothesis": {
+      "type": "string",
+      "minLength": 1
+    },
+    "economic_rationale": {
+      "type": "string",
+      "minLength": 1
+    },
+    "dataset_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "dataset_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "dataset_point_in_time": {
+      "type": "boolean"
+    },
+    "code_revision": {
+      "type": "string",
+      "minLength": 1
+    },
+    "config": {
+      "type": "object"
+    },
+    "status": {
+      "enum": [
+        "registered",
+        "running",
+        "rejected",
+        "completed",
+        "candidate"
+      ]
+    },
+    "registered_at_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "falsification_rule": {
+      "type": "string",
+      "minLength": 1
+    },
+    "result": {
+      "type": "object"
+    },
+    "validation": {
+      "type": "object"
+    }
+  }
+}

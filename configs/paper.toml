@@ -1,0 +1,27 @@
+[mode]
+name = "paper"
+live_enabled = false
+
+[market]
+market = "india-cash"
+venue = "NSE"
+timezone = "Asia/Kolkata"
+
+[data]
+providers = ["upstox", "fyers"]
+record_raw_frames = true
+require_entitlement_reference = true
+max_stale_ms = 1500
+on_gap = "mark_dataset_non_research_grade"
+
+[risk]
+max_order_notional_paise = 10000000
+max_position_notional_paise = 25000000
+max_daily_loss_paise = 500000
+max_open_orders = 5
+require_fresh_market_data = true
+require_reconciliation = true
+
+[execution]
+broker = "none"
+order_submission_enabled = false

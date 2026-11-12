@@ -1,0 +1,3 @@
+# One Upstox instrument_key per line. Confirm each key against the current
+# Upstox instrument master before capture.
+NSE_EQ|INE848E01016

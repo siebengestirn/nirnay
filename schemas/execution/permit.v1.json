@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kj111422.github.io/schemas/execution/permit.v1.json",
+  "title": "Live Execution Permit v1",
+  "description": "Signed release authorization for live order placement. Bound to exact commit, account, broker, strategy, instrument allowlist, limits, operator, approvals and expiry. Missing, expired or mismatched permits fail closed (crates/execution-policy).",
+  "type": "object",
+  "required": [
+    "commit_sha",
+    "account",
+    "broker",
+    "strategy",
+    "instruments",
+    "max_order_notional",
+    "max_open_exposure",
+    "operator",
+    "approvals",
+    "expires_at_utc",
+    "signature"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "commit_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "Exact commit SHA the permit was issued against; mismatch fails closed."
+    },
+    "account": {
+      "type": "string",
+      "minLength": 1,
+      "description": "account (frozen v1 semantics)"
+    },
+    "broker": {
+      "type": "string",
+      "enum": [
+        "zerodha",
+        "groww"
+      ],
+      "description": "broker (frozen v1 semantics)"
+    },
+    "strategy": {
+      "type": "string",
+      "minLength": 1,
+      "description": "strategy (frozen v1 semantics)"
+    },
+    "instruments": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true,
+      "description": "instruments (frozen v1 semantics)"
+    },
+    "max_order_notional": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "max order notional (frozen v1 semantics)"
+    },
+    "max_open_exposure": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "max open exposure (frozen v1 semantics)"
+    },
+    "operator": {
+      "type": "string",
+      "minLength": 1,
+      "description": "operator (frozen v1 semantics)"
+    },
+    "approvals": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true,
+      "description": "approvals (frozen v1 semantics)"
+    },
+    "expires_at_utc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "expires at utc (frozen v1 semantics)"
+    },
+    "signature": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Ed25519/ECDSA signature over the canonical serialization; empty signature fails closed."
+    }
+  }
+}

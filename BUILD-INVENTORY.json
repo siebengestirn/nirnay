@@ -1,0 +1,144 @@
+{
+  "repository": "nirnay-quant",
+  "release_label": "Nirnay Quant research-to-paper upgrade (candidate; live execution disabled)",
+  "generated_on": "2026-11-13",
+  "source_tree_file_count_excluding_generated_caches": 303,
+  "source_archives": [
+    {
+      "file": "nirnay-quant-first-commit.zip",
+      "sha256": "e093d96a5ddba332722491e186b33a44f1bede46ed047ddfe83b2a67cfc92f02",
+      "role": "base Nirnay workspace"
+    },
+    {
+      "file": "engineering-challenge-main.zip",
+      "sha256": "f98035c945ed2d53d3c821046f407cf85cf6946cc2b04e1292e573cd7a9ecce2",
+      "role": "upstream project lineage; predecessor source is retained as the promoted, separately built 61-file extras reference workspace under extras/ (package nirnay-extras: India ingestion/durable store, C++ SBE/conformance probes and synthetic fixtures); the full 325-file pre-cleanup snapshot is external at ../legacy-snapshot-2026-11-13/legacy-full-backup-2026-11-13.tar.gz (SHA-256 a49e864308a7e58d667a86049dd80e8ff2c631cd762e50a74aff60007464f9b1); active Upstox decoder/schema remain in workspace paths; selected C++ numeric/book oracle promoted to verification/cpp-oracle; corporate-action and provenance models reimplemented under active bitemporal contracts"
+    },
+    {
+      "file": "nirnay-quant.zip",
+      "sha256": "9de6515583c506ad60e401017697b18485a412a0d91f309eecdf2c8233a763ee",
+      "role": "user-provided source repository archive; expanded and upgraded in this delivery"
+    }
+  ],
+  "active_cargo_workspace_members": [
+    "account-journal",
+    "cost-cli",
+    "cost-model",
+    "execution-policy",
+    "india-domain",
+    "market-archive",
+    "market-book",
+    "market-types",
+    "paper-engine",
+    "risk-engine",
+    "trading-core",
+    "upstox-feed-proto",
+    "upstox-tools",
+    "xtask"
+  ],
+  "python_packages": [
+    "research/python (quantlab CLI, point-in-time datasets, normalization, reconciliation, backtesting, alpha screen, OMS/risk contracts)",
+    "apps/fyers-recorder",
+    "apps/kite-ops"
+  ],
+  "verification": {
+    "python_command": "python3 -m pytest -q",
+    "python_result": "PASS: 156 tests, 2 subtests (macOS arm64, Python 3.14.8; 0 skipped; PyArrow 26.0.1 installed)",
+    "python_compile": "PASS: compileall over research/python, apps/fyers-recorder, apps/kite-ops, ops and scripts (Python 3.14.8 locally; CI targets the minimum Python 3.12)",
+    "research_demo": "PASS: deterministic quantlab demo; 1 paper fill; fixture marks not_real_market_data=true and not_alpha_evidence=true",
+    "point_in_time_cli": "PASS: synthetic 3-row bitemporal dataset built, atomically published and verified; source frame, event, listing, action and universe hash lineage re-computed",
+    "alpha_search_cli": "PASS: 420-row synthetic CSV evaluated by bounded 25-candidate screen; result is positive_holdout_screen_passed_not_alpha_certified and is not market evidence",
+    "json_schema": "PASS: 17 JSON Schema documents validated against Draft 2020-12; 41 active JSON and 26 active TOML files parsed",
+    "repository_policy": "PASS with real cargo metadata under pinned Rust 1.99.1 (2026-11-13 rerun); the static Cargo-manifest fallback was not used",
+    "cpp_oracle": "PASS: root oracle and extras probes, AppleClang 21 and GCC 16.2.0; CTest 1/1 for each target/compiler pair",
+    "parquet": "PASS: PyArrow 26.0.1; Zstandard Parquet semantic round-trip and tamper-rejection test executed; no skip",
+    "rust_fmt_check": "PASS after rustfmt normalization (pinned Rust 1.99.1)",
+    "rust_check": "PASS: cargo check --workspace --all-targets --locked",
+    "rust_clippy": "PASS: cargo clippy --workspace --all-targets --locked -- -D warnings",
+    "rust_tests": "PASS: 278 workspace tests, 0 failed",
+    "rust_export_utility": "PASS: cargo build --release -p upstox-tools --bins --locked",
+    "live_upstox": "NOT RUN: no live credentials/session or provider packet capture",
+    "live_fyers": "NOT RUN: no live credentials/session; SDK callback recorder tests are synthetic/fake",
+    "live_kite_account_or_order": "NOT RUN: no broker account operation/order; existing manual surface remains separately disabled",
+    "execution_default": "live trading remains hard-disabled in the new OMS; configs/live.toml and Kite example private policy also keep manual live order submission disabled",
+    "provider_docs": "Checked 2026-11-12: Upstox V3 mode-specific subscription limits/CAS fields and FYERS Data Socket vs TBT/Standard-Prime published limits; account entitlements remain unverified.",
+    "deterministic_demo": "PASS: two independent quantlab demo executions produced byte-identical JSON; SHA-256 2a214de59eee15cbe5d4b7e3c698463d43df48b36076d1bea7e3ba3b47e16084",
+    "owner_rerun": {
+      "date": "2026-11-12; release-hardening rerun 2026-11-13",
+      "environment": "macOS 27.0.1 arm64; AppleClang 21.0.0.21000334; Homebrew GCC 16.2.0; CMake 4.4.3; pinned Rust 1.99.1; Python 3.14.8; pytest 9.2.0; PyArrow 26.0.1; clang-format 21.1.8",
+      "pre_fix_failures": "Stale Cargo.lock under --locked; cost-cli missing Deserialize and malformed test JSON; execution-policy undeclared base16 test import and literal NUL byte; paper-engine duplicated clippy allow attribute; rustfmt drift in 12 further files; extras/cpp GCC -Wpedantic failure on __int128",
+      "post_fix_result": "All root and extras Rust gates, Python suite (156 passed, 0 skipped, 2 subtests), Parquet round-trip, repository gate with Cargo, schema validation (41 JSON, 26 TOML, 17 schemas), root and extras C++ (1/1 each on AppleClang and GCC), clang-format, deterministic demo, PIT CLI and 25-candidate synthetic alpha screen passed",
+      "remaining_external_gates": "No live Upstox/FYERS/Kite session, broker order, entitlement verification, HSM/KMS deployment, real archived provider-session replay or real-data Parquet scale test was performed"
+    },
+    "extras_rust": "PASS: cargo test --manifest-path extras/Cargo.toml --locked, 96 tests, 0 failed; Clippy -D warnings and rustfmt clean",
+    "extras_cpp": "PASS: extras/cpp CMake build + CTest 1/1 under AppleClang 21 and GCC 16.2.0",
+    "clang_format": "PASS: clang-format 21.1.8 --dry-run --Werror over all 10 C/C++ files; enforced in CI",
+    "ci_coverage": [
+      "root Rust: fmt, check, xtask, deny, tests, clippy",
+      "extras Rust: fmt, check, tests, clippy",
+      "C++: root oracle and extras probes under GCC, plus pinned clang-format check",
+      "research Python: PyArrow required, Parquet round-trip, tests, compileall, repository policy, schema validation",
+      "provider Python: isolated Kite and FYERS environments with pip check and tests",
+      "provider boundary canary: combined install must still fail on the documented requests conflict"
+    ],
+    "provider_environments": "Kite and FYERS are installed in isolated environments; fyers-apiv3==3.2.1 pins requests==2.31.0 while nirnay-kite-ops requires requests>=2.32,<3. See engineering/provider-environments.md."
+  },
+  "non_claims": [
+    "not a certified production trading system, broker-neutral production OMS or live broker integration",
+    "no SEBI/exchange/legal approval or account/data entitlement is inferred",
+    "no verified profitable strategy or validated alpha; synthetic samples are only software fixtures",
+    "no complete lossless exchange-grade feed, no provider exchange-sequence proof and no confirmed aggressor-side trade prints inferred from LTP snapshots",
+    "point-in-time framework does not independently prove official data-source completeness, delisted-security coverage, data rights or survivorship-free universe history",
+    "event-driven simulator is single-instrument long-only and uses model queue/impact assumptions, not an exchange matching engine",
+    "Rust builds and tests are locally verified and CI-gated; the C++/Rust differential corpus remains reference material and live broker certification is not performed",
+    "FYERS Data Socket and TBT plan ceilings are documentation limits; the configured recorder cap is operator-declared and not remotely entitlement-verified",
+    "Upstox Full D30 and full pre-open/closing-auction state semantics are not implemented/certified by the active recorder-normalizer path",
+    "Parquet is verified on synthetic fixtures only; real-data schema evolution, partitioning, row-group sizing and long-run compatibility remain external"
+  ],
+  "detail": "See VERIFICATION.md for final executed checks and explicit evidence boundaries. Provider tests use fake SDK/client objects; no live provider or broker access was performed. The supplied predecessor is retained as the promoted, separately built 61-file extras reference workspace under extras/ (package nirnay-extras); the full pre-cleanup tree is preserved in the external backup named above.",
+  "upgrade_implementation": {
+    "research_modules": [
+      "market.py",
+      "providers.py",
+      "reconcile.py",
+      "point_in_time.py",
+      "backtest.py",
+      "strategies.py",
+      "alpha_search.py",
+      "oms.py",
+      "live_auth.py",
+      "cli.py"
+    ],
+    "active_new_utilities": [
+      "apps/upstox-tools/src/bin/upstox_decode_export.rs",
+      "verification/cpp-oracle/"
+    ],
+    "new_documentation": [
+      "engineering/anti-patterns.md",
+      "engineering/research/point-in-time-data.md",
+      "engineering/research/provider-normalization.md",
+      "engineering/research/backtesting-and-alpha.md",
+      "engineering/research/oms-and-live-risk.md",
+      "engineering/market-compliance-and-entitlements.md",
+      "engineering/extras-promotion-audit.md",
+      "engineering/provider-boundaries.md",
+      "engineering/adapters-roadmap.md",
+      "VERIFICATION.md",
+      "engineering/legacy-audit-2026-11-13.md",
+      "engineering/provider-environments.md",
+      "BUILD-RESULTS.md"
+    ],
+    "extras_policy": "extras/** is a separate, tested reference workspace (nirnay-extras) excluded from active runtime/workspace; promotion to active crates requires ADR, owner and tests",
+    "formatting_and_lint_configs": [
+      ".editorconfig",
+      ".gitattributes",
+      ".rustfmt.toml",
+      ".clippy.toml",
+      ".pylintrc",
+      ".clang-format"
+    ]
+  },
+  "extras_file_count": 61,
+  "source_tree_count_note": "242 active source files plus 61 retained extras reference files (303 total excluding generated caches/build directories). The full 325-file predecessor snapshot is external at ../legacy-snapshot-2026-11-13/legacy-full-backup-2026-11-13.tar.gz (SHA-256 a49e864308a7e58d667a86049dd80e8ff2c631cd762e50a74aff60007464f9b1); the exact removed-file list is ../legacy-snapshot-2026-11-13/legacy-removed-manifest-2026-11-13.txt. The expanded tree contains an exact duplicate engineering/engineering-anti-patterns.md (byte-identical to engineering/anti-patterns.md) that was absent from the original ZIP; it is retained and included rather than silently deleted.",
+  "updated_on": "2026-11-13"
+}

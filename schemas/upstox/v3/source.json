@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "protocol": "Upstox Market Data Feed V3",
+  "canonical_source": {
+    "authority": "Upstox Developer Documentation",
+    "url": "https://assets.upstox.com/feed/market-data-feed/v3/MarketDataFeed.proto",
+    "retrieved_on": "2026-11-09",
+    "file": "MarketDataFeedV3.proto",
+    "sha256": "3e1c939dce2c83a3fef91405c5ca268dfa089aae973319f56685f12a5afcf612"
+  },
+  "corroborating_sources": [
+    {
+      "authority": "Upstox official Python SDK",
+      "repository": "https://github.com/upstox/upstox-python",
+      "revision": "d88a12ef5738a4c8d71f3b88eb7b79a359277c9d",
+      "path": "examples/websocket/market_data/v3/MarketDataFeedV3.proto",
+      "url": "https://raw.githubusercontent.com/upstox/upstox-python/d88a12ef5738a4c8d71f3b88eb7b79a359277c9d/examples/websocket/market_data/v3/MarketDataFeedV3.proto",
+      "sha256": "b4f6ef93b7c9791e99aa4f5ed3cc80fbb862184f0485ed61498591b2756f704c",
+      "github_commit_signature_verified": true
+    }
+  ],
+  "comparison": {
+    "method": "Remove // comments and blank lines, then compare declarations",
+    "result": "identical",
+    "raw_difference": "Four comment lines only"
+  },
+  "policy": {
+    "build_uses_network": false,
+    "schema_updates_require_review": true,
+    "schema_hash_is_verified_during_tests": true
+  }
+}

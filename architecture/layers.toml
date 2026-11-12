@@ -1,0 +1,76 @@
+# Lower index = lower-level dependency. Workspace crates may depend only on a
+# strictly lower layer. Empty layers reserve a reviewed destination for future
+# code; they do not represent executable capabilities.
+[[layer]]
+name = "foundation"
+crates = ["market-types", "india-domain"]
+
+[[layer]]
+name = "domain"
+crates = ["trading-core", "market-book"]
+
+[[layer]]
+name = "storage"
+crates = ["account-journal", "market-archive"]
+
+[[layer]]
+name = "services"
+crates = ["cost-model", "risk-engine", "execution-policy"]
+
+[[layer]]
+name = "engines"
+crates = ["paper-engine"]
+
+[[layer]]
+name = "strategies"
+crates = []
+
+[[layer]]
+name = "adapters"
+crates = ["upstox-feed-proto"]
+
+[[layer]]
+name = "apps"
+leaf = true
+crates = ["cost-cli", "upstox-tools"]
+
+[tooling]
+crates = ["xtask"]
+
+[restricted_external]
+crates = [
+  "tokio",
+  "tokio-tungstenite",
+  "reqwest",
+  "rusqlite",
+  "tracing-subscriber",
+  "futures-util",
+  "http",
+  "url",
+]
+allowed_in = ["adapters", "apps"]
+
+[[deny_edge]]
+from = "risk-*"
+to = "strategy-*"
+reason = "the independent risk authority must not depend on strategy code"
+
+[[deny_edge]]
+from = "strategy-*"
+to = "risk-*"
+reason = "strategies propose intent; the risk authority independently authorizes it"
+
+[[deny_edge]]
+from = "strategy-*"
+to = "broker-*"
+reason = "strategies emit intents; only execution adapters speak to brokers"
+
+[[deny_edge]]
+from = "strategy-*"
+to = "oms*"
+reason = "strategies must not bypass the OMS"
+
+[[deny_edge]]
+from = "market-*"
+to = "broker-*"
+reason = "market-data and archive code must not depend on account execution state"

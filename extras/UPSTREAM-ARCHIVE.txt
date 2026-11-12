@@ -1,0 +1,26 @@
+# Predecessor source provenance
+
+`extras/` is the promoted, tested reference subset of the predecessor
+`engineering-challenge` source supplied as `engineering-challenge-main.zip`.
+The full pre-cleanup tree — including the historical Kalshi/Polymarket
+collector, experiments, non-India tests, schemas, measurements and operational
+evidence — is preserved outside the runtime repository:
+
+```text
+../legacy-snapshot-2026-11-13/legacy-full-backup-2026-11-13.tar.gz
+SHA-256: a49e864308a7e58d667a86049dd80e8ff2c631cd762e50a74aff60007464f9b1
+```
+
+The exact removed-file list is
+`../legacy-snapshot-2026-11-13/legacy-removed-manifest-2026-11-13.txt`.
+
+`extras/` is a separate Cargo workspace (`nirnay-extras`), not a member of the
+Nirnay Cargo workspace. Its credentials, captured provider outputs and live
+paths are not activated by V4.
+
+The Upstox V3 protobuf decoder and schema were restored to active workspace
+paths under `crates/upstox-feed-proto/` and `schemas/upstox/v3/`. The original
+Upstox smoke client was restored to `apps/upstox-tools/`. The predecessor
+README is kept as `README.upstream.archive` for provenance.
+
+The code here is MIT-licensed, Copyright (c) 2026 Kartik Jangid; see `LICENSE`.

@@ -1,0 +1,50 @@
+[MAIN]
+# Target runtime, not the interpreter used to run pylint.
+py-version = 3.12
+jobs = 0
+persistent = no
+recursive = yes
+ignore = CVS
+ignore-paths = ^(build|dist|target|\.venv|venv|__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache)/
+
+[MESSAGES CONTROL]
+# Enable every checker. Project-specific rules belong in code, not in a
+# blanket disable list.
+enable = all
+
+[FORMAT]
+max-line-length = 100
+max-module-lines = 2000
+indent-string = '    '
+indent-after-paren = 4
+expected-line-ending-format = LF
+
+[DESIGN]
+max-args = 7
+max-attributes = 15
+max-bool-expr = 5
+max-branches = 15
+max-locals = 20
+max-parents = 7
+max-public-methods = 30
+max-returns = 8
+max-statements = 80
+min-public-methods = 2
+
+[REFACTORING]
+max-nested-blocks = 5
+
+[SIMILARITIES]
+min-similarity-lines = 6
+ignore-comments = yes
+ignore-docstrings = yes
+ignore-imports = yes
+
+[REPORTS]
+reports = yes
+score = yes
+output-format = text
+evaluation = 10.0 - ((float(5 * error + warning + refactor + convention) / statement) * 10)
+
+[LOGGING]
+logging-modules = logging

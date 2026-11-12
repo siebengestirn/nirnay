@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nirnay.dev/schemas/research/dataset-row.v1.schema.json",
+  "title": "Nirnay point-in-time dataset row v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event", "instrument_id", "venue", "session_date_ist", "session_date_source",
+    "listing_id", "listing_source_sha256", "universe_membership_id",
+    "universe_membership_source_sha256", "action_lineage", "action_revision_lineage",
+    "known_action_ids", "action_source_hashes", "split_price_factor_num",
+    "split_price_factor_den", "point_in_time"
+  ],
+  "properties": {
+    "event": { "$ref": "../market-data/canonical-event.v1.schema.json" },
+    "instrument_id": { "type": "string", "minLength": 1 },
+    "venue": { "type": "string", "minLength": 1 },
+    "session_date_ist": { "type": "string", "format": "date" },
+    "session_date_source": { "type": "string", "minLength": 1 },
+    "listing_id": { "type": "string", "minLength": 1 },
+    "listing_source_sha256": { "$ref": "dataset-manifest.v1.schema.json#/$defs/hash" },
+    "universe_membership_id": { "type": ["string", "null"] },
+    "universe_membership_source_sha256": {
+      "anyOf": [
+        { "$ref": "dataset-manifest.v1.schema.json#/$defs/hash" },
+        { "type": "null" }
+      ]
+    },
+    "action_lineage": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+    "action_revision_lineage": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "known_action_ids": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+    "action_source_hashes": { "$ref": "dataset-manifest.v1.schema.json#/$defs/hashes" },
+    "split_price_factor_num": { "type": "integer", "minimum": 1 },
+    "split_price_factor_den": { "type": "integer", "minimum": 1 },
+    "point_in_time": { "const": true }
+  }
+}

@@ -1,0 +1,150 @@
+id: 1
+version: 1
+description: Internal Rust-to-C++ market event contract (separately versioned from the challenge schema).
+# This file mirrors the challenge schema layout for the binary event
+# boundary between the Rust data plane and the C++ trading plane.
+# The challenge schema in sbe_schemas/ remains the compatibility oracle:
+# any internal change must keep challenge captures decodable by the
+# pristine template reader. Internal functions use process boundaries
+# and measured IPC; there is no function-by-function FFI.
+#
+# Design correction (review of foundation): Rust owns source continuity
+# and ingestion truth; C++ owns the trading view and its risk
+# eligibility. Every event crossing the boundary MUST carry the full
+# envelope: instrument identity, source, sequence domain, receive and
+# exchange timestamps, and continuity status. A healthy C++ book must
+# never be mistaken for a healthy upstream feed.
+#
+# Status: the message definitions below structurally include the full
+# envelope. Rust output-path wiring (MarketInfo instrument_id, envelope
+# population in the collector) is a separate bounded change; until it
+# lands, treat envelope fields as declared-not-yet-emitted.
+
+# Envelope fields shared by every internal message. Field ids 20-32 are
+# reserved for the envelope so it can be appended without renumbering
+# payload fields 1-11.
+envelope:
+  event_id:
+    id: 20
+    type: uint64
+    description: "Monotonic per-source event sequence assigned by Rust at the boundary"
+  instrument_id:
+    id: 21
+    type: uint64
+    description: "Persistent instrument identity (ADR 0001), independent of ticker/symbol"
+  symbol:
+    id: 22
+    type: string
+    description: "Output symbol for display; never the instrument identity"
+  source_shard:
+    id: 23
+    type: uint16
+    description: "Collector shard that owns the source"
+  source_replica:
+    id: 24
+    type: uint16
+    description: "Replica index within the shard"
+  seq:
+    id: 25
+    type: uint64
+    description: "Per-subscription exchange sequence; meaningful only when seq_present=1"
+  seq_present:
+    id: 33
+    type: uint8
+    description: "1 = venue supplies seq, 0 = absent; seq=0 must not be used as absence marker"
+  clock:
+    id: 26
+    type: int64
+    description: "Exchange-wide ordering clock; meaningful only when clock_present=1"
+  clock_present:
+    id: 34
+    type: uint8
+    description: "1 = venue supplies clock, 0 = absent"
+  connection_epoch:
+    id: 27
+    type: uint64
+    description: "Local connection generation, increasing on reconnect"
+  receive_seq:
+    id: 28
+    type: uint64
+    description: "Monotonic receive order within the connection epoch"
+  received_at_us:
+    id: 29
+    type: int64
+    description: "Local time when the frame was read, before decode"
+  exchange_timestamp_us:
+    id: 30
+    type: int64
+    description: "Best exchange timestamp, or received_at_us when absent"
+  continuity:
+    id: 31
+    type: uint8
+    description: "0=unseeded 1=live 2=stale 3=resyncing 4=terminal (Rust ContinuityState)"
+  continuity_reason:
+    id: 32
+    type: uint8
+    description: "0=none 1=active_source_lost 2=sequence_gap 3=malformed_frame 4=stale_probe_escalation 5=source_switched 6=stream_reset 7=protocol_error 8=terminal (Rust DiscontinuityReason); 0 means no reason, valid only when continuity=1"
+
+messages:
+  Snapshot:
+    id: 1
+    description: Full book snapshot (internal plane boundary); fields 20-34 carry the envelope
+    fields:
+      received_at_us: { id: 1, type: int64 }
+      exchange_timestamp_us: { id: 2, type: int64 }
+      bids:
+        id: 4
+        fields:
+          price: { id: 5, type: int64, description: "i64 coefficient; scale/unit in NumericSpec" }
+          quantity: { id: 6, type: int64, description: "i64 non-negative coefficient" }
+      asks:
+        id: 7
+        fields:
+          price: { id: 8, type: int64 }
+          quantity: { id: 9, type: int64 }
+      symbol: { id: 3, type: string }
+      price_scale: { id: 10, type: uint8 }
+      quantity_scale: { id: 11, type: uint8 }
+      event_id: { id: 20, type: uint64 }
+      instrument_id: { id: 21, type: uint64 }
+      envelope_symbol: { id: 22, type: string, description: "Output symbol (display, never identity)" }
+      source_shard: { id: 23, type: uint16 }
+      source_replica: { id: 24, type: uint16 }
+      seq: { id: 25, type: uint64 }
+      clock: { id: 26, type: int64 }
+      connection_epoch: { id: 27, type: uint64 }
+      receive_seq: { id: 28, type: uint64 }
+      frame_received_at_us: { id: 29, type: int64 }
+      frame_exchange_timestamp_us: { id: 30, type: int64 }
+      continuity: { id: 31, type: uint8, description: "0=unseeded 1=live 2=stale 3=resyncing 4=terminal" }
+      continuity_reason: { id: 32, type: uint8, description: "0=none 1=active_source_lost 2=sequence_gap 3=malformed_frame 4=stale_probe 5=source_switched 6=stream_reset 7=protocol_error 8=terminal" }
+      seq_present: { id: 33, type: uint8 }
+      clock_present: { id: 34, type: uint8 }
+
+  PriceLevelUpdate:
+    id: 2
+    description: Single level update (internal plane boundary); fields 20-34 carry the envelope
+    fields:
+      received_at_us: { id: 1, type: int64 }
+      exchange_timestamp_us: { id: 2, type: int64 }
+      price: { id: 4, type: int64 }
+      quantity: { id: 5, type: int64 }
+      side: { id: 6, type: int64, description: "0=buy 1=sell" }
+      symbol: { id: 3, type: string }
+      price_scale: { id: 7, type: uint8 }
+      quantity_scale: { id: 8, type: uint8 }
+      event_id: { id: 20, type: uint64 }
+      instrument_id: { id: 21, type: uint64 }
+      envelope_symbol: { id: 22, type: string, description: "Output symbol (display, never identity)" }
+      source_shard: { id: 23, type: uint16 }
+      source_replica: { id: 24, type: uint16 }
+      seq: { id: 25, type: uint64 }
+      clock: { id: 26, type: int64 }
+      connection_epoch: { id: 27, type: uint64 }
+      receive_seq: { id: 28, type: uint64 }
+      frame_received_at_us: { id: 29, type: int64 }
+      frame_exchange_timestamp_us: { id: 30, type: int64 }
+      continuity: { id: 31, type: uint8, description: "0=unseeded 1=live 2=stale 3=resyncing 4=terminal" }
+      continuity_reason: { id: 32, type: uint8, description: "0=none 1=active_source_lost 2=sequence_gap 3=malformed_frame 4=stale_probe 5=source_switched 6=stream_reset 7=protocol_error 8=terminal" }
+      seq_present: { id: 33, type: uint8 }
+      clock_present: { id: 34, type: uint8 }

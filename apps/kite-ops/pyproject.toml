@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nirnay-kite-ops"
+version = "0.4.0"
+description = "Keychain-backed Kite authentication and read-only account operations; live order routing is hard-disabled"
+requires-python = ">=3.12"
+dependencies = ["requests>=2.32,<3"]
+
+[project.scripts]
+nirnay-kite = "kite_ops.cli:main"
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+# Build output must not leak into the wheel: a stale src/**/__pycache__ would
+# otherwise be shipped as package data. The Swift helper is declared explicitly
+# below instead.
+include-package-data = false
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+kite_ops = ["native/*.swift"]

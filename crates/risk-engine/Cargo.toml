@@ -1,0 +1,19 @@
+[package]
+name = "risk-engine"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+description = "Fail-closed pre-trade risk evaluation."
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+trading-core.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

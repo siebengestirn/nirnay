@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/nirnay/schemas/market-data/raw-frame.v1.schema.json",
+  "title": "Raw Provider Frame v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "source", "provider_instrument_id", "received_utc_nanos", "received_monotonic_nanos", "capture_sequence", "entitlement_ref", "payload_base64", "payload_sha256"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "source": {"type": "string", "minLength": 1},
+    "provider_instrument_id": {"type": "string", "minLength": 1},
+    "received_utc_nanos": {"type": "integer"},
+    "received_monotonic_nanos": {"type": "integer", "minimum": 0},
+    "exchange_utc_nanos": {"type": ["integer", "null"]},
+    "capture_sequence": {"type": ["integer", "null"], "minimum": 0},
+    "entitlement_ref": {"type": "string", "minLength": 1},
+    "payload_base64": {"type": "string", "contentEncoding": "base64"},
+    "payload_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

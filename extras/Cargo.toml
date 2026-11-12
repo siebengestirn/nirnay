@@ -1,0 +1,26 @@
+[package]
+name = "nirnay-extras"
+version = "0.4.0"
+edition = "2024"
+description = "Nirnay extras: predecessor India reference-data ingestion, durable point-in-time store and SBE/conformance probes; separate reference workspace, not part of the active production graph"
+license = "MIT"
+
+# Keep this as its own workspace so it is never picked up by the active root
+# workspace. This crate is reference material, not a production member.
+[workspace]
+
+[dependencies]
+anyhow = "1"
+chrono = { version = "0.4", features = ["serde"] }
+india-domain = { version = "0.1.0", path = "../crates/india-domain" }
+rusqlite = { version = "0.41", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+
+[dev-dependencies]
+libc = "0.2"
+tempfile = "3"
+
+[lints.rust]
+unsafe_code = "deny"

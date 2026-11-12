@@ -1,0 +1,35 @@
+# Known-advisory waivers for `pip-audit`.
+#
+# Every entry must name an owner and an expiry date. `scripts/supply_chain.py audit`
+# fails on any advisory that is not covered here and warns when a waiver no longer
+# matches an observed package, so this file cannot silently rot.
+#
+# `id = "*"` waives every advisory against one package in one environment. That is
+# used only where the version is dictated by a provider SDK rather than by this
+# repository: `fyers-apiv3 3.2.1` pins `aiohttp==3.9.3`, `requests==2.31.0` and
+# `setuptools==68.0.0`. Listing ~80 individual advisory IDs would hide the fact
+# that the real fix is a provider upgrade, so the waiver states that directly.
+#
+# See `engineering/supply-chain.md`. These waivers do not make the FYERS recorder
+# suitable for unattended production use; it is a research capture path.
+
+[[allow]]
+package = "aiohttp"
+environment = "fyers-recorder"
+owner = "nirnay-dependencies"
+expires = "2027-02-28"
+reason = "pinned by fyers-apiv3 3.2.1; only used by the research-only FYERS capture path"
+
+[[allow]]
+package = "requests"
+environment = "fyers-recorder"
+owner = "nirnay-dependencies"
+expires = "2027-02-28"
+reason = "fyers-apiv3 3.2.1 pins requests==2.31.0, which is also why the provider environments are isolated"
+
+[[allow]]
+package = "setuptools"
+environment = "fyers-recorder"
+owner = "nirnay-dependencies"
+expires = "2027-02-28"
+reason = "pinned transitively by fyers-apiv3 3.2.1; used at build time, not at runtime"

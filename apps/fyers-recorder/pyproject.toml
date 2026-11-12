@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nirnay-fyers-recorder"
+version = "0.4.0"
+description = "FYERS Data Socket capture with bounded callbacks and hash-chained session journals"
+requires-python = ">=3.12"
+dependencies = ["fyers-apiv3>=3.1.0"]
+
+[project.scripts]
+nirnay-fyers-recorder = "fyers_recorder.cli:main"
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[tool.setuptools]
+include-package-data = false
+
+[tool.setuptools.packages.find]
+where = ["src"]
