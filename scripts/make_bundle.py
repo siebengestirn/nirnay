@@ -20,6 +20,10 @@ Layout produced inside the archive:
     SOURCE-MANIFEST.sha256   hash of every file above
     BUILD-RESULTS.md         copied from --source-dir unless --results says otherwise
 
+Two files are written beside the archive and not inside it: `<archive>.sha256`
+and `<archive>.manifest.sha256`, the latter a copy of the archive's own manifest
+so a release can publish the manifest it verified against.
+
 The manifest deliberately excludes `BUILD-RESULTS.md` and itself.
 """
 from __future__ import annotations
@@ -194,6 +198,13 @@ def main(argv: list[str] | None = None) -> int:
         sidecar = args.output.resolve().with_name(args.output.name + ".sha256")
         sidecar.write_text(f"{digest}  {args.output.name}\n", encoding="utf-8")
 
+        # The manifest lives at the bundle root and nowhere else unless it is
+        # copied out, which is how the first tagged release reached its
+        # provenance step with no manifest to record. Name it after the archive
+        # so two releases can sit in one directory without colliding.
+        manifest_copy = args.output.resolve().with_name(args.output.name + ".manifest.sha256")
+        shutil.copyfile(staging / MANIFEST_NAME, manifest_copy)
+
         print(f"staged {len(paths)} files")
         print(f"manifest sha256  {sha256(staging / MANIFEST_NAME)}")
         print(f"archive sha256   {digest}")
@@ -206,6 +217,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"executable       {len(executables)} member(s)")
         print(f"wrote            {args.output.resolve()}")
         print(f"wrote            {sidecar}")
+        print(f"wrote            {manifest_copy}")
         missing = [name for name in RECORD_FILES if not (staging / name).is_file()]
         if missing:
             print(f"note: archive has no {' or '.join(missing)}", file=sys.stderr)

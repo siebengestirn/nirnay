@@ -72,7 +72,7 @@ jobs:
           python scripts/record_provenance.py --output provenance.json \
             --subject "nirnay-quant-${GITHUB_REF_NAME}.zip" \
             --subject "nirnay-quant-${GITHUB_REF_NAME}.zip.sha256" \
-            --subject SOURCE-MANIFEST.sha256 \
+            --subject "nirnay-quant-${GITHUB_REF_NAME}.zip.manifest.sha256" \
             --subject sbom.cdx.json \
             --subject artifacts/SHA256SUMS \
             --subject 'artifacts/*.whl' \
@@ -95,7 +95,7 @@ jobs:
           gh release upload "$GITHUB_REF_NAME" \
             "nirnay-quant-${GITHUB_REF_NAME}.zip" \
             "nirnay-quant-${GITHUB_REF_NAME}.zip.sha256" \
-            SOURCE-MANIFEST.sha256 \
+            "nirnay-quant-${GITHUB_REF_NAME}.zip.manifest.sha256" \
             sbom.cdx.json \
             provenance.json \
             artifacts/SHA256SUMS \
