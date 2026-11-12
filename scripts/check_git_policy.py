@@ -122,10 +122,12 @@ def check_inventory(policy: dict) -> list[str]:
     if remotes != sorted(rule["target_remote_names"]):
         errors.append(f"remotes are {remotes}, target is {sorted(rule['target_remote_names'])}")
 
+    # `%(refname:short)` collapses `refs/remotes/origin/HEAD` to `origin`, which
+    # looks like a fourth target; filter the symbolic ref by its full name.
     tracking = sorted(
-        line
-        for line in git("for-each-ref", "--format=%(refname:short)", "refs/remotes").splitlines()
-        if line and not line.endswith("/HEAD")
+        ref.removeprefix("refs/remotes/")
+        for ref in git("for-each-ref", "--format=%(refname)", "refs/remotes").splitlines()
+        if ref and not ref.endswith("/HEAD")
     )
     if tracking != sorted(rule["target_remote_tracking_branches"]):
         errors.append(
