@@ -3,7 +3,7 @@
 **Bundle:** `nirnay-quant-production-upgrade-2026-11-13-r0.zip`
 **Bundle SHA-256:** published as `nirnay-quant-production-upgrade-2026-11-13-r0.zip.sha256` beside the archive, written by `scripts/make_bundle.py` from the archive itself. A file cannot contain its own archive hash, so this document does not quote one.
 **Contents:** `nirnay-quant/`, `artifacts/`, `sbom.cdx.json`, `BUILD-RESULTS.md`, `SOURCE-MANIFEST.sha256`
-**Source manifest:** `SOURCE-MANIFEST.sha256`, 329 file hashes over `nirnay-quant/`, `artifacts/` and `sbom.cdx.json`; digest `9665538e8ee8cd345643b09b269702aeb2c0018af07723699d55ef5e47ef2fc0`
+**Source manifest:** `SOURCE-MANIFEST.sha256`, 329 file hashes over `nirnay-quant/`, `artifacts/` and `sbom.cdx.json`; digest `7aff27d0f4f2ffebe7a41753e9d472505887086f40dc41317148e937b2878726`
 **Date:** 2026-11-13
 **Environment:** macOS 27.0.1 arm64; AppleClang 21.0.0.21000334; Apple Swift 6.4; Homebrew GCC 16.2.0; CMake 4.4.3; pinned Rust 1.99.1; Python 3.14.8; pytest 9.2.0; PyArrow 26.0.1; clang-format 21.1.8; uv 0.11.27.
 
