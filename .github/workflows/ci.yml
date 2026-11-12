@@ -3,6 +3,9 @@ name: CI
 # publication rather than a workflow that merely runs alongside it.
 on:
   push:
+    # Pull requests run the suite too; restricting push to the default branch
+    # avoids running every job twice for a branch under review.
+    branches: [main]
   pull_request:
   workflow_call:
 permissions:
@@ -107,6 +110,10 @@ jobs:
       - name: Schema and contract validation
         run: python scripts/validate_contracts.py
   python-provider:
+    # Named explicitly: without this the check appears as `python-provider
+    # (apps/kite-ops, kite, kite-ops, constraints/…)`, which is unusable in a
+    # required-checks rule.
+    name: python-provider (${{ matrix.name }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -211,7 +218,9 @@ jobs:
       - name: Reject cache entries and prove clean installs
         run: python scripts/check_wheels.py --dist dist
   macos:
-    runs-on: macos-14
+    # `macos-14` no longer provisions a runner (the job is cancelled before any
+    # step starts); `macos-latest` does, and the first step asserts arm64.
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
