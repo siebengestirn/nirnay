@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nirnay.dev/schemas/research/dataset-manifest.v1.schema.json",
+  "title": "Nirnay point-in-time dataset manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "dataset_id",
+    "created_at_utc_ns",
+    "knowledge_policy",
+    "timezone",
+    "session_date_policy",
+    "row_count",
+    "providers",
+    "universe_id",
+    "universe_membership_filter_applied",
+    "survivorship_control_source_hashes",
+    "survivorship_completeness_independently_verified",
+    "source_event_hashes",
+    "source_frame_hashes",
+    "listing_source_hashes",
+    "corporate_action_source_hashes",
+    "point_in_time",
+    "raw_prices_mutated",
+    "adjustment_policy",
+    "warnings",
+    "data_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "dataset_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "created_at_utc_ns": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "knowledge_policy": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timezone": {
+      "const": "Asia/Kolkata"
+    },
+    "session_date_policy": {
+      "type": "string",
+      "minLength": 1
+    },
+    "row_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "providers": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "upstox",
+          "fyers",
+          "synthetic"
+        ]
+      }
+    },
+    "universe_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "universe_membership_filter_applied": {
+      "type": "boolean"
+    },
+    "survivorship_control_source_hashes": {
+      "$ref": "#/$defs/hashes"
+    },
+    "survivorship_completeness_independently_verified": {
+      "type": "boolean"
+    },
+    "source_event_hashes": {
+      "$ref": "#/$defs/hashes"
+    },
+    "source_frame_hashes": {
+      "$ref": "#/$defs/hashes"
+    },
+    "listing_source_hashes": {
+      "$ref": "#/$defs/hashes"
+    },
+    "corporate_action_source_hashes": {
+      "$ref": "#/$defs/hashes"
+    },
+    "point_in_time": {
+      "const": true
+    },
+    "raw_prices_mutated": {
+      "const": false
+    },
+    "adjustment_policy": {
+      "type": "string",
+      "minLength": 1
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "data_sha256": {
+      "$ref": "#/$defs/hash"
+    }
+  },
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "hashes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/hash"
+      },
+      "uniqueItems": true
+    }
+  }
+}

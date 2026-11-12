@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kj111422.github.io/schemas/execution/broker-capabilities.v1.json",
+  "title": "Broker Capability Contract v1",
+  "description": "Frozen contract (P0-07). What an adapter declares it can do. The OMS routes and the risk engine scales limits from these declarations; adapters never pretend identical APIs. All limits are per-bucket and timestamped facts.",
+  "type": "object",
+  "required": [
+    "broker",
+    "exchanges",
+    "segments",
+    "order_types",
+    "products",
+    "rate_limit_buckets",
+    "modifications_supported",
+    "market_data",
+    "verified_at_utc"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "broker": {
+      "type": "string",
+      "enum": [
+        "zerodha",
+        "groww",
+        "paper"
+      ],
+      "description": "broker (frozen v1 semantics)"
+    },
+    "exchanges": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "enum": [
+          "NSE",
+          "BSE"
+        ]
+      },
+      "description": "exchanges (frozen v1 semantics)"
+    },
+    "segments": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "enum": [
+          "cash",
+          "fno",
+          "currency",
+          "debt"
+        ]
+      },
+      "description": "segments (frozen v1 semantics)"
+    },
+    "order_types": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "enum": [
+          "market",
+          "limit",
+          "stop_loss_market",
+          "stop_loss_limit"
+        ]
+      },
+      "description": "order types (frozen v1 semantics)"
+    },
+    "products": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "enum": [
+          "intraday",
+          "delivery",
+          "cover_order",
+          "bracket_order",
+          "mtf"
+        ]
+      },
+      "description": "products (frozen v1 semantics)"
+    },
+    "validities": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "day",
+          "ioc",
+          "gtt"
+        ]
+      },
+      "description": "validities (frozen v1 semantics)"
+    },
+    "modifications_supported": {
+      "type": "boolean",
+      "description": "modifications supported (frozen v1 semantics)"
+    },
+    "rate_limit_buckets": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "bucket",
+          "limit",
+          "unit"
+        ],
+        "properties": {
+          "bucket": {
+            "type": "string",
+            "enum": [
+              "orders_per_second",
+              "orders_per_minute",
+              "live_data",
+              "non_trading"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "unit": {
+            "type": "string"
+          },
+          "verified": {
+            "type": "boolean"
+          }
+        }
+      },
+      "description": "rate limit buckets (frozen v1 semantics)"
+    },
+    "market_data": {
+      "type": "object",
+      "required": [
+        "live_available",
+        "historical_available"
+      ],
+      "properties": {
+        "live_available": {
+          "type": "boolean"
+        },
+        "historical_available": {
+          "type": "boolean"
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "description": "market data (frozen v1 semantics)"
+    },
+    "network_requirements": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "network requirements (frozen v1 semantics)"
+    },
+    "verified_at_utc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "verified at utc (frozen v1 semantics)"
+    }
+  }
+}

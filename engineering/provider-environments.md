@@ -1,0 +1,91 @@
+# Provider Python environments
+
+**Status:** enforced by CI on 2026-11-13.  
+**Scope:** `research/python`, `apps/kite-ops`, `apps/fyers-recorder`.
+
+The three Python distributions do not share one dependency environment. This is
+deliberate and is a release gate, not an installer inconvenience.
+
+## The conflict
+
+| Distribution | Requirement |
+|---|---|
+| `nirnay-kite-ops` | `requests>=2.32,<3` |
+| `nirnay-fyers-recorder` | `fyers-apiv3>=3.1.0`; the current SDK release (`3.2.1`) pins `requests==2.31.0` |
+
+`requests==2.31.0` and `requests>=2.32,<3` cannot both be satisfied. Installing
+both provider packages into one virtual environment makes `pip check` fail:
+
+```text
+nirnay-kite-ops 0.4.0 has requirement requests<3,>=2.32, but you have requests 2.31.0.
+```
+
+Do not relax either bound to hide this. Use isolated environments and test the
+combined deployment boundary explicitly.
+
+## Supported environments
+
+Run each command from the repository root.
+
+### Research
+
+```bash
+python3 -m venv .venv-research
+. .venv-research/bin/activate
+python -m pip install -e 'research/python[dev,research,security]'
+python -m pytest -q research/python/tests scripts
+python scripts/validate_contracts.py
+```
+
+`research` includes PyArrow. The Parquet round-trip is a required test, not an
+optional skip.
+
+### Kite operations (read-only)
+
+```bash
+python3 -m venv .venv-kite
+. .venv-kite/bin/activate
+python -m pip install -e 'apps/kite-ops[test]'
+python -m pip check
+python -m pytest -q apps/kite-ops/tests
+```
+
+### FYERS recorder
+
+```bash
+python3 -m venv .venv-fyers
+. .venv-fyers/bin/activate
+python -m pip install -e 'apps/fyers-recorder[test]'
+python -m pip check
+python -m pytest -q apps/fyers-recorder/tests
+```
+
+The FYERS SDK is imported only when a live socket is started; the unit tests
+use a fake socket.
+
+## Combined boundary
+
+The combined install is intentionally unsupported until the FYERS SDK removes
+its exact `requests==2.31.0` pin or a compatible release is tested.
+
+CI runs a canary (`provider-boundary`) that performs:
+
+```bash
+python -m pip install --dry-run -e apps/fyers-recorder -e apps/kite-ops
+```
+
+The job passes only while the known conflict is present. If the install starts
+resolving, CI fails and requires this document, the isolation jobs and the
+dependency bounds to be revisited together. This prevents a silent change from
+turning a documented incompatibility into an untested deployment assumption.
+
+## CI mapping
+
+| CI job | Environment | Proof |
+|---|---|---|
+| `python-research` | research only | PyArrow import, Parquet round-trip, research tests, schema validation |
+| `python-provider` (`kite`) | Kite only | `pip check`, Kite tests |
+| `python-provider` (`fyers`) | FYERS only | `pip check`, FYERS tests |
+| `provider-boundary` | both, dry-run | Known conflict is still present |
+
+No provider credential, Keychain item or live session is used by these jobs.

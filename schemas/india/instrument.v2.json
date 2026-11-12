@@ -1,0 +1,518 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kj111422.github.io/schemas/india/instrument.v2.json",
+  "title": "Canonical Indian Instrument v2",
+  "description": "Versioned wire contract (P1-02). v2 covers NSE/BSE cash equities and ETFs only. InstrumentId is the canonical platform identity and is never derived from a symbol, token, ISIN, or broker key. Each listing owns its own settlement regime, Z-category designation and exchange terms with validity intervals. Trading terms carry the assigned tick (NSE monthly assignment record) as ingested data, never a guessed constant or a live band lookup. Futures, options, currency pairs, bonds, and indices use separate versioned contracts. v1 is frozen; do not edit it to match.",
+  "type": "object",
+  "required": [
+    "instrument_id",
+    "instrument_type",
+    "isin",
+    "name",
+    "listings",
+    "corporate_actions"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "instrument_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$",
+      "description": "Canonical platform identity for the instrument. Stable, lowercase, independent of symbols, ISIN, tokens, and broker keys."
+    },
+    "instrument_type": {
+      "type": "string",
+      "enum": [
+        "equity",
+        "etf"
+      ],
+      "description": "Supported type for this contract version. Other asset families require their own versioned contracts."
+    },
+    "isin": {
+      "type": "string",
+      "pattern": "^[A-Z]{2}[A-Z0-9]{9}[0-9]$",
+      "minLength": 12,
+      "maxLength": 12,
+      "description": "External instrument identifier where issued. Required for this contract; format here, ISO 6166 check digit enforced by the Rust ingress boundary."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Instrument name."
+    },
+    "listings": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/listing"
+      },
+      "description": "Venue admissions for this instrument. Symbols are scoped here, never identity."
+    },
+    "corporate_actions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/corporate_action"
+      },
+      "description": "Embedded action history. This array is not a point-in-time event ledger; source provenance and knowledge time belong to the future corporate-action event contract."
+    }
+  },
+  "$defs": {
+    "listing": {
+      "type": "object",
+      "required": [
+        "venue",
+        "segment",
+        "venue_symbol",
+        "effective_from",
+        "status",
+        "settlement_regime",
+        "z_category",
+        "terms"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "venue": {
+          "type": "string",
+          "enum": [
+            "NSE",
+            "BSE"
+          ],
+          "description": "Venue (exchange). Broker identities are never venues."
+        },
+        "segment": {
+          "type": "string",
+          "enum": [
+            "cash"
+          ],
+          "description": "Market segment. This contract version covers cash equities only."
+        },
+        "venue_symbol": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Trading symbol scoped to this venue and segment; not identity."
+        },
+        "token": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Venue-assigned token for this listing (exchange token, never a broker instrument key)."
+        },
+        "effective_from": {
+          "type": "string",
+          "format": "date",
+          "description": "First date this listing is valid, inclusive."
+        },
+        "effective_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Last date this listing is valid, inclusive. Null means open-ended."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active",
+            "suspended",
+            "delisted"
+          ],
+          "description": "Listing status."
+        },
+        "settlement_regime": {
+          "type": "string",
+          "enum": [
+            "standard",
+            "trade_for_trade"
+          ],
+          "description": "Settlement regime while tradable (NSE EQ standard; NSE BE trade-for-trade). Never a trading status."
+        },
+        "z_category": {
+          "type": "boolean",
+          "description": "Whether the exchange designates the security as Z-category (NSE BZ series): trade-for-trade with added restrictions. Distinct from trading status."
+        },
+        "settlement_group": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Venue settlement group (BSE Group Name) in force for this listing; part of the canonical listing state. A group change closes the old state and opens a new one."
+        },
+        "terms": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/listing_terms"
+          },
+          "description": "Exchange trading terms valid for this listing. Terms are resolved at the decision date."
+        }
+      }
+    },
+    "listing_terms": {
+      "type": "object",
+      "required": [
+        "effective_from",
+        "tick_assignment",
+        "market_lot",
+        "quantity_increment"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "effective_from": {
+          "type": "string",
+          "format": "date",
+          "description": "First date these terms apply, inclusive."
+        },
+        "tick_assignment": {
+          "$ref": "#/$defs/tick_assignment"
+        },
+        "effective_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Last date these terms apply, inclusive. Null means open-ended."
+        },
+        "market_lot": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807,
+          "description": "Market lot in units."
+        },
+        "quantity_increment": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807,
+          "description": "Quantity step in units."
+        }
+      }
+    },
+    "corporate_action": {
+      "type": "object",
+      "required": [
+        "action",
+        "effective_date",
+        "numerator",
+        "denominator"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "bonus",
+            "split",
+            "consolidation",
+            "dividend",
+            "rights",
+            "symbol_change",
+            "delisting"
+          ],
+          "description": "Corporate-action kind."
+        },
+        "effective_date": {
+          "type": "string",
+          "format": "date",
+          "description": "Effective date in exchange calendar time."
+        },
+        "numerator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807,
+          "description": "Adjustment numerator; both ratio terms are always required."
+        },
+        "denominator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807,
+          "description": "Adjustment denominator; both ratio terms are always required."
+        },
+        "amount_paise": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9223372036854775807,
+          "description": "Per-share amount in paise where the action carries one (dividend/rights)."
+        },
+        "note": {
+          "type": "string",
+          "description": "Free-form annotation from the source record."
+        }
+      }
+    },
+    "tick_schedule": {
+      "type": "object",
+      "required": [
+        "bands"
+      ],
+      "additionalProperties": false,
+      "description": "Price-linked exchange tick schedule valid for these terms.",
+      "properties": {
+        "bands": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Ordered contiguous tick bands covering [0, +inf): lower bound inclusive, upper bound inclusive or null for the open-ended last band.",
+          "items": {
+            "type": "object",
+            "required": [
+              "lower_paise",
+              "tick_paise"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "lower_paise": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Inclusive lower price bound, in paise."
+              },
+              "upper_paise": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "Inclusive upper price bound, in paise. Null only on the final, open-ended band."
+              },
+              "tick_paise": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9223372036854775807,
+                "description": "Tick size for prices in this band, in paise."
+              }
+            }
+          }
+        }
+      }
+    },
+    "tick_assignment": {
+      "type": "object",
+      "required": [
+        "tick_paise",
+        "schedule_revision"
+      ],
+      "additionalProperties": false,
+      "description": "Assigned tick for this term interval, with the price-source and schedule lineage that makes it reproducible. NSE assigns tick sizes monthly per instrument from the previous month's last available close; the assignment is a record, never a live band lookup. A monthly assignment is detected by any monthly-lineage field being non-null, exactly as TickAssignment::validate() does.",
+      "properties": {
+        "tick_paise": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807,
+          "description": "Assigned tick size, in paise."
+        },
+        "reference_close_paise": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9223372036854775807,
+          "description": "Reference closing price, in paise, that fixed the assignment. Null for non-monthly assignments."
+        },
+        "effective_month": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "First day of the month this assignment governs. Null for non-monthly assignments."
+        },
+        "schedule_revision": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "Source revision the tick was assigned under (e.g. exchange circular or master format). Never blank."
+        },
+        "reference_close_date": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Trading date of the reference close. For NSE monthly assignments it must fall in the month immediately preceding effective_month."
+        },
+        "reference_source": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Dataset identity of the reference close (e.g. nse-eod-close). Required for monthly assignments."
+        },
+        "reference_sha256_hex": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "SHA-256 of the exact reference-close source bytes. Required for monthly assignments."
+        },
+        "schedule_effective_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Date the exchange tick-schedule revision took effect."
+        },
+        "schedule_sha256_hex": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-fA-F]{64}$",
+          "description": "SHA-256 of the exact tick-schedule source bytes. Required for monthly assignments."
+        },
+        "calendar_revision": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Exchange-calendar source revision ({source_id}:{source_format_version}) that fixed the reference session. Required for monthly assignments."
+        },
+        "calendar_sha256_hex": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "SHA-256 of the exact holiday-calendar source bytes. Required for monthly assignments."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "anyOf": [
+              {
+                "required": [
+                  "effective_month"
+                ],
+                "properties": {
+                  "effective_month": {
+                    "type": "string"
+                  }
+                }
+              },
+              {
+                "required": [
+                  "reference_close_paise"
+                ],
+                "properties": {
+                  "reference_close_paise": {
+                    "type": "integer"
+                  }
+                }
+              },
+              {
+                "required": [
+                  "reference_close_date"
+                ],
+                "properties": {
+                  "reference_close_date": {
+                    "type": "string"
+                  }
+                }
+              },
+              {
+                "required": [
+                  "calendar_revision"
+                ],
+                "properties": {
+                  "calendar_revision": {
+                    "type": "string"
+                  }
+                }
+              },
+              {
+                "required": [
+                  "calendar_sha256_hex"
+                ],
+                "properties": {
+                  "calendar_sha256_hex": {
+                    "type": "string"
+                  }
+                }
+              }
+            ]
+          },
+          "then": {
+            "required": [
+              "effective_month",
+              "reference_close_paise",
+              "reference_close_date",
+              "reference_source",
+              "reference_sha256_hex",
+              "schedule_effective_from",
+              "schedule_sha256_hex",
+              "calendar_revision",
+              "calendar_sha256_hex"
+            ],
+            "properties": {
+              "effective_month": {
+                "type": "string",
+                "format": "date",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-01$"
+              },
+              "reference_close_paise": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "reference_close_date": {
+                "type": "string",
+                "format": "date"
+              },
+              "reference_source": {
+                "type": "string",
+                "pattern": "\\S"
+              },
+              "reference_sha256_hex": {
+                "type": "string",
+                "pattern": "^[0-9a-fA-F]{64}$"
+              },
+              "schedule_effective_from": {
+                "type": "string",
+                "format": "date"
+              },
+              "schedule_sha256_hex": {
+                "type": "string",
+                "pattern": "^[0-9a-fA-F]{64}$"
+              },
+              "calendar_revision": {
+                "type": "string",
+                "pattern": "\\S"
+              },
+              "calendar_sha256_hex": {
+                "type": "string",
+                "pattern": "^[0-9a-fA-F]{64}$"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "effective_month": {
+                "type": "null"
+              },
+              "reference_close_paise": {
+                "type": "null"
+              },
+              "reference_close_date": {
+                "type": "null"
+              },
+              "reference_source": {
+                "type": "null"
+              },
+              "reference_sha256_hex": {
+                "type": "null"
+              },
+              "calendar_revision": {
+                "type": "null"
+              },
+              "calendar_sha256_hex": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

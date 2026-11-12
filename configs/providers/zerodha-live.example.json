@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "expected_user_id": "",
+  "allowed_instruments": [],
+  "live_order_enabled": false,
+  "static_ip_verified_for_ist_date": "",
+  "daily_auth_verified_for_ist_date": "",
+  "max_order_notional_inr": "1000",
+  "max_quantity": 100,
+  "market": "NSE_CASH",
+  "exchange": "NSE",
+  "product": "CNC",
+  "order_type": "LIMIT",
+  "validity": "DAY",
+  "variety": "regular",
+  "market_session_verified_for_ist_date": ""
+}

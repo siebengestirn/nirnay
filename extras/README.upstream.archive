@@ -1,0 +1,245 @@
+# Engineering Challenge
+
+**Product:** Local-first, modular quantitative trading and market infrastructure. It connects market and reference data, market intelligence, research, simulation, portfolio construction, independent risk, OMS/EMS, broker and venue adapters, accounting and decision reconstruction through stable contracts.
+
+**Customer:** Proprietary trading firms, quantitative research teams, systematic trading teams and independent infrastructure developers.
+
+**Problem:** Trading organisations cannot reliably reconstruct what the system knew, why it decided, and what happened next across data, research, risk and execution. The instrument universe may be wrong for the trade date; the dataset may contain gaps, duplicates or unavailable information; the test may omit costs, fills or settlement; the order may bypass an independent control; and the decision cannot be explained afterwards.
+
+**Promise:** A research-to-execution platform that can prove where every input came from, reproduce every experiment, and deny every trade that violates its controls.
+
+**North-star metric:** Percentage of research and trading decisions that can be reconstructed and independently verified from retained data, code, configuration and event evidence.
+
+**Current status:** Engineering Challenge is a Rust-based quantitative trading infrastructure prototype. It combines multi-venue market-data collection with deterministic local paper trading, risk checks, effective-dated cost calculations and journalled decision evidence. NSE cash and BSE equity reference-master ingestion is implemented. Historical market data, the point-in-time research loop, the broker-neutral OMS, broker adapters, live execution and venue-operator infrastructure remain proposed or restricted.
+
+The repository is not a workspace SaaS, an automatic alpha generator, a retail trading bot, a live execution system or a certified venue. `engineering/capabilities.json` is the authority for what is implemented, partial, proposed, restricted and verified. Product, customer and pricing hypotheses live in `company/strategy.json`.
+
+## Scope: universal architecture, staged delivery
+
+The architecture is market- and venue-universal. NSE cash equities are the **first proof slice**, not the product boundary. Every additional market family, venue structure and broker adapter starts `proposed`; it is certified only when its own access, data-rights, contract, calendar, replay, valuation/risk, cost, settlement and operational evidence exists.
+
+A feed subscription, API availability, owner-reported account readiness or a successful connection is not market-family support, account entitlement or data rights.
+
+### Target market families
+
+| Family | Coverage | Current state |
+|---|---|---|
+| Indian cash equities | NSE/BSE cash, ETFs, indices, listings, corporate actions, calendars, settlement | Reference ingestion implemented, not verified; market data and research proposed |
+| Indian equity derivatives | Index/stock futures and options, expiry, exercise, assignment, multi-leg, margin | Proposed |
+| Indian commodities (MCX) | Bullion, base metals, energy, agriculture; grade, location, delivery, expiry, physical/spot reference, curves, settlement | Proposed; feed agreement and data rights unverified |
+| Indian FX | Exchange-traded currency derivatives and eligible OTC spot/forwards/NDFs/swaps | Proposed |
+| Indian rates and fixed income | G-secs, T-bills, corporate bonds, repo, bond/rate derivatives, curves | Proposed |
+| Credit | Credit instruments/derivatives, spreads, default and collateral | Proposed |
+| US and global equities | US equities/ETFs as the first owner-stated international target for 2027 | 2027 target; access, eligibility, tax, custody, settlement and data rights unverified |
+| Global listed derivatives | Futures, options, options on futures, volatility products | Proposed |
+| Global commodities and energy | Exchange-traded and relevant OTC energy, metals, agriculture, power, environmental | Proposed |
+| Global FX and rates | Spot, forwards, NDFs, swaps, options, funding, basis, curves | Proposed |
+| Global fixed income and credit | Sovereign/corporate debt, money markets, repo, credit and rate products | Proposed |
+| Digital assets | Spot, perpetuals, futures, options, funding, liquidation, custody, settlement, AMMs | Proposed |
+| Prediction and event markets | Event contracts, outcome tokens, resolution, disputes/voids, payout | Collector adapters partial; settlement and research proposed |
+| OTC and bilateral | Dealer quotes, RFQ/RFS, negotiation, confirmations, amendments, settlement | Proposed |
+
+### Target venue structures
+
+A universal system must not force every market into a central limit order book. The target supports central limit order books, continuous and periodic auctions, RFQ/RFS, dealer/principal markets, bilateral OTC, dark pools and crossing, internalization, AMM/DEX, hybrid venues and custom venue rulebooks. Each structure has its own priority, disclosure, participant, failure and post-trade semantics.
+
+Custom dark pools and exchanges are explicitly in target scope as a **future engineering programme**. Operating one is separately gated by legal, regulatory, participant, matching/fairness, clearing, settlement, reporting, surveillance and operational approval. A simulator or matching-engine prototype is not authority to operate a venue.
+
+### Trading-firm infrastructure versus market-operator infrastructure
+
+The platform has two related but distinct target products:
+
+| Programme | Responsibility |
+|---|---|
+| Trading-firm infrastructure | Data, market intelligence, research, simulation, portfolio, independent risk, OMS/EMS, broker connectivity, accounting and reconciliation |
+| Market-operator infrastructure | Participant access, order gateway, private order state, matching/auctions/crossing, market-data publication, venue risk, trade reporting, clearing/settlement integration, surveillance and audit |
+
+They share universal contracts and libraries. They do **not** share ambiguous state ownership, release authority or certification. A broker-neutral OMS is not a matching engine; a consolidated market-data book is not a venue's private matching book. The venue operator integrates with `clearing-settlement`; it does not own clearing, settlement state or finality. See `DEC-012` and `DEC-013` in `engineering/decisions.json`.
+
+## What works today
+
+| Area | State |
+|---|---|
+| Multi-venue market-data collection and raw-frame journal | Implemented |
+| India instrument domain and point-in-time catalogue | Implemented |
+| Trading event, order, fill and reconciliation contracts | Implemented |
+| Account journal with recovery and deterministic replay | Implemented |
+| Pre-trade risk evaluator | Implemented; not an independent risk authority |
+| Effective-dated transaction cost model | Implemented |
+| Deterministic local paper engine and decision capsules | Implemented with synthetic data |
+| Paper CLI: `demo`, `verify`, `inspect`, `explain` | Implemented |
+| NSE CM cash and BSE equity reference-master ingestion (`INDIA-REF-INGEST`) | Implemented, not yet verified (merged `763826c`) |
+| Upstox read-only smoke harness and feed decoder | Partial; raw capture and diagnostics, not normalized trading events |
+| Polymarket and Kalshi collection adapters | Implemented for collection; not a platform boundary or settlement model |
+
+## Not yet implemented
+
+| Area | State |
+|---|---|
+| Durable reference-store persistence (`P1-04`) | Contract frozen in `engineering/reference-store-contract.json`; implementation not started |
+| NSE F&O reference-master ingestion (`INDIA-FNO-INGEST`) | Proposed |
+| NSE/BSE historical market-data pipeline | Proposed |
+| Market-state and price-discovery contract | Proposed |
+| Point-in-time datasets and Strategy IR | Proposed |
+| Alpha Factory and event-driven backtester | Proposed |
+| Broker-neutral OMS and independent risk authority | Proposed |
+| Zerodha, Groww and FYERS adapters | Proposed; order submission disabled |
+| Live execution | Restricted |
+| MCX, FX, rates, fixed income, global, digital-asset and OTC families | Proposed |
+| Venue-operator, dark-pool, clearing/settlement and surveillance infrastructure | Proposed |
+
+## Start with the task, not the repository
+
+Compile the context needed for a change:
+
+```bash
+python3 scripts/ctx.py list
+python3 scripts/ctx.py task market-data
+python3 scripts/ctx.py task reference-model
+python3 scripts/ctx.py task cross-asset-contracts
+python3 scripts/ctx.py task venue-operator
+python3 scripts/ctx.py requirement M3
+python3 scripts/ctx.py diff --base origin/main
+python3 scripts/ctx.py verify
+python3 scripts/ctx.py hygiene
+```
+
+The context compiler returns the task's components, contracts, code/test paths, source-symbol line hints, decisions and gates. The default packet is capped at 1,800 estimated tokens. Exact test references and limitations are retrieved one requirement at a time with `ctx.py requirement M3`; they are not bulk-loaded into every task. `ctx.py diff` maps changed files but does not recursively generate every component packet. Do not recursively read the repository. Read emitted paths and line ranges, then inspect adjacent code only when required.
+
+## Source of truth
+
+| Concern | Authority |
+|---|---|
+| Implementation | `src/`, `crates/`, `cpp/`, `q/` |
+| Wire contracts | `schemas/` (challenge oracle immutable; internal owned) |
+| Correctness | `tests/`, `fixtures/` |
+| Architecture and task routing | `engineering/index.json` |
+| Capability states | `engineering/capabilities.json` |
+| Accepted and proposed decisions | `engineering/decisions.json` |
+| Long-horizon target and universal scope | `engineering/target-platform.json` |
+| Target tests, certification and benchmarks | `engineering/verification-matrix.json` |
+| Broker, exchange and market-access facts | `engineering/compliance/broker-entitlements.json` |
+| Indian regulatory and cross-border open controls | `engineering/compliance/india-applicability.json` |
+| Claims and falsifiers | `claims/ledger.json` |
+| Executed gate evidence | `target/evidence/` (generated; do not commit) |
+| Raw observations | `measurements/` |
+| Customer, problem, pricing hypothesis, north-star metric | `company/strategy.json` (business record; not an engineering authority) |
+| Historical collector acceptance only | `engineering/legacy-collector-requirements.json` |
+
+A machine record is not proof. `implemented` does not mean `verified`; a test declaration does not mean the test passed; a live observation does not establish a soak or production capability; an owner-reported account readiness does not establish repository implementation or data rights. The evidence ledger and CI output define the supported claim.
+
+## Architecture
+
+Rust owns venue connectivity, normalization, continuity, collection, journaling, replay, orchestration and the existing trading/account/risk/paper domain implementations. C++ provides measured numeric, market-state and SBE interoperability components. Python is the target research environment and currently provides repository tooling. kdb+/q has an optional analytics entrypoint; it is not a canonical event store or a mandatory dependency.
+
+The target is three layers:
+
+1. **Universal core** — identity, contract-specification envelope, currency, calendar/session, settlement convention, event envelope, sequencing, replay, provenance, permissions and audit.
+2. **Market-family models** — the financial semantics that must not be flattened: commodity grade/location/delivery, option strike/exercise/assignment, FX base/quote/value date, bond coupon/day-count/accrued, digital-asset funding/liquidation, prediction-market resolution/payout, OTC counterparty/confirmation.
+3. **Venue/protocol models** — exchange, broker, dealer, RFQ network, dark pool, internalizer, AMM and custom venue behavior.
+
+Market intelligence sits between validated market state and research/execution. It must keep these prices distinct: observed price, consolidated reference price, fair value, mark price, settlement price and executable price. A weighted midpoint is not an executable price; a stale or discontinuous venue must not silently contribute.
+
+Polymarket and Kalshi are initial adapters, not platform boundaries. The accepted reference-data decision separates internal instrument identity from venue, listing, provider, feed and runtime-source identifiers. See `engineering/decisions.json` and the code paths returned by `ctx task reference-model`.
+
+## Local paper trading
+
+The `engineering-challenge` binary includes a deterministic local paper-trading workflow over a synthetic NSE-cash-shaped demonstration; there is no second application.
+
+```bash
+cargo run --bin engineering-challenge -- paper demo \
+  --journal var/paper-demo-journal --stream nse-cm-paper-demo-20261028
+cargo run --bin engineering-challenge -- paper verify --journal var/paper-demo-journal
+cargo run --bin engineering-challenge -- paper inspect --journal var/paper-demo-journal
+cargo run --bin engineering-challenge -- paper explain --intent-id 1001 \
+  --journal var/paper-demo-journal
+```
+
+The paper matcher consumes displayed top-of-book quantity with a bounded slippage offset. It is a deterministic fill model for lifecycle and accounting evidence, not a realistic historical execution simulator: it does not model queue position, hidden liquidity or market impact. Decisions, risk, fills and reconciliations are written to the account journal, which is separate from the raw-frame market-data journal.
+
+## Market-data smoke harness (vendor-neutral pattern)
+
+Each venue connector follows the same read-only smoke pattern: Historical Candle, Full Market Quote, and Feed authorization plus a bounded WebSocket capture. The harness stores raw REST JSON, raw protobuf frames (base64), SHA-256 hashes and a manifest under `var/<provider>/`, plus a diagnostic JSONL recording per-frame decode outcomes. Tokens are read only from an environment variable; they are never stored in the repository or archive. Raw protobuf frames remain authoritative; decoded diagnostics do not normalize into trading-core events.
+
+The current example implementation is `upstox-smoke`:
+
+- Item/service name: `engineering-challenge-upstox-analytics`
+- Account: your macOS login
+- Password: the Upstox Analytics Token
+
+For other providers, use their own service name, account and environment variable in the same way — the pattern is provider-neutral, the credentials are not shared. Do not paste the token into a terminal command. Then run the smoke test during market hours (example for Upstox):
+
+```bash
+UPSTOX_ANALYTICS_TOKEN="$(security find-generic-password -a "$USER" -s engineering-challenge-upstox-analytics -w)" \
+  cargo run --locked --bin upstox-smoke -- \
+  --instrument-key 'NSE_EQ|INE848E01016' \
+  --from-date 2026-11-06 --to-date 2026-11-06 \
+  --websocket-frames 5 --websocket-timeout-secs 20
+```
+
+The Analytics Token is read-only. This harness does not place orders. A successful connection is not evidence of historical order-book data, queue position, fill probability, market-family support or redistribution rights. Review the provider and exchange data terms before any hosted or redistributed use.
+
+## Development gates
+
+```bash
+cargo xtask claims check
+cargo xtask gate --suite rust
+cargo xtask gate --suite conformance --platform macos
+cargo xtask gate --suite cpp --platform macos
+python3 scripts/ctx.py verify
+```
+
+`cpp` and `conformance` execute once per platform and require `--platform ubuntu|macos`; the aggregate requires both platforms plus the unqualified `sanitizers` suite.
+
+Run only the task-relevant gates during iteration; run the required merge gates before approval. Live tests require explicit access and remain separate from offline verification.
+
+## AI-agent operating rules
+
+AI multiplies engineering output; it does not replace engineering controls. Every AI-assisted change must follow this loop:
+
+1. Compile context with `scripts/ctx.py`; do not recursively read the repository.
+2. Identify the owning capability and component before editing.
+3. Read the actual implementation and the relevant contract, not just the README.
+4. Make one coherent change; do not mix unrelated scope.
+5. Add tests, negative cases and failure behaviour with the implementation.
+6. Run the task-relevant gates and report exact evidence.
+7. Update capability state only when executable evidence supports it.
+8. Preserve rejected experiments, failed verification and uncertainty.
+
+Future-relevance rules for a growing codebase:
+
+- The architecture stays universal; delivery stays staged. Never delete a market family or venue structure from target scope merely because it is not implemented.
+- Every new market family, venue structure or broker adapter starts `proposed`. A shared core, feed subscription, API document or owner report is not implementation or verification.
+- Market-specific semantics belong in market-family modules, not in the universal core and not in venue adapters.
+- Venue-operator state and trading-firm state must not be merged. Do not let a strategy, OMS or risk authority become a matching engine or venue admission authority.
+- Keep `engineering/index.json`, `engineering/capabilities.json`, `engineering/decisions.json`, `engineering/target-platform.json` and `engineering/verification-matrix.json` mutually consistent in the same change.
+- Keep `README.md` as the only committed Markdown authority. Do not create duplicate narrative documents.
+- Do not create empty crates, placeholder adapters or future directories. Add a module only with a contract, tests and evidence.
+- Do not infer data rights from API availability. Record entitlement gaps explicitly.
+- Do not promote a capability because code exists, a test is declared, a demo runs or a connection succeeds.
+- AI agents cannot approve strategies, modify risk limits, change evidence status or authorize live execution or venue operation.
+
+## Git hygiene (machine-enforced)
+
+`engineering/git-policy.json` is the policy source. The context compiler audits each dimension separately:
+
+```bash
+python3 scripts/ctx.py hygiene          # working tree, branches, remotes, worktrees, stashes, tracked artifacts
+python3 scripts/ctx.py hygiene --json    # machine-readable inventory
+python3 scripts/ctx.py hygiene --strict # require the post-merge main-only baseline
+python3 scripts/ctx.py hygiene --prune  # git fetch --prune origin; remote-tracking refs only
+```
+
+Before starting, require `git status --porcelain` to be empty; then run `git switch main && git pull --ff-only`. Use one coherent change per branch, named `feat/<topic>`, `fix/<topic>`, `docs/<topic>`, or `test/<topic>`. Use commit subjects such as `feat(events): add normalized trade events`, `test(replay): cover sequence gaps`, and `fix(adapter): reject invalid tick sizes`; avoid generic subjects such as `fix`, `update`, `cleanup`, `final`, and `final fix`. Keep subjects within 72 characters. Merge through PRs with squash merge. Published commits are evidence: never rewrite, rebase, amend, or reset shared history. Keep build output, caches, generated reports and editor state out of Git; `cargo xtask gate --suite rust` runs the tracked-file hygiene gate. CI and native build suites must use the `cargo xtask` gate registry rather than duplicate command lists.
+
+After a PR merges, inspect `git branch --merged main`; remove ancestry-proven local branches with `git branch -d <branch>`. Squash merges are not ancestry merges. For those, require all three checks before deletion: GitHub reports the PR as `MERGED`; the local branch tip equals the PR `headRefOid`; and `git diff --quiet origin/main <branch>` confirms the branch tree has no content absent from `main`. If any check differs, retain the branch for review. After all checks pass, delete the server-side topic ref explicitly with `git push origin --delete <branch>` (skip only when GitHub has already deleted that ref), then delete the local ref with `git branch -D <branch>`. `-D` is allowed only after the three squash-merge checks; it is never a cleanup shortcut. `ctx hygiene --prune` only removes stale remote-tracking refs; it never deletes local or server-side branches.
+
+Run `python3 scripts/ctx.py hygiene` before and after any cleanup; never infer repository cleanliness from `git status` or a GUI graph alone. The post-merge target is one local `main`, one configured `origin` with only `origin/main` as a remote-tracking branch, one worktree, no stashes, a clean `git status --porcelain`, and no tracked generated files. Run `python3 scripts/ctx.py hygiene --strict` to assert this state. The audit reports candidates; it never cleans them automatically.
+
+## Engineering contract
+
+Change code and its executable evidence in the same change. Update machine records only when component ownership, requirements, decisions, scope or architecture actually change. Do not write status prose that duplicates CI, source, tests, configuration or measurements. Generated context is disposable; source, schemas, tests and evidence are not.
+
+## License
+
+MIT. See `LICENSE`. Copyright (c) 2026 Kartik Jangid.

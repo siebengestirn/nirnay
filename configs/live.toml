@@ -1,0 +1,24 @@
+# Production live mode remains disabled. The separate Kite operator tool is a
+# constrained manual path, not a production OMS or independent risk authority.
+# This workspace mode requires compliance review, broker certification,
+# independent risk permits, reconciliation and human release controls.
+[mode]
+name = "live"
+live_enabled = false
+
+[broker]
+name = "none"
+account_ref = "UNCONFIGURED"
+static_ip_verified = false
+daily_auth_verified = false
+
+[execution]
+order_submission_enabled = false
+allowed_instruments = []
+max_order_notional_paise = 0
+max_position_notional_paise = 0
+
+[risk]
+kill_switch_required = true
+risk_permit_required = true
+reconciliation_required = true

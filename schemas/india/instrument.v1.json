@@ -1,0 +1,218 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kj111422.github.io/schemas/india/instrument.v1.json",
+  "title": "Canonical Indian Instrument v1",
+  "description": "Frozen contract (P0-07). One financial object per record; exchanges (NSE/BSE) are venues; Zerodha/Groww are brokers and never part of instrument identity. ISIN is the cross-venue identity key; venue symbols are identifiers scoped by venue and segment, not identity.",
+  "type": "object",
+  "required": [
+    "instrument_id",
+    "instrument_type",
+    "isin",
+    "name",
+    "listings"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "instrument_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$",
+      "description": "Platform-internal stable identity. Never derived from a venue symbol."
+    },
+    "instrument_type": {
+      "type": "string",
+      "enum": [
+        "equity",
+        "etf",
+        "index",
+        "future",
+        "option",
+        "currency_pair",
+        "bond"
+      ],
+      "description": "instrument type (frozen v1 semantics)"
+    },
+    "isin": {
+      "type": "string",
+      "pattern": "^[A-Z]{2}[A-Z0-9]{9}[0-9]$",
+      "description": "Cross-venue identity where issued; empty string only for indices."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "name (frozen v1 semantics)"
+    },
+    "underlying_instrument_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "For derivatives: the canonical instrument_id of the underlying."
+    },
+    "expiry_date": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date",
+      "description": "For derivatives: contract expiry in exchange calendar time."
+    },
+    "strike_price_paise": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "For options: exact strike in paise (1 INR = 100 paise)."
+    },
+    "option_kind": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "call",
+        "put",
+        null
+      ],
+      "description": "option kind (frozen v1 semantics)"
+    },
+    "lot_size": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Contract/market lot in units."
+    },
+    "tick_size_paise": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Minimum price increment in paise."
+    },
+    "listings": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/listing"
+      },
+      "description": "listings (frozen v1 semantics)"
+    },
+    "corporate_actions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/corporate_action"
+      },
+      "description": "Applied chronologically by effective date for adjusted history."
+    }
+  },
+  "$defs": {
+    "listing": {
+      "type": "object",
+      "required": [
+        "venue",
+        "segment",
+        "effective_from"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "venue": {
+          "type": "string",
+          "enum": [
+            "NSE",
+            "BSE"
+          ],
+          "description": "venue (frozen v1 semantics)"
+        },
+        "segment": {
+          "type": "string",
+          "enum": [
+            "cash",
+            "fno",
+            "currency",
+            "debt"
+          ],
+          "description": "segment (frozen v1 semantics)"
+        },
+        "venue_symbol": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Trading symbol scoped to this venue; not identity."
+        },
+        "token": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Venue-assigned numeric token (e.g. NSE instrument token)."
+        },
+        "effective_from": {
+          "type": "string",
+          "format": "date",
+          "description": "effective from (frozen v1 semantics)"
+        },
+        "effective_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "effective to (frozen v1 semantics)"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active",
+            "suspended",
+            "delisted"
+          ],
+          "description": "status (frozen v1 semantics)"
+        }
+      }
+    },
+    "corporate_action": {
+      "type": "object",
+      "required": [
+        "action",
+        "effective_date"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "bonus",
+            "split",
+            "consolidation",
+            "dividend",
+            "rights",
+            "symbol_change",
+            "delisting"
+          ],
+          "description": "action (frozen v1 semantics)"
+        },
+        "effective_date": {
+          "type": "string",
+          "format": "date",
+          "description": "effective date (frozen v1 semantics)"
+        },
+        "numerator": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "numerator (frozen v1 semantics)"
+        },
+        "denominator": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "denominator (frozen v1 semantics)"
+        },
+        "amount_paise": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Per-share amount in paise."
+        },
+        "note": {
+          "type": "string",
+          "description": "note (frozen v1 semantics)"
+        }
+      }
+    }
+  }
+}

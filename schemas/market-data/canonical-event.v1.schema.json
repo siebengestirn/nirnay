@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nirnay.dev/schemas/market-data/canonical-event.v1.schema.json",
+  "title": "Nirnay canonical market event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "event_id",
+    "provider",
+    "provider_instrument_id",
+    "instrument_id",
+    "venue",
+    "event_kind",
+    "received_utc_ns",
+    "received_monotonic_ns",
+    "local_sequence",
+    "source_timestamp_ns",
+    "source_timestamp_semantics",
+    "last_trade_time_ns",
+    "last_trade_time_semantics",
+    "last_price",
+    "last_quantity",
+    "cumulative_volume",
+    "aggressor_side",
+    "bids",
+    "asks",
+    "raw_sha256",
+    "quality_flags"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "provider": {
+      "enum": [
+        "upstox",
+        "fyers",
+        "synthetic"
+      ]
+    },
+    "provider_instrument_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "instrument_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "venue": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "event_kind": {
+      "enum": [
+        "quote",
+        "trade",
+        "depth",
+        "index",
+        "status",
+        "last_trade_observation"
+      ]
+    },
+    "received_utc_ns": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "received_monotonic_ns": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "local_sequence": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "source_timestamp_ns": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    },
+    "source_timestamp_semantics": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "last_trade_time_ns": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    },
+    "last_trade_time_semantics": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "last_price": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9]+(\\.[0-9]+)?$"
+    },
+    "last_quantity": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "cumulative_volume": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "aggressor_side": {
+      "enum": [
+        "buy",
+        "sell",
+        null
+      ]
+    },
+    "bids": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/level"
+      }
+    },
+    "asks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/level"
+      }
+    },
+    "raw_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "quality_flags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "source_frame_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "$defs": {
+    "level": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "price",
+        "quantity",
+        "order_count"
+      ],
+      "properties": {
+        "price": {
+          "type": "string",
+          "pattern": "^[0-9]+(\\.[0-9]+)?$"
+        },
+        "quantity": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "order_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

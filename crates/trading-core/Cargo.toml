@@ -1,0 +1,20 @@
+[package]
+name = "trading-core"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+description = "Trading contracts and exact financial primitives; currently India-aware."
+
+[dependencies]
+anyhow.workspace = true
+chrono.workspace = true
+india-domain.workspace = true
+market-types.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

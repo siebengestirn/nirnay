@@ -1,0 +1,33 @@
+# Rust and Python build artefacts
+target/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+dist/
+build/
+build-*/
+*.egg-info/
+
+# Local market data, account state, credentials and research outputs.
+/data/*
+!/data/README.md
+/var/
+/captures/
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*token*
+*secret*
+*.sqlite
+*.db
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db

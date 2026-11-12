@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "providers": {
+    "upstox": {
+      "owner_reported_access": true,
+      "account_entitlement_verified": false,
+      "historical_retention_rights_verified": false,
+      "redistribution_rights_verified": false,
+      "non_secret_reference_required": true
+    },
+    "fyers": {
+      "owner_reported_access": true,
+      "account_entitlement_verified": false,
+      "historical_retention_rights_verified": false,
+      "redistribution_rights_verified": false,
+      "non_secret_reference_required": true
+    },
+    "zerodha_kite": {
+      "owner_reported_order_api_access": true,
+      "account_identity_verified": false,
+      "registered_static_ip_verified": false,
+      "daily_authentication_verified": false,
+      "market_data_entitlement_inferred": false
+    }
+  },
+  "policy": "This file records verification state; it does not grant or infer market-data, retention, research, or redistribution rights."
+}

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nirnay.dev/schemas/research/dataset-publication.v1.schema.json",
+  "title": "Nirnay immutable dataset publication envelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "dataset",
+    "artifacts",
+    "publication"
+  ],
+  "properties": {
+    "dataset": {
+      "$ref": "dataset-manifest.v1.schema.json"
+    },
+    "artifacts": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "events.jsonl": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "events.parquet": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "publication": {
+      "const": "atomic_directory_rename"
+    }
+  }
+}

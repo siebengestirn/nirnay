@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kj111422.github.io/schemas/execution/risk-decision.v1.json",
+  "title": "Risk Authorization Decision v1",
+  "description": "Frozen contract (P0-07). Issued by the independent risk authority before submission. Bound to the execution-policy permit commit so a policy change never silently authorizes outstanding orders.",
+  "type": "object",
+  "required": [
+    "intent_id",
+    "decision",
+    "policy_version",
+    "decided_at_utc"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "intent_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$",
+      "description": "intent id (frozen v1 semantics)"
+    },
+    "decision": {
+      "type": "string",
+      "enum": [
+        "approved",
+        "denied",
+        "reserved"
+      ],
+      "description": "decision (frozen v1 semantics)"
+    },
+    "policy_version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "policy version (frozen v1 semantics)"
+    },
+    "permit_commit_sha": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "permit commit sha (frozen v1 semantics)"
+    },
+    "reserved_notional_paise": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "reserved notional paise (frozen v1 semantics)"
+    },
+    "reservation_expiry_utc": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "reservation expiry utc (frozen v1 semantics)"
+    },
+    "denial_reason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "denial reason (frozen v1 semantics)"
+    },
+    "decided_at_utc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "decided at utc (frozen v1 semantics)"
+    }
+  }
+}

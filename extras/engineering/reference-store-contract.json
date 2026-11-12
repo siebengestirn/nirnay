@@ -1,0 +1,612 @@
+{
+  "schema_version": 1,
+  "document_id": "reference-store-contract",
+  "document_type": "storage_contract",
+  "status": "frozen",
+  "last_reviewed": "2026-11-11",
+  "repository": "kj111422/engineering-challenge",
+  "freeze": {
+    "decision": "DEC-011",
+    "task": "reference-store-durability",
+    "release_gate": "P1-04",
+    "baseline_commit": "12f4b2769670ebe1f097eda7d856355e73188c22",
+    "rule": "This file is the single authoritative P1-04 storage contract. DEC-011 accepts it. Implementation must not begin until this contract and DEC-011 are merged, and must not diverge from it without a new reviewed decision.",
+    "implementation_state": "design-only: at the freeze commit there is no persistence code, no SQLite dependency, no schema migration and no CLI change for reference storage"
+  },
+  "authority": {
+    "storage_contract": "engineering/reference-store-contract.json",
+    "accepted_decision": "engineering/decisions.json#DEC-011",
+    "task_routing": "engineering/index.json#reference-store-durability",
+    "capability_state": "engineering/capabilities.json",
+    "implementation_evidence": "source files, tests and cargo xtask gate evidence",
+    "rules": [
+      "This document freezes design decisions. It does not mark any capability implemented or verified.",
+      "Capability states are unchanged by this freeze: INDIA-REF-INGEST is implemented, not verified; INDIA-FNO-INGEST remains proposed.",
+      "Where this contract and an older source comment disagree, this contract wins and the source comment must be corrected in the implementation change."
+    ]
+  },
+  "scope": {
+    "owns": [
+      "Durable immutable reference revisions that survive process restart with stable revision identity and parent relationships.",
+      "A versioned on-disk snapshot payload, its decoding and its validation before callers can observe it.",
+      "A semantic snapshot hash and a separate payload-integrity checksum with frozen meanings.",
+      "Safe concurrent publication of raw source bytes in the existing SHA-256 content-addressed archive, including a per-root cross-process lock and manifest tail recovery.",
+      "Backup and restore of the database together with the source archive, and verification of every source reference after restore."
+    ],
+    "excludes": [
+      "NSE F&O ingestion; INDIA-FNO-INGEST remains proposed.",
+      "Market-data capture, normalization and replay.",
+      "Point-in-time research datasets, Parquet storage and analytics datasets.",
+      "Strategy IR, alpha generation and backtesting.",
+      "OMS, broker adapters, execution routing and independent risk authority.",
+      "Redesign of the account journal or the raw market-data journal.",
+      "Postgres, object storage, distributed services, cloud infrastructure and multi-node replication.",
+      "Normalizing every instrument and listing into relational SQL tables in this milestone."
+    ]
+  },
+  "durability_promise": {
+    "claimed": [
+      "Process crash, process kill and application restart on a local filesystem that honors fsync and directory sync.",
+      "OS crash or power loss on local storage that honors SQLite synchronous=FULL semantics and the archive's fsync ordering."
+    ],
+    "not_claimed": [
+      "Disk, controller or firmware failure that loses acknowledged writes.",
+      "Malicious modification, accidental deletion or filesystem corruption.",
+      "Network filesystems, cloud-synced folders or any directory whose sync semantics differ from a local filesystem.",
+      "Disaster recovery until backup and restore are executed and verified, not merely documented."
+    ],
+    "recovery_rule": "Reopen, verify durable state and resolve in-flight publications by publication key. Never report success after an unresolved durability failure."
+  },
+  "deployment": {
+    "model": "local-first single-node Rust application",
+    "database_server_required": false,
+    "storage_engine": "embedded SQLite",
+    "dependency_rule": "The SQLite binding is added only in the implementation change. It must bundle SQLite, support online backup and require no external service.",
+    "data_directory_rule": "All durable reference state lives under one configurable application data directory outside the Git working tree. The directory must not be a network filesystem or a cloud-synced folder.",
+    "layout": {
+      "root": "reference-data/",
+      "entries": [
+        {
+          "path": "reference.sqlite3",
+          "role": "revision catalogue, immutable snapshot payloads and the singleton head"
+        },
+        {
+          "path": "source-archive/manifest.jsonl",
+          "role": "append-only commit record for retained raw source bytes"
+        },
+        {
+          "path": "source-archive/<sha256>.src",
+          "role": "write-once raw source bytes addressed by SHA-256"
+        },
+        {
+          "path": "source-archive/.lock",
+          "role": "per-root cross-process advisory lock; never a source object and never a manifest entry"
+        },
+        {
+          "path": "backups/",
+          "role": "verified database-plus-archive backups; never read by normal operation"
+        }
+      ]
+    }
+  },
+  "payload": {
+    "schema_version": 1,
+    "envelope": {
+      "schema_version": "integer, must equal 1",
+      "snapshot": "complete ReferenceSnapshot object"
+    },
+    "snapshot_fields": [
+      "valid_at",
+      "recorded_at",
+      "provenance",
+      "instruments",
+      "calendar",
+      "reconciliation",
+      "listing_states"
+    ],
+    "field_rules": [
+      "The field set is exact. Unknown fields are rejected; absent non-optional fields are rejected.",
+      "valid_at is the trading date the snapshot describes, encoded as YYYY-MM-DD.",
+      "recorded_at is the snapshot knowledge time, encoded as UTC RFC 3339.",
+      "provenance describes the raw source file that produced this universe.",
+      "instruments is the complete instrument universe in canonical order.",
+      "calendar is the carried trading calendar or null.",
+      "reconciliation is the reconciliation recorded while building this snapshot or null.",
+      "listing_states is the accumulated listing-state history in canonical order; each record keeps its own recorded_at and provenance."
+    ],
+    "encoding": {
+      "format": "UTF-8 JSON",
+      "compact": true,
+      "bom": "forbidden",
+      "field_order": "declared order of the versioned storage structs",
+      "dates": "YYYY-MM-DD",
+      "timestamps": "UTC RFC 3339 emitted by the single version-1 storage encoder; the encoder version is frozen with the payload schema and byte identity is authoritative",
+      "integers": "JSON numbers, never strings or floats",
+      "authoritative_bytes": "The exact encoded bytes are stored and hashed. Verification never re-serializes before comparing."
+    },
+    "decoding": [
+      "Decoding is explicit and versioned; do not reuse a wire schema version as the storage version.",
+      "Every payload is decoded, then validated by the domain rules in this contract, before any caller can observe it.",
+      "A payload that parses but fails validation is corrupt and is not returned.",
+      "The current Serialize-only types require deliberate Deserialize support in the implementation change; deserialization does not replace validation."
+    ]
+  },
+  "revision_store": {
+    "store_schema_version": 1,
+    "store_schema_version_location": "PRAGMA user_version",
+    "tables": {
+      "reference_revision": {
+        "columns": [
+          {
+            "name": "revision_id",
+            "type": "INTEGER",
+            "constraints": "primary key; >= 0; zero-based and contiguous with no reuse"
+          },
+          {
+            "name": "parent_revision_id",
+            "type": "INTEGER",
+            "constraints": "unique; foreign key to reference_revision(revision_id); null only for revision 0; otherwise exactly revision_id - 1"
+          },
+          {
+            "name": "payload_schema_version",
+            "type": "INTEGER",
+            "constraints": "not null; must equal the envelope schema_version and the supported payload version"
+          },
+          {
+            "name": "valid_at",
+            "type": "TEXT",
+            "constraints": "not null; canonical YYYY-MM-DD; equals the payload value"
+          },
+          {
+            "name": "recorded_at",
+            "type": "TEXT",
+            "constraints": "not null; canonical UTC RFC 3339; equals the payload value"
+          },
+          {
+            "name": "snapshot_hash",
+            "type": "TEXT",
+            "constraints": "not null; 64 lowercase hex digits; equals recomputation from the decoded payload"
+          },
+          {
+            "name": "payload_sha256",
+            "type": "TEXT",
+            "constraints": "not null; 64 lowercase hex digits; equals SHA-256 of the exact payload bytes"
+          },
+          {
+            "name": "publication_key",
+            "type": "TEXT",
+            "constraints": "not null; unique; 64 lowercase hex digits"
+          },
+          {
+            "name": "payload",
+            "type": "BLOB",
+            "constraints": "not null; exact encoded envelope bytes"
+          }
+        ],
+        "checks": [
+          "revision 0 has no parent; every later revision's parent is revision_id - 1",
+          "all hex fields are 64 lowercase hex digits",
+          "no other unique constraints or indexes are required until a measured query needs them"
+        ],
+        "immutability": [
+          "No update or delete operation is exposed for published revisions.",
+          "Database triggers abort UPDATE and DELETE on reference_revision.",
+          "A correction appends a new revision; it never rewrites an old payload or metadata row."
+        ]
+      },
+      "reference_head": {
+        "columns": [
+          {
+            "name": "singleton_id",
+            "type": "INTEGER",
+            "constraints": "primary key; exactly 1 when a head exists"
+          },
+          {
+            "name": "revision_id",
+            "type": "INTEGER",
+            "constraints": "not null; foreign key to reference_revision(revision_id); equals the highest committed revision"
+          }
+        ],
+        "rules": [
+          "The table contains at most one row.",
+          "Head deletion is rejected.",
+          "The head row is inserted and updated only in the same transaction that inserts a revision.",
+          "An empty store has no revision rows and no head row."
+        ]
+      }
+    },
+    "session_pragmas": [
+      "journal_mode = WAL, and the returned mode is verified to be wal",
+      "synchronous = FULL",
+      "foreign_keys = ON",
+      "busy_timeout = 5000 ms by default, always finite, positive and bounded",
+      "all writes use BEGIN IMMEDIATE, never a deferred write transaction"
+    ],
+    "revision_ids": {
+      "scheme": "zero-based contiguous u64, matching the existing publish() contract",
+      "allocation": "next id equals head + 1, or 0 when the store is empty; allocation happens inside the publication transaction",
+      "rule": "Published ids are never reused, renumbered or reallocated after a failed or uncertain publication."
+    }
+  },
+  "publication": {
+    "preconditions": [
+      "The snapshot validates under this contract.",
+      "Every SHA-256 referenced by the snapshot resolves to a manifest entry and hash-correct retained bytes: top-level provenance, every listing-state provenance, and every monthly tick assignment reference-close, schedule and calendar hash.",
+      "The expected parent revision is supplied by the caller; null means the empty store."
+    ],
+    "protocol": [
+      "Archive every referenced raw source first and wait for its durable object and manifest entry.",
+      "Verify each referenced source object against the archive manifest and its SHA-256.",
+      "BEGIN IMMEDIATE.",
+      "Read the current head revision.",
+      "Compare it with the expected parent revision.",
+      "If the publication key already names a committed revision, verify the stored payload and parent, then return the existing revision without inserting or updating the head.",
+      "Allocate the next revision id.",
+      "Insert the immutable revision with payload, metadata and publication key.",
+      "Insert or update the singleton head to the new revision id.",
+      "COMMIT."
+    ],
+    "atomicity": "The revision insert and head update succeed or fail together. A crash before commit leaves neither; a successful commit leaves both visible after reopen.",
+    "expected_parent": {
+      "rule": "If the current head differs from the expected parent and the publication key does not already name a committed revision, reject with a stale-parent error.",
+      "reason": "A snapshot reconciled against an older head must never silently overwrite newer knowledge.",
+      "empty_store": "Expected parent null is valid only when no head exists; expected parent non-null is invalid when the store is empty."
+    },
+    "publication_key": {
+      "algorithm": "SHA-256, lowercase hex",
+      "input": "SHA-256 over the UTF-8 bytes of the serde_json JSON array [marker, expected_parent_revision_id_or_null, payload_schema_version, payload_sha256], where marker is the string 'p1-04-publication-v1'",
+      "purpose": "A retry of the same publication resolves to the same revision instead of creating a duplicate.",
+      "conflict_rule": "If a stored row has the key but a different parent, payload checksum or payload bytes, fail closed as corruption; never reuse the key for different content."
+    },
+    "uncertain_commit": {
+      "triggers": [
+        "COMMIT or the post-commit durability read fails in a way that does not prove the transaction rolled back",
+        "the connection reports an I/O, full-disk, protocol or unknown outcome on the commit path"
+      ],
+      "required_behavior": [
+        "Mark the writer handle poisoned; it refuses all further reads and writes.",
+        "Close the connection without claiming success.",
+        "Reopen the store and resolve the publication key against durable state.",
+        "If the key names a committed revision with the same parent and payload checksum, report that revision id.",
+        "If the key is absent, the publication did not commit and may be retried normally.",
+        "If the key exists with different content, fail closed as corruption."
+      ],
+      "known_rollback": "A commit rejected with a busy result is a known rollback: roll back and retry with bounded backoff; do not poison the handle."
+    },
+    "concurrency": [
+      "SQLite serializes writers across processes; BEGIN IMMEDIATE plus the expected-parent check prevents duplicate or stale publication.",
+      "The archive's per-root cross-process lock covers the manifest check, object deduplication and manifest publication.",
+      "A publication that loses the race must return stale-parent or resolve by publication key, never a duplicate revision."
+    ]
+  },
+  "hashing": {
+    "semantic_snapshot_hash": {
+      "algorithm": "SHA-256, lowercase hex",
+      "input": "serde_json::to_vec of an object with exactly the keys valid_at, instruments, calendar and listing_states",
+      "included": [
+        "valid_at as YYYY-MM-DD",
+        "the complete instruments vector in canonical order",
+        "the calendar or null",
+        "the complete listing_states vector in canonical order, including each record's embedded provenance"
+      ],
+      "excluded": [
+        "top-level provenance",
+        "reconciliation",
+        "snapshot recorded_at",
+        "revision_id, parent_revision_id and publication_key",
+        "payload_schema_version, payload_sha256 and storage commit metadata"
+      ],
+      "frozen_meaning": "This preserves the current snapshot_hash() field meaning. Listing-state provenance is hashed today because it is embedded in the serialized records; the implementation must correct the misleading source comment without changing the bytes.",
+      "failure_rule": "Serialization failure aborts publication. An empty-input or default-bytes fallback is forbidden.",
+      "change_rule": "Changing the included fields, canonical order, encoding or algorithm is a semantic change requiring a new payload schema version and a new reviewed decision."
+    },
+    "payload_sha256": {
+      "algorithm": "SHA-256, lowercase hex",
+      "input": "the exact stored payload BLOB bytes, including the envelope",
+      "purpose": "storage-integrity checksum covering top-level provenance, reconciliation and every other stored byte",
+      "verification": "Recompute over the stored bytes and compare with the column and, on full verification, with the row metadata. Never accept a decoded object whose checksum does not match."
+    },
+    "metadata_checks": [
+      "valid_at and recorded_at columns equal the decoded payload values.",
+      "snapshot_hash equals recomputation from the decoded payload on load and on full verification.",
+      "payload_schema_version equals the envelope schema_version."
+    ],
+    "canonical_order": {
+      "instruments": "strictly ascending by InstrumentId; duplicates and any non-ascending vector are rejected",
+      "listing_states": "ascending by (recorded_at, instrument_id, venue discriminant, symbol, valid_from, valid_to), with null valid_to before a present date",
+      "listing_state_validation": "the stored vector must already equal its canonical sort; a non-canonical vector is rejected rather than sorted silently",
+      "duplicate_rule": "two listing states with the same (instrument_id, venue, valid_from, recorded_at) are rejected, whether equal or conflicting",
+      "tie_reason": "The duplicate rule removes the only case where vector order could decide which listing state wins. The final valid_from/valid_to tie-breaks only make an otherwise ambiguous order deterministic; from the first durable revision the order is fixed."
+    }
+  },
+  "history_model": {
+    "frozen_rules": [
+      "Each published snapshot contains the full instrument universe and the accumulated listing-state history.",
+      "The head snapshot is the single accumulated-history source for Reference(t_valid, t_recorded).",
+      "Do not concatenate listing_states from every revision; later snapshots already carry earlier history and concatenation duplicates or resurrects stale records.",
+      "Old revisions remain retrievable by revision id and are immutable.",
+      "Reference(t_valid, t_recorded) selects the latest knowledge available by t_recorded for the listing interval valid at t_valid.",
+      "Historical queries use the listing states' full reference contract and never substitute the latest instrument master for historical knowledge.",
+      "Delisted, reopened, renamed and restated listings retain their previous knowledge states; a correction appends a new record and never rewrites an older one."
+    ],
+    "known_current_defect": "ReferenceStore::reference() flat-maps listing_states from every revision. P1-04 implementation must change it to query the head snapshot only and add a regression test for no duplication and no stale resurrection after a later revision.",
+    "retention": "No automatic revision or source deletion. Any future pruning is a separate reviewed decision."
+  },
+  "validation": {
+    "timing": "Validation runs before archive publication and again after every decode, before a caller can observe the payload.",
+    "required_checks": [
+      "Envelope schema version is supported.",
+      "Top-level provenance validates: supported schema, non-empty identities, 64-hex SHA-256.",
+      "Instruments are strictly ascending and unique, and each Instrument passes its domain validation.",
+      "No (venue, symbol) interval is claimed by two different instruments over overlapping valid time.",
+      "Every listing state's provenance validates.",
+      "Every listing interval is well formed: valid_from <= valid_to when valid_to is present.",
+      "Every listing state's tick assignment passes domain validation, including complete monthly reference-close, schedule and calendar lineage.",
+      "Every monthly tick lineage hash resolves to retained archive bytes.",
+      "Calendar validation passes, including venue consistency, unique dates, chronological order and lineage.",
+      "Listing states are in canonical order and contain no duplicate (instrument_id, venue, valid_from, recorded_at) observation.",
+      "referenced source hashes resolve to a manifest entry and hash-correct bytes.",
+      "The semantic hash and payload checksum recompute correctly."
+    ],
+    "failure_rule": "Any failed check publishes nothing and returns an error naming the failed invariant.",
+    "deserialization_rule": "A successful parse is not validation."
+  },
+  "source_archive": {
+    "objects": "one write-once {sha256}.src file per content digest under source-archive/",
+    "manifest": "append-only JSONL at source-archive/manifest.jsonl",
+    "manifest_entry": {
+      "schema_version": 1,
+      "required_fields": [
+        "schema_version",
+        "source_id",
+        "sha256_hex",
+        "retrieved_at",
+        "bytes"
+      ],
+      "rules": [
+        "At most one entry per sha256_hex; a conflicting duplicate digest is corruption.",
+        "Blank or malformed complete lines are corruption and fail closed.",
+        "Entries are never updated or removed by the store."
+      ]
+    },
+    "lock": {
+      "path": "source-archive/.lock",
+      "kind": "per-root cross-process OS advisory lock",
+      "writer_scope": "exclusive lock around manifest read-check, object deduplication, object publication, manifest append and tail recovery",
+      "reader_scope": "shared lock for manifest reads, fetch and verification; if the platform cannot provide a shared lock, readers take the exclusive lock",
+      "wait": "bounded wait, 10 s by default; timeout returns an archive-busy error with no mutation",
+      "platform_rule": "Do not rely on a process-local mutex or on one process per archive root."
+    },
+    "publication_order": [
+      "Write a process-unique temporary object.",
+      "Sync the object.",
+      "Rename it to the content-addressed path.",
+      "Sync the containing directory.",
+      "Append the manifest entry and sync the manifest.",
+      "Only then is the source available to a publication transaction."
+    ],
+    "newline_commit_delimiter": {
+      "rule": "A manifest entry is committed only when its terminating newline is written and the manifest sync succeeds.",
+      "torn_tail_recovery": [
+        "On open under the exclusive lock, if the manifest does not end with a newline, truncate at the last newline.",
+        "Discard the unterminated final fragment without parsing or repairing it.",
+        "Sync the manifest and the containing directory after truncation.",
+        "Read-only storage fails closed instead of repairing."
+      ],
+      "complete_line_rule": "A newline-terminated line must be a valid version-1 entry; it is never skipped or guessed."
+    },
+    "existing_object_without_entry": "Verify the existing object's bytes against the expected SHA-256 before appending a manifest entry. A path existing on disk is not proof of content.",
+    "fetch": [
+      "Require a manifest entry whose sha256_hex matches the requested digest.",
+      "Require the content-addressed object to exist.",
+      "Recompute SHA-256 over the bytes and require equality.",
+      "Require the byte count to equal the manifest entry.",
+      "Return bytes only after all checks; an unindexed object is never committed source data."
+    ],
+    "verify": [
+      "Iterate every manifest entry and require object presence, byte count and SHA-256 equality.",
+      "Reject duplicate digest entries with conflicting metadata.",
+      "Report objects present without a manifest entry separately as crash residue; never return them from fetch.",
+      "A failure is an error, never a warning."
+    ],
+    "dependency_direction": "The revision database may refer to archived objects. The archive never depends on a revision row.",
+    "orphan_rule": "If the revision transaction fails after archive publication, the unreferenced object and manifest entry are permitted crash residue. A committed revision that references a missing or hash-wrong object is a verification failure. Cross-store verification may report objects no revision references, but that is not store corruption."
+  },
+  "failure_semantics": [
+    {
+      "failure": "Invalid snapshot",
+      "required_result": "No revision published"
+    },
+    {
+      "failure": "Missing source object",
+      "required_result": "No revision published"
+    },
+    {
+      "failure": "Wrong source hash",
+      "required_result": "No revision published"
+    },
+    {
+      "failure": "Crash before SQLite commit",
+      "required_result": "No new revision or head change"
+    },
+    {
+      "failure": "Crash after successful commit",
+      "required_result": "Complete revision and head visible after reopen"
+    },
+    {
+      "failure": "Commit outcome unknown",
+      "required_result": "Writer is poisoned; reopen and resolve by publication key"
+    },
+    {
+      "failure": "Stale expected parent",
+      "required_result": "Publication rejected with a stale-parent error"
+    },
+    {
+      "failure": "Duplicate publication retry",
+      "required_result": "Existing revision returned; no duplicate row"
+    },
+    {
+      "failure": "Corrupt payload",
+      "required_result": "Verification fails; no partial snapshot returned"
+    },
+    {
+      "failure": "Unsupported newer schema",
+      "required_result": "Open fails; no destructive downgrade or mutation"
+    },
+    {
+      "failure": "Archive manifest torn tail",
+      "required_result": "Apply the frozen tail-recovery rule, then continue"
+    },
+    {
+      "failure": "Archive corruption in a complete record",
+      "required_result": "Verification fails"
+    },
+    {
+      "failure": "Disk full or permission failure",
+      "required_result": "No false success; uncertain commit resolved after reopen"
+    }
+  ],
+  "backup_restore": {
+    "backup_contents": [
+      "a consistent SQLite database copy created with the SQLite online backup mechanism or VACUUM INTO",
+      "a copy of source-archive/manifest.jsonl and every referenced .src object",
+      "backup.json with format version, creation time, store and payload schema versions, head revision id, database SHA-256 and manifest SHA-256"
+    ],
+    "rules": [
+      "Never copy a live database file while WAL files may be active.",
+      "Take the backup under the archive lock so the manifest and copied objects agree.",
+      "Write to a temporary directory, sync it, then rename into backups/.",
+      "No automatic backup deletion."
+    ],
+    "restore": [
+      "Restore into a temporary location, never directly over a live store.",
+      "Verify backup.json hashes before use.",
+      "Open the restored database, verify schema versions, head and the contiguous parent chain.",
+      "Recompute every payload checksum and semantic hash.",
+      "Run archive verify and resolve every source reference in every revision.",
+      "Swap into place only after all checks pass; a failed restore leaves the existing store untouched."
+    ],
+    "evidence_rule": "Disaster recovery may be claimed only after a restore test proves a complete store and all references."
+  },
+  "schema_evolution": {
+    "current_versions": {
+      "store_schema_version": 1,
+      "payload_schema_version": 1
+    },
+    "open_rule": "Open succeeds only for exactly the supported store and payload schema versions.",
+    "newer_schema": "A newer unsupported version fails open without modifying the database, archive or backups.",
+    "migration_rule": "P1-04 ships initial creation only. Any future migration is a separate reviewed change with backup and restore evidence; it may add tables or columns but never rewrites a published revision payload.",
+    "downgrade_rule": "No destructive downgrade is provided."
+  },
+  "verification_plan": {
+    "platforms": [
+      "linux",
+      "macos"
+    ],
+    "rule": "A cargo test pass alone is not completion evidence. Each group must produce an executable test and recorded evidence for the implementation change.",
+    "groups": [
+      {
+        "id": "RSV-01",
+        "area": "serialization",
+        "required_test": "Persist, close, reopen and compare the complete snapshot, including provenance, reconciliation, calendar and listing history."
+      },
+      {
+        "id": "RSV-02",
+        "area": "revision identity",
+        "required_test": "Revision ids, zero-based contiguity and parent relationships survive restart and reopen."
+      },
+      {
+        "id": "RSV-03",
+        "area": "hashing",
+        "required_test": "Semantic snapshot hash and payload checksum remain stable across restart; a changed payload fails the checksum; a changed semantic field changes the semantic hash."
+      },
+      {
+        "id": "RSV-04",
+        "area": "bitemporal correctness",
+        "required_test": "Reference(t_valid, t_recorded) returns identical results before and after restart for historical, current and late-known cases."
+      },
+      {
+        "id": "RSV-05",
+        "area": "history",
+        "required_test": "Listing open, close, rename, relisting and late correction each append knowledge states; the head-history query neither duplicates records nor resurrects a stale open interval."
+      },
+      {
+        "id": "RSV-06",
+        "area": "source lineage",
+        "required_test": "Every provenance and monthly tick lineage hash resolves to archived bytes after restart and after restore."
+      },
+      {
+        "id": "RSV-07",
+        "area": "concurrency",
+        "required_test": "Competing processes cannot publish duplicate or stale revisions; the loser gets a stale-parent or publication-key resolution."
+      },
+      {
+        "id": "RSV-08",
+        "area": "crash recovery",
+        "required_test": "Kill a writer at each publication boundary: before archive, after archive, during the transaction, after insert before commit and after commit before return."
+      },
+      {
+        "id": "RSV-09",
+        "area": "disk and filesystem",
+        "required_test": "ENOSPC, read-only path, permission failure, lock contention and archive-busy timeout produce explicit errors and no false success."
+      },
+      {
+        "id": "RSV-10",
+        "area": "corruption",
+        "required_test": "Altered payload, broken checksum, missing source, malformed complete manifest line and conflicting duplicate digest fail closed; a torn final manifest fragment is recovered by truncation."
+      },
+      {
+        "id": "RSV-11",
+        "area": "backup",
+        "required_test": "Restore a complete database-plus-archive backup and verify all revisions, hashes, head, parent chain and source references."
+      },
+      {
+        "id": "RSV-12",
+        "area": "performance",
+        "required_test": "Measure representative full NSE CM and BSE equity snapshots: source revision, hardware, dataset hash, payload size, write time, reopen time, query time and disk growth. Set thresholds only after the baseline exists."
+      }
+    ]
+  },
+  "implementation_gate": {
+    "design_change_allowed": [
+      "engineering/reference-store-contract.json",
+      "engineering/decisions.json#DEC-011",
+      "engineering/index.json#reference-store-durability"
+    ],
+    "design_change_forbidden": [
+      "Rust implementation code",
+      "SQLite dependency or Cargo lock change",
+      "Schema migration",
+      "CLI change",
+      "Capability state change",
+      "Test files for the unimplemented storage behavior"
+    ],
+    "after_merge": "Implement P1-04 in a separate change against the merged contract. Keep the producer-manifest provenance follow-up from PR #62 separate.",
+    "capability_state_at_freeze": {
+      "INDIA-REF-INGEST": "implemented, not verified",
+      "INDIA-FNO-INGEST": "proposed"
+    }
+  },
+  "traceability": {
+    "frozen_sources": [
+      "src/venue/india/store.rs",
+      "src/venue/india/archive.rs",
+      "src/venue/india/provenance.rs",
+      "src/venue/india/resolution.rs",
+      "crates/account-journal/src/lib.rs"
+    ],
+    "policies": [
+      "engineering/target-platform.json",
+      "engineering/verification-matrix.json#V-002"
+    ],
+    "known_defects_to_fix_in_implementation": [
+      "ReferenceStore::reference() concatenates listing states from every revision instead of querying the head snapshot.",
+      "ReferenceSnapshot::validate() does not reject a non-canonical instrument vector.",
+      "snapshot_hash() hashes listing-state provenance while its comment says provenance is excluded.",
+      "snapshot_hash_of() uses unwrap_or_default, which could hash empty bytes after a serialization failure.",
+      "SourceArchive uses a process-local mutex, not a per-root cross-process lock.",
+      "SourceArchive::fetch() does not require a manifest entry.",
+      "ReferenceSnapshot, Listing and ListingStateRecord are Serialize-only and need deliberate versioned decoding."
+    ]
+  }
+}

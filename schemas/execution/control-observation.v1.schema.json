@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nirnay.dev/schemas/execution/control-observation.v1.schema.json",
+  "title": "Nirnay independently signed runtime control observation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "source_id", "role", "source_sequence", "observed_at_utc_ns", "expires_at_utc_ns", "payload", "signature_b64"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "source_id": {"type": "string", "minLength": 1},
+    "role": {"enum": ["account_risk", "kill_switch", "market_data", "reconciliation", "broker_entitlement", "trading_session", "clock_sync", "deployed_artifact"]},
+    "source_sequence": {"type": "integer", "minimum": 1},
+    "observed_at_utc_ns": {"type": "integer", "minimum": 1},
+    "expires_at_utc_ns": {"type": "integer", "minimum": 2},
+    "payload": {"type": "object"},
+    "signature_b64": {"type": "string", "minLength": 80, "maxLength": 100}
+  },
+  "allOf": [
+    {"if": {"properties": {"role": {"const": "account_risk"}}}, "then": {"properties": {"payload": {"type": "object", "additionalProperties": false, "required": ["account", "projected_exposure_paise", "projected_daily_loss_paise"], "properties": {"account": {"type": "string", "minLength": 1}, "projected_exposure_paise": {"type": "integer", "minimum": 0}, "projected_daily_loss_paise": {"type": "integer", "minimum": 0}}}}}},
+    {"if": {"properties": {"role": {"const": "kill_switch"}}}, "then": {"properties": {"payload": {"type": "object", "additionalProperties": false, "required": ["account", "enabled"], "properties": {"account": {"type": "string", "minLength": 1}, "enabled": {"type": "boolean"}}}}}},
+    {"if": {"properties": {"role": {"const": "market_data"}}}, "then": {"properties": {"payload": {"type": "object", "additionalProperties": false, "required": ["broker", "instrument_id", "healthy", "gap_count", "last_event_at_utc_ns"], "properties": {"broker": {"type": "string"}, "instrument_id": {"type": "string"}, "healthy": {"type": "boolean"}, "gap_count": {"type": "integer", "minimum": 0}, "last_event_at_utc_ns": {"type": "integer", "minimum": 1}}}}}},
+    {"if": {"properties": {"role": {"const": "reconciliation"}}}, "then": {"properties": {"payload": {"type": "object", "additionalProperties": false, "required": ["broker", "account", "clean", "break_count"], "properties": {"broker": {"type": "string"}, "account": {"type": "string"}, "clean": {"type": "boolean"}, "break_count": {"type": "integer", "minimum": 0}}}}}},
+    {"if": {"properties": {"role": {"const": "broker_entitlement"}}}, "then": {"properties": {"payload": {"type": "object", "additionalProperties": false, "required": ["broker", "account", "instrument_id", "entitled", "expires_at_utc_ns"], "properties": {"broker": {"type": "string"}, "account": {"type": "string"}, "instrument_id": {"type": "string"}, "entitled": {"type": "boolean"}, "expires_at_utc_ns": {"type": "integer", "minimum": 1}}}}}},
+    {"if": {"properties": {"role": {"const": "trading_session"}}}, "then": {"properties": {"payload": {"type": "object", "additionalProperties": false, "required": ["venue", "valid", "session_id"], "properties": {"venue": {"type": "string"}, "valid": {"type": "boolean"}, "session_id": {"type": "string", "minLength": 1}}}}}},
+    {"if": {"properties": {"role": {"const": "clock_sync"}}}, "then": {"properties": {"payload": {"type": "object", "additionalProperties": false, "required": ["offset_ns"], "properties": {"offset_ns": {"type": "integer"}}}}}},
+    {"if": {"properties": {"role": {"const": "deployed_artifact"}}}, "then": {"properties": {"payload": {"type": "object", "additionalProperties": false, "required": ["commit_sha", "strategy", "strategy_artifact_sha256"], "properties": {"commit_sha": {"type": "string", "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"}, "strategy": {"type": "string", "minLength": 1}, "strategy_artifact_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}}}}
+  ]
+}

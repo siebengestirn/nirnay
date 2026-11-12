@@ -1,0 +1,82 @@
+# Repository-wide line-ending and diff policy.
+# Text is normalized to LF in the index and the working tree; only
+# Windows-native scripts keep CRLF.
+* text=auto eol=lf
+
+# Source and configuration
+*.rs       text diff=rust
+*.py       text diff=python
+*.pyi      text diff=python
+*.c        text diff=cpp
+*.cc       text diff=cpp
+*.cpp      text diff=cpp
+*.cxx      text diff=cpp
+*.h        text diff=cpp
+*.hpp      text diff=cpp
+*.hxx      text diff=cpp
+*.toml     text
+*.json     text
+*.jsonl    text
+*.yaml     text
+*.yml      text
+*.md       text
+*.csv      text
+*.sql      text
+*.proto    text
+*.txt      text
+Cargo.lock text
+Makefile   text
+Dockerfile text
+*.sh       text eol=lf
+*.bash     text eol=lf
+*.zsh      text eol=lf
+*.bat      text eol=crlf
+*.cmd      text eol=crlf
+*.ps1      text eol=crlf
+
+# Generated and vendored inputs that must not be line-ending converted
+*.sbe       binary
+*.zip       binary
+*.tar       binary
+*.gz        binary
+*.tgz       binary
+*.bz2       binary
+*.xz        binary
+*.zst       binary
+*.7z        binary
+*.pdf       binary
+*.sqlite    binary
+*.sqlite3   binary
+*.db        binary
+
+# Images and fonts
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.webp      binary
+*.woff      binary
+*.woff2     binary
+*.ttf       binary
+*.otf       binary
+
+# Keys, credentials and native artifacts must never be diffed or merged as text
+*.pem       binary
+*.key       binary
+*.p12       binary
+*.pfx       binary
+*.der       binary
+*.jks       binary
+*.so        binary
+*.dylib     binary
+*.dll       binary
+*.a         binary
+*.lib       binary
+*.o         binary
+*.obj       binary
+*.rlib      binary
+*.rmeta     binary
+
+# Standard library lockfiles are generated and should not clutter diffs
+Cargo.lock linguist-generated=true

@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "claims": [
+    {
+      "id": "CLM-001",
+      "statement": "The active workspace has one declared Cargo dependency layer for every workspace package.",
+      "status": "implemented",
+      "scope": {
+        "files": [
+          "architecture/layers.toml",
+          "scripts/check_repo.py"
+        ]
+      },
+      "falsifier": "cargo metadata shows an unassigned package, an upward dependency, a forbidden edge, or a member-local dependency version."
+    },
+    {
+      "id": "CLM-002",
+      "statement": "The raw-frame library detects payload tampering and reports incomplete journal tails rather than silently repairing them.",
+      "status": "implemented",
+      "scope": {
+        "crate": "market-archive"
+      },
+      "falsifier": "a mutated payload passes validation or a torn final record is accepted as a clean journal."
+    },
+    {
+      "id": "CLM-003",
+      "statement": "Python experiment records are content-addressable and reject missing pre-registration fields or naive timestamps.",
+      "status": "implemented",
+      "scope": {
+        "package": "research/python/src/quantlab/experiments.py"
+      },
+      "falsifier": "the same canonical record receives different hashes, or an invalid record is accepted."
+    },
+    {
+      "id": "CLM-004",
+      "statement": "The shared Rust cost model can be called from a JSON-lines research interface without embedding tariff defaults.",
+      "status": "implemented",
+      "scope": {
+        "app": "cost-cli"
+      },
+      "falsifier": "a missing effective schedule returns zero charges or the app computes fees outside cost-model."
+    },
+    {
+      "id": "CLM-005",
+      "statement": "The repository includes a deterministic research-to-paper toolkit, but no strategy is claimed profitable or validated for live trading.",
+      "status": "implemented",
+      "scope": {
+        "packages": [
+          "research/python/src/quantlab/strategies.py",
+          "research/python/src/quantlab/backtest.py",
+          "research/python/src/quantlab/alpha_search.py",
+          "research/python/src/quantlab/point_in_time.py"
+        ]
+      },
+      "falsifier": "A report or README asserts positive alpha/live profitability without licensed point-in-time data, full executable costs, untouched OOS evidence, independent replication and approved controls."
+    },
+    {
+      "id": "CLM-006",
+      "statement": "Canonical Upstox/FYERS normalizers preserve vendor timestamp and payload semantics and never infer aggressor side from LTP-only observations.",
+      "status": "implemented",
+      "scope": {
+        "packages": [
+          "research/python/src/quantlab/providers.py",
+          "research/python/src/quantlab/market.py"
+        ]
+      },
+      "falsifier": "Any normalizer fabricates an exchange sequence, raw packet, confirmed print or aggressor side not supplied by the source."
+    },
+    {
+      "id": "CLM-007",
+      "statement": "Point-in-time dataset publication preserves bitemporal listing, corporate-action, universe-membership, event and source-frame lineage and verifies internal artifact integrity.",
+      "status": "implemented",
+      "scope": {
+        "packages": [
+          "research/python/src/quantlab/point_in_time.py",
+          "research/python/tests/test_market_pipeline.py"
+        ]
+      },
+      "falsifier": "A later-known listing/action is visible to an earlier event, raw prices are mutated, lineage hash sets do not recompute, or an incomplete publication is accepted."
+    },
+    {
+      "id": "CLM-008",
+      "statement": "Paper/research OMS and signed permit verifier do not enable live order routing.",
+      "status": "implemented",
+      "scope": {
+        "packages": [
+          "research/python/src/quantlab/oms.py",
+          "research/python/src/quantlab/live_auth.py"
+        ]
+      },
+      "falsifier": "A feature flag, test signature or verifier result can cause this repository to submit a live broker order without separately approved/certified routing."
+    },
+    {
+      "id": "CLM-009",
+      "statement": "The durable OMS commits order intent, an audit event and its outbox command atomically; it never automatically retries a command after dispatch may have begun.",
+      "status": "implemented",
+      "scope": {
+        "packages": [
+          "research/python/src/quantlab/durable_oms.py"
+        ]
+      },
+      "falsifier": "The intent can exist without its outbox command after a process crash, an expired DISPATCHING command is automatically resent, or duplicate broker execution IDs are accepted."
+    },
+    {
+      "id": "CLM-010",
+      "statement": "Runtime risk evidence is signed only after a root-trusted, fresh, role-scoped set of eight independent signed observations is verified and their source sequences are consumed by a replay ledger.",
+      "status": "implemented",
+      "scope": {
+        "packages": [
+          "research/python/src/quantlab/risk_evidence.py",
+          "research/python/src/quantlab/risk_service.py",
+          "research/python/src/quantlab/kms_signing.py"
+        ]
+      },
+      "falsifier": "Caller-supplied RiskFacts can be signed through a public API, a tampered/stale/untrusted observation is accepted, or a consumed source sequence can be replayed."
+    },
+    {
+      "id": "CLM-011",
+      "statement": "A PIT dataset may be published with a detached Ed25519 signature over a domain-separated canonical manifest digest; verification requires a separately trusted public key and recomputes the artifact and lineage hashes.",
+      "status": "implemented",
+      "scope": {
+        "packages": [
+          "research/python/src/quantlab/point_in_time.py",
+          "research/python/src/quantlab/kms_signing.py"
+        ]
+      },
+      "falsifier": "A signed dataset verifies after manifest/artifact tampering, an unknown signing key is accepted, or source authenticity/completeness is claimed solely from a manifest signature."
+    },
+    {
+      "id": "CLM-012",
+      "statement": "The multi-instrument simulator accepts one selected provider stream, models long-only cash reservations across symbols, and never aggregates visible liquidity across provider observations.",
+      "status": "implemented",
+      "scope": {
+        "packages": [
+          "research/python/src/quantlab/portfolio_backtest.py",
+          "research/python/tests/test_portfolio_backtest.py"
+        ]
+      },
+      "falsifier": "A mixed-provider replay silently adds displayed depth, an open buy reserve is ignored for another symbol, or a short sale is accepted without inventory."
+    },
+    {
+      "id": "CLM-013",
+      "statement": "Release dependency integrity is machine-checked: workflow actions are pinned to commit SHAs, every declared Python dependency is pinned in a resolved constraint set, undocumented advisories fail the audit gate, and the SBOM is generated deterministically from Cargo.lock and the constraint sets.",
+      "status": "implemented",
+      "scope": {
+        "packages": [
+          "scripts/supply_chain.py",
+          "constraints/python-research.txt",
+          "constraints/pip-audit-allowlist.toml",
+          ".github/workflows/ci.yml"
+        ]
+      },
+      "falsifier": "An unpinned `uses:` reference, a declared dependency absent from its constraint file, or an advisory absent from the allowlist passes the gates, or two identical SBOM runs differ."
+    }
+  ]
+}

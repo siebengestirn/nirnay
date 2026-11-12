@@ -1,0 +1,164 @@
+{
+  "schema_version": 1,
+  "north_star_metric": {
+    "name": "validated_strategy_net_expectancy",
+    "value": null,
+    "unit": "R per trade after all costs",
+    "status": "unmeasured",
+    "denominator": "No validated live or out-of-sample strategy trades yet"
+  },
+  "capabilities": [
+    {
+      "id": "CAP-001",
+      "name": "Exact financial arithmetic and India instrument domain",
+      "status": "implemented",
+      "evidence_status": "Owner rerun 2026-11-12: Rust workspace check, Clippy (-D warnings) and 278 tests passed on pinned Rust 1.99.1. No live broker/account operation was performed; see VERIFICATION.md.",
+      "owner": "domain",
+      "scope": "existing Rust crates"
+    },
+    {
+      "id": "CAP-002",
+      "name": "Effective-dated transaction cost model",
+      "status": "implemented",
+      "evidence_status": "Owner rerun 2026-11-12: Rust workspace check, Clippy (-D warnings) and 278 tests passed on pinned Rust 1.99.1. No live broker/account operation was performed; see VERIFICATION.md.",
+      "owner": "cost-model",
+      "scope": "existing Rust crate"
+    },
+    {
+      "id": "CAP-003",
+      "name": "Append-only account event journal",
+      "status": "implemented",
+      "evidence_status": "Owner rerun 2026-11-12: Rust workspace check, Clippy (-D warnings) and 278 tests passed on pinned Rust 1.99.1. No live broker/account operation was performed; see VERIFICATION.md.",
+      "owner": "account-journal",
+      "scope": "existing Rust crate"
+    },
+    {
+      "id": "CAP-004",
+      "name": "Deterministic paper engine and pre-trade risk checks",
+      "status": "implemented",
+      "evidence_status": "Owner rerun 2026-11-12: Rust workspace check, Clippy (-D warnings) and 278 tests passed on pinned Rust 1.99.1. No live broker/account operation was performed; see VERIFICATION.md.",
+      "owner": "paper-engine",
+      "scope": "existing Rust crates"
+    },
+    {
+      "id": "CAP-005",
+      "name": "Validated raw-frame journal and dataset continuity primitives",
+      "status": "implemented",
+      "evidence_status": "Python build/replay path implemented with source-frame hash lineage, internal digest verification, immutable atomic publication and optional PyArrow Parquet output. Raw Rust archive frame export built in the owner rerun (release binaries, pinned Rust 1.99.1). Actual archived provider sessions are not present in the delivery, so only synthetic fixture lineage was exercised.",
+      "owner": "market-archive",
+      "scope": "crates/market-archive; apps/upstox-tools; research/python/src/quantlab/point_in_time.py"
+    },
+    {
+      "id": "CAP-006",
+      "name": "FYERS Data Socket callback recorder",
+      "status": "partial",
+      "evidence_status": "FYERS V3 recorder plus canonical callback normalizer, local gap detection and source-semantics-preserving event projection. SDK callback JSON is not wire bytes, there is no verified exchange sequence, and no live entitlement/connection validation.",
+      "owner": "market-data",
+      "scope": "apps/fyers-recorder; research/python/src/quantlab/providers.py"
+    },
+    {
+      "id": "CAP-007",
+      "name": "Zerodha Kite Keychain-backed OAuth and read-only operations",
+      "status": "partial",
+      "evidence_status": "macOS Security.framework Keychain helper, local loopback OAuth callback with random state verification, request-token checksum exchange, expected-user binding, daily token storage and read-only profile/orders/positions/instrument operations are implemented and unit-tested. The macOS helper/OAuth flow has not been exercised against a real account in this delivery. All order submission is unconditionally hard-blocked.",
+      "owner": "broker-adapters",
+      "scope": "apps/kite-ops; separate read-only operator client; no durable OMS broker adapter"
+    },
+    {
+      "id": "CAP-008",
+      "name": "Point-in-time dataset builder and Parquet pipeline",
+      "status": "implemented",
+      "evidence_status": "Bitemporal listing/action/universe models; immutable corporate-action revision lineage; exact split/bonus adjustment view; source/frame hashes; PIT dataset builder; immutable JSONL publication; optional Zstandard Parquet writer with semantic row comparison; optional detached Ed25519 manifest signature via AWS KMS with trusted-key verification. Signed publication proves publisher-key integrity only. Source completeness and legal entitlements remain externally unverified; PyArrow was unavailable on the local verification host.",
+      "owner": "research-data",
+      "scope": "research/python/src/quantlab/point_in_time.py; research/python/src/quantlab/cli.py"
+    },
+    {
+      "id": "CAP-009",
+      "name": "Event-driven single-instrument and multi-instrument cash portfolio backtesters",
+      "status": "implemented",
+      "evidence_status": "Deterministic single-instrument event simulator plus separate multi-instrument, single-provider, long-only NSE cash portfolio simulator. Supports event ordering, source selection, order/cancel latency, time-in-force, partial fills, participation caps, cash/exposure reservations, fees, spread, taker impact and conservative L2 queue approximation. Passive queue advancement requires explicit trade event and known aggressor side. Not an exchange matching engine; queue/impact require calibration.",
+      "owner": "simulation",
+      "scope": "research/python/src/quantlab/backtest.py; research/python/src/quantlab/portfolio_backtest.py"
+    },
+    {
+      "id": "CAP-010",
+      "name": "Validated profitable strategy",
+      "status": "partial",
+      "evidence_status": "Deterministic streaming EMA-cross fixture and bounded 25-candidate close-based candidate family; chronological train/validation/untouched holdout, flat segment portfolios, one-return embargo, explicit net costs, Holm correction, approximate HAC p-values, development-only CSCV/PBO and validation-only Deflated Sharpe diagnostics. Not arbitrary code generation or validated alpha; no market-data result is asserted.",
+      "owner": "research",
+      "scope": "research/python/src/quantlab/strategies.py; research/python/src/quantlab/alpha_search.py"
+    },
+    {
+      "id": "CAP-011",
+      "name": "Live broker order routing",
+      "status": "partial",
+      "evidence_status": "Broker-neutral order domain state machine, durable SQLite WAL/FULL transactional intent/outbox store, event hash chain, leases, idempotent broker-event/execution ingestion, partial fills, cancel/unknown-outcome transitions and paper-only dispatcher. Signed permit verifier plus source-attested runtime risk and AWS KMS Ed25519 signer adapter exist. No live broker execution adapter, deployed independent risk service/control collectors or production KMS key exists. Live routing is hard-disabled.",
+      "owner": "execution",
+      "scope": "research/python/src/quantlab/oms.py; durable_oms.py; risk_evidence.py; risk_service.py; kms_signing.py; live_auth.py"
+    },
+    {
+      "id": "CAP-012",
+      "name": "Upstox Market Data Feed V3 raw binary recorder and protobuf decoder",
+      "status": "partial",
+      "evidence_status": "Upstox V3 schema/decoder and recorder active; new raw-frame SHA-256 verifying decode-export utility; full V3 event normalizer retains provider timestamp semantics and original source-frame hash. Rust compilation and release binaries passed on pinned Rust 1.99.1; actual provider capture and a real archived-session replay remain unverified.",
+      "owner": "market-data",
+      "scope": "crates/upstox-feed-proto; apps/upstox-tools; research/python/src/quantlab/providers.py"
+    },
+    {
+      "id": "CAP-013",
+      "name": "Canonical Upstox/FYERS event normalization and cross-feed reconciliation",
+      "status": "implemented",
+      "evidence_status": "Provider-specific mappings to versioned canonical events, explicit LTP observation versus trade-print semantics, gap flags, source timestamp semantics, freshness/skew/price comparison. Cross-feed output is a diagnostic consistency result, not a permission to merge quantities or synthesize a tape.",
+      "owner": "market-data",
+      "scope": "research/python/src/quantlab/providers.py; research/python/src/quantlab/reconcile.py"
+    },
+    {
+      "id": "CAP-014",
+      "name": "Verification-only C++ fixed-point and order-book oracle",
+      "status": "implemented",
+      "evidence_status": "Promoted as isolated C++20 verification target; CMake/CTest passed 1/1 in both the preparation run and the owner rerun (CMake 4.4.3 / AppleClang 21). Not a production Rust dependency; GCC/Clang __int128 portability caveat applies; broader shared golden corpus is pending.",
+      "owner": "verification",
+      "scope": "verification/cpp-oracle"
+    },
+    {
+      "id": "CAP-015",
+      "name": "Reproducible research CLI and synthetic fixtures",
+      "status": "implemented",
+      "evidence_status": "quantlab demo, normalize, reconcile, build-dataset, verify-dataset and alpha-search entrypoints; all fixture datasets explicitly synthetic and labeled. End-to-end PIT and alpha CLI fixture runs verified.",
+      "owner": "research-tooling",
+      "scope": "research/python/src/quantlab/cli.py; research/python/fixtures"
+    },
+    {
+      "id": "CAP-016",
+      "name": "Durable transactional OMS paper outbox",
+      "status": "implemented",
+      "evidence_status": "SQLite WAL/FULL synchronous single-node store; atomic intent/outbox transaction; leases; unknown-outcome quarantine; monotonic broker sequence; idempotent broker event/execution IDs; partial fills; cancel request/ack separation; tamper-evident internal event chain; paper-only dispatcher. No distributed HA or live adapter.",
+      "owner": "execution",
+      "scope": "research/python/src/quantlab/durable_oms.py"
+    },
+    {
+      "id": "CAP-017",
+      "name": "Independent signed runtime risk evidence and KMS signing adapter",
+      "status": "partial",
+      "evidence_status": "Root-signed trust registry, eight role-specific signed control observations with freshness/scope checks, monotonic source sequence replay ledger, strict risk-policy evaluation and AWS KMS Ed25519 signing adapter. Unit tests use ephemeral keys/fake KMS. No separate deployed service, production collectors, customer KMS key, IAM policies or CloudTrail verification.",
+      "owner": "risk-security",
+      "scope": "research/python/src/quantlab/risk_evidence.py; risk_service.py; kms_signing.py; engineering/deployment/aws-kms-risk-service.md"
+    },
+    {
+      "id": "CAP-018",
+      "name": "Signed immutable PIT dataset release and Parquet semantic verification",
+      "status": "partial",
+      "evidence_status": "Atomic immutable JSONL publication; artifact and lineage digest recomputation; optional Zstandard Parquet with semantic equality checks; optional detached Ed25519 manifest-digest signature through AWS KMS and trusted public-key verification. Local Parquet round-trip not executed because PyArrow is unavailable on this host; CI installs the research extra. Signature does not establish source authenticity or completeness.",
+      "owner": "research-data-security",
+      "scope": "research/python/src/quantlab/point_in_time.py; kms_signing.py; schemas/research/dataset-signature.v1.json"
+    },
+    {
+      "id": "CAP-019",
+      "name": "Dependency integrity gates for release builds",
+      "status": "implemented",
+      "evidence_status": "Rerun 2026-11-13 on pinned Rust 1.99.1 and Python 3.14.8: scripts/supply_chain.py pins reported 30 workflow action references pinned to commit SHAs; constraints reported 3 files covering 79 exact pins; sbom wrote a deterministic 342-component CycloneDX document (sha256 e0a199e65a0b08cf3a5a12d15fc51be0b33ec52b1c2bc1dd759e99aac60d238b); pip-audit found 0 advisories in research and kite-ops and 51 waived formerly-inherited advisories (aiohttp, requests, setuptools) in fyers-recorder. The hosted CI job has not executed yet.",
+      "owner": "release-engineering",
+      "scope": "scripts/supply_chain.py, constraints/, .github/workflows"
+    }
+  ]
+}
