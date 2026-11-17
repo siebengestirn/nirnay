@@ -1,16 +1,24 @@
-.PHONY: check rust-test rust-style extras-test python-test python-check cpp-test cpp-format-check schema-check verify-local fmt constraints sbom supply-chain wheels packaging-test bundle bundle-verify git-policy
+.PHONY: check style rust-style source-style python-format-check rust-test extras-test python-test python-check cpp-test cpp-format-check schema-check verify-local fmt constraints sbom supply-chain wheels packaging-test bundle bundle-verify git-policy
 check:
 	$(MAKE) fmt
 	cargo xtask check
 	cargo deny check
-	$(MAKE) rust-style
+	$(MAKE) style
 	$(MAKE) rust-test
 	$(MAKE) extras-test
 	$(MAKE) schema-check
 	$(MAKE) python-test
+style: rust-style source-style
 rust-style:
 	python3 scripts/check_rust_style.py --self-test
 	python3 scripts/check_rust_style.py
+source-style:
+	python3 scripts/check_source_style.py --self-test
+	python3 scripts/check_source_style.py
+# Advisory until the existing Python corpus is reformatted in a dedicated PR.
+python-format-check:
+	ruff check .
+	ruff format --check .
 rust-test:
 	cargo test --workspace --all-targets --locked
 	cargo clippy --workspace --all-targets --locked -- -D warnings
