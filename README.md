@@ -73,8 +73,8 @@ python3 /path/to/repo/scripts/verify_bundle.py --bundle . --zip /path/to/bundle.
 `scripts/make_bundle.py` writes the manifest and the archive from one file
 list, so a manifest path and an archive member name cannot diverge; both are
 compared as exact strings, because a case-insensitive filesystem cannot tell
-`sbom.cdx.json` from `SBOM.cdx.json`. Release jobs stage compiled output under
-`$RUNNER_TEMP/release`, outside the checkout, and the bundler rejects an
+`sbom.cdx.json` from `SBOM.cdx.json`. The bundle job stages compiled output
+under `$RUNNER_TEMP/release`, outside the checkout, and the bundler rejects an
 artifacts directory inside the source tree so wheels and binaries cannot be
 packed twice.
 
