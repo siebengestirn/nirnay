@@ -802,4 +802,27 @@ mod tests {
             "oversized metadata field is rejected"
         );
     }
+
+    #[test]
+    fn pre_existing_oversized_journal_fails_closed_on_verify_and_reopen() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("legacy-oversized.jsonl");
+        let (_, mut line) = frame_with_serialized_size(MAX_RAW_RECORD_BYTES);
+        line.insert(line.len() - 1, ' ');
+        std::fs::write(&path, format!("{line}\n")).unwrap();
+        assert!(
+            matches!(
+                verify_journal(&path),
+                Err(ArchiveError::RecordTooLarge { .. })
+            ),
+            "legacy oversized record must fail verification"
+        );
+        assert!(
+            matches!(
+                JournalWriter::open_append(&path),
+                Err(ArchiveError::RecordTooLarge { .. })
+            ),
+            "legacy oversized journal must not be reopened for append"
+        );
+    }
 }

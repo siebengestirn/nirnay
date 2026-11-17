@@ -19,7 +19,9 @@ pub const MAX_PAYLOAD_BYTES: usize = 512 * 1024;
 
 /// Maximum length of each textual metadata field. Derived from the record
 /// bound minus the encoded payload and a fixed allowance for numeric fields,
-/// schema overhead and JSON escaping.
+/// schema overhead and JSON escaping. The 1 KiB allowance is a heuristic, not
+/// a proof: the authoritative aggregate bound is the serialized-length check
+/// in `to_json_line`, `from_json_line` and the journal scanner.
 pub const MAX_FIELD_BYTES: usize =
     MAX_RAW_RECORD_BYTES - (MAX_PAYLOAD_BYTES.div_ceil(3) * 4) - 1024;
 
@@ -117,6 +119,12 @@ impl RawFrame {
         let bytes = STANDARD
             .decode(&self.payload_base64)
             .map_err(|_| ArchiveError::PayloadEncoding)?;
+        if bytes.len() > MAX_PAYLOAD_BYTES {
+            return Err(ArchiveError::RecordTooLarge {
+                size: bytes.len(),
+                limit: MAX_PAYLOAD_BYTES,
+            });
+        }
         if sha256_hex(&bytes) != self.payload_sha256 {
             return Err(ArchiveError::PayloadHashMismatch);
         }
