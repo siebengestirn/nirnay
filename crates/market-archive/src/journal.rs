@@ -15,12 +15,7 @@ use std::os::unix::fs::OpenOptionsExt;
 
 use crate::{ArchiveError, RawFrame};
 
-/// Single-writer, newline-delimited raw-frame journal.
-///
-/// Each append calls `sync_data`; this favours durability over throughput.
-/// The OS file lock prevents two processes from concurrently appending. A
-/// future recorder may add bounded group commit, but must preserve the recovery
-/// contract and measure its durability/latency trade-off.
+/// Current health of the journal writer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum WriterState {
     Healthy,
@@ -40,8 +35,10 @@ enum FailPoint {
 
 /// Private I/O boundary. Production uses a real `File`; tests use `Failing`,
 /// which performs the real OS call before returning the injected `io::Error`.
-/// The writer therefore observes the same error path as an actual write or
-/// `sync_data` failure without a public generic storage abstraction.
+/// `RecordWrite` is the exception: it models a failure before any bytes are
+/// written, so no OS call occurs and the file is unchanged. The writer
+/// observes the same error path as an actual write or `sync_data` failure
+/// without a public generic storage abstraction.
 enum JournalIo {
     File(File),
     #[cfg(test)]
@@ -95,6 +92,12 @@ impl JournalIo {
     }
 }
 
+/// Single-writer, newline-delimited raw-frame journal.
+///
+/// Each append calls `sync_data`; this favours durability over throughput.
+/// The OS file lock prevents two processes from concurrently appending. A
+/// future recorder may add bounded group commit, but must preserve the recovery
+/// contract and measure its durability/latency trade-off.
 pub struct JournalWriter {
     io: JournalIo,
     state: WriterState,
@@ -126,7 +129,8 @@ impl JournalWriter {
     }
 
     /// Test-only constructor using the private I/O seam. It performs real OS
-    /// writes and then returns an `io::Error` at the selected point.
+    /// writes where applicable and then returns an `io::Error` at the selected
+    /// point; `RecordWrite` fails before any OS write.
     #[cfg(test)]
     fn create_new_with_fail_point(
         path: impl AsRef<Path>,
