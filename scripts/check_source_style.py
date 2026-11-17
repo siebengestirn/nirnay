@@ -18,12 +18,14 @@ different ref (default: `main`). Use `--self-test` for adversarial unit tests.
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import re
 import subprocess
 import sys
 import tempfile
+import tokenize
 import unittest
 from pathlib import Path
 
@@ -70,6 +72,19 @@ def is_supported(path: str) -> bool:
     )
 
 
+def parse_header_path(line: str) -> str | None:
+    """Return the path from a `+++ ` header, including git-quoted paths."""
+    if line.startswith('+++ "') and line.endswith('"'):
+        try:
+            decoded = json.loads(line[4:])
+        except json.JSONDecodeError:
+            return None
+        return decoded[2:] if decoded.startswith("b/") else decoded
+    if FILE_HEADER.match(line):
+        return line[6:]
+    return None
+
+
 def parse_added_lines(diff_text: str) -> dict[str, list[tuple[int, str]]]:
     """Parse `git diff --unified=0` into added lines keyed by path.
 
@@ -83,8 +98,9 @@ def parse_added_lines(diff_text: str) -> dict[str, list[tuple[int, str]]]:
         # Only a real `+++ b/...` header resets the path. An added source line
         # whose content begins with `++ ` also renders as `+++ ...` and must be
         # treated as content, not as a header.
-        if FILE_HEADER.match(line):
-            current = line[6:].rstrip("\r")
+        path = parse_header_path(line.rstrip("\r")) if line.startswith("+++ ") else None
+        if path is not None:
+            current = path
             number = 0
             continue
         if line.rstrip("\r") == "+++ /dev/null":
@@ -106,9 +122,9 @@ def collect_added_lines(base: str) -> dict[str, list[tuple[int, str]]]:
         ["git", "diff", base, "--unified=0"],
         check=True,
         capture_output=True,
-        text=True,
     )
-    added = parse_added_lines(result.stdout)
+    # Decode raw bytes: text mode would translate CRLF to LF and hide defects.
+    added = parse_added_lines(result.stdout.decode("utf-8", errors="replace"))
     return {path: lines for path, lines in added.items() if is_supported(path)}
 
 
@@ -147,18 +163,20 @@ def strip_literals(line: str, comment_marker: str) -> str:
 
 
 def python_docstring_lines(text: str) -> set[int]:
-    """Line numbers inside triple-quoted strings, where prose may use punctuation."""
-    inside = False
+    """Line numbers inside triple-quoted strings, where prose may use punctuation.
+
+    Uses the standard tokenizer so triple quotes inside comments or ordinary
+    strings cannot toggle the state for the rest of the file.
+    """
     result: set[int] = set()
-    for number, line in enumerate(text.splitlines(), start=1):
-        markers = line.count('"""') + line.count("'''")
-        if markers:
-            result.add(number)
-            if markers % 2:
-                inside = not inside
-            continue
-        if inside:
-            result.add(number)
+    try:
+        tokens = tokenize.generate_tokens(io.StringIO(text).readline)
+        for token in tokens:
+            if token.type == tokenize.STRING and ('"""' in token.string or "'''" in token.string):
+                for number in range(token.start[0], token.end[0] + 1):
+                    result.add(number)
+    except (tokenize.TokenError, IndentationError):
+        pass
     return result
 
 
@@ -171,22 +189,23 @@ def check_python_line(line: str, *, in_docstring: bool = False) -> list[str]:
         errors.append("tab indentation; use four spaces")
     if len(line) > MAX_PY_COLUMNS and "http://" not in line and "https://" not in line:
         errors.append(f"line exceeds {MAX_PY_COLUMNS} columns")
-    if not in_docstring and ";" in code:
-        errors.append("do not put a statement semicolon in Python source")
-    if BARE_EXCEPT.match(line):
-        errors.append("bare `except:` is forbidden; catch a specific exception")
-    if WILDCARD_IMPORT.match(line):
-        errors.append("wildcard import is forbidden")
-    if BACKSLASH_CONTINUATION.search(line):
-        errors.append("explicit backslash continuation; use implicit joining")
-    if MUTABLE_DEFAULT.search(code):
-        errors.append("mutable default argument; use None")
+    if not in_docstring:
+        if ";" in code:
+            errors.append("do not put a statement semicolon in Python source")
+        if BARE_EXCEPT.match(line):
+            errors.append("bare `except:` is forbidden; catch a specific exception")
+        if WILDCARD_IMPORT.match(line):
+            errors.append("wildcard import is forbidden")
+        if BACKSLASH_CONTINUATION.search(line):
+            errors.append("explicit backslash continuation; use implicit joining")
+        if MUTABLE_DEFAULT.search(code):
+            errors.append("mutable default argument; use None")
     return errors
 
 
 def check_cpp_line(line: str, *, header: bool, cpp: bool) -> list[str]:
     errors: list[str] = []
-    code = strip_literals(line, "//")
+    code = re.sub(r"/\*.*?\*/", "", strip_literals(line, "//"))
     if trailing_whitespace(line):
         errors.append("trailing whitespace")
     if "\t" in line:
@@ -526,6 +545,39 @@ class StyleCheckerTests(unittest.TestCase):
                 )
             )
         )
+
+    def test_collect_added_lines_preserves_crlf_on_real_git_diff(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.email", "t@local"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Test"], cwd=root, check=True)
+            makefile = root / "Makefile"
+            makefile.write_bytes(b"all:\n\techo hi\n")
+            subprocess.run(["git", "add", "Makefile"], cwd=root, check=True)
+            subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=root, check=True)
+            makefile.write_bytes(b"all:\n\techo hi\r\n")
+            original = Path.cwd()
+            try:
+                os.chdir(root)
+                added = collect_added_lines("HEAD")
+                violations = check_changed_file("Makefile", added["Makefile"])
+            finally:
+                os.chdir(original)
+            self.assertEqual(added, {"Makefile": [(2, "\techo hi\r")]})
+            self.assertTrue(any("CRLF" in m for m in violations.get(2, [])))
+
+    def test_quoted_path_header(self) -> None:
+        diff = '+++ "b/with space.py"\n@@ -0,0 +1,1 @@\n+x = 1\n'
+        self.assertEqual(parse_added_lines(diff), {"with space.py": [(1, "x = 1")]})
+
+    def test_docstring_state_uses_tokenizer(self) -> None:
+        self.assertEqual(python_docstring_lines('# note """\nx = 1\n'), set())
+        self.assertEqual(python_docstring_lines('"""doc\nmore"""\nx = 1\n'), {1, 2})
+        self.assertEqual(check_python_line("except:", in_docstring=True), [])
+
+    def test_null_rule_ignores_block_comments(self) -> None:
+        self.assertEqual(check_cpp_line("/* NULL */", header=False, cpp=True), [])
 
     def test_supported_extensions(self) -> None:
         self.assertTrue(is_supported("a.py"))
