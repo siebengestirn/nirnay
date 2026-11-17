@@ -2,16 +2,16 @@
 
 //! Acceptance tests for the canonical India domain (task P1-01/P1-02).
 
-use chrono::{Datelike, NaiveDate};
 use india_domain::{
     CorporateAction, CorporateActionKind, Instrument, InstrumentId, InstrumentType, InstrumentWire,
     Isin, Listing, ListingStatus, ListingTerms, OptionKind, Paise, Segment, SessionDay,
     SettlementRegime, TickAssignment, TickBand, TickSchedule, TradingCalendar, Venue,
     adjusted_price_paise,
 };
+use jiff::civil::Date;
 
-fn d(year: i32, month: u32, day: u32) -> NaiveDate {
-    NaiveDate::from_ymd_opt(year, month, day).unwrap()
+fn d(year: i32, month: u32, day: u32) -> Date {
+    Date::new(year as i16, month as i8, day as i8).unwrap()
 }
 
 fn terms() -> Vec<ListingTerms> {
@@ -243,7 +243,7 @@ fn calendar_distinguishes_trading_closed_and_finds_next_trading_day() {
     );
 }
 
-fn calendar_day(date: NaiveDate, session: SessionDay) -> india_domain::CalendarDay {
+fn calendar_day(date: Date, session: SessionDay) -> india_domain::CalendarDay {
     india_domain::CalendarDay {
         venue: Venue::Nse,
         date,
@@ -472,13 +472,16 @@ fn calendar_month_coverage_requires_every_day() {
     let mut days = Vec::new();
     let mut day = d(2026, 5, 1);
     while day.month() == 5 {
-        let session = if matches!(day.weekday(), chrono::Weekday::Sat | chrono::Weekday::Sun) {
+        let session = if matches!(
+            day.weekday(),
+            jiff::civil::Weekday::Saturday | jiff::civil::Weekday::Sunday
+        ) {
             SessionDay::Closed
         } else {
             SessionDay::Trading
         };
         days.push(calendar_day(day, session));
-        day = day.succ_opt().unwrap();
+        day = day.checked_add(jiff::Span::new().days(1)).unwrap();
     }
     let complete = TradingCalendar {
         venue: Venue::Nse,

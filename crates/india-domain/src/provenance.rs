@@ -3,7 +3,7 @@
 //! Hash the exact downloaded bytes before parsing. Parsed records inherit this
 //! provenance; a parser correction must never rewrite the source identity.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -18,7 +18,7 @@ pub struct SourceProvenance {
     pub source_id: String,
     pub venue: Venue,
     pub segment: Segment,
-    pub retrieved_at: DateTime<Utc>,
+    pub retrieved_at: Timestamp,
     /// Lowercase SHA-256 of the exact, unmodified source bytes.
     pub sha256_hex: String,
     pub source_format_version: String,
@@ -62,7 +62,7 @@ pub fn provenance_for_source(
     source_id: &str,
     venue: Venue,
     segment: Segment,
-    retrieved_at: DateTime<Utc>,
+    retrieved_at: Timestamp,
     source_format_version: &str,
     declared_by: &str,
     raw_bytes: &[u8],

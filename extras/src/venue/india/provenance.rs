@@ -2,8 +2,8 @@
 //!
 //! Every source file is described once, before parsing:
 
-use chrono::{DateTime, Utc};
 use india_domain::{Segment, Venue};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 
 use crate::util::sha256_hex;
@@ -28,7 +28,7 @@ pub struct SourceProvenance {
     /// Market segment the file covers.
     pub segment: Segment,
     /// Wall-clock time the bytes were retrieved (knowledge time).
-    pub retrieved_at: DateTime<Utc>,
+    pub retrieved_at: Timestamp,
     /// Lowercase hex SHA-256 of the exact raw bytes.
     pub sha256_hex: String,
     /// Source file layout version, e.g. `nse-cm-master-v1`.
@@ -78,7 +78,7 @@ pub fn provenance_for_source(
     source_id: &str,
     venue: Venue,
     segment: Segment,
-    retrieved_at: DateTime<Utc>,
+    retrieved_at: Timestamp,
     source_format_version: &str,
     declared_by: &str,
     raw_bytes: &[u8],

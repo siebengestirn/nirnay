@@ -17,10 +17,10 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use chrono::{DateTime, NaiveDate, Utc};
 use india_domain::{
     InstrumentType, Isin, ListingStatus, Segment, SettlementRegime, TickAssignment, Venue,
 };
+use jiff::{Timestamp, civil::Date};
 use nirnay_extras::venue::india::archive::SourceArchive;
 use nirnay_extras::venue::india::backup::{backup as backup_store, restore as restore_backup};
 use nirnay_extras::venue::india::provenance::provenance_for_source;
@@ -42,12 +42,27 @@ fn child_source_digest() -> String {
     nirnay_extras::venue::india::durable::payload_digest_for_test(CHILD_SOURCE_BYTES)
 }
 
-fn date(year: i32, month: u32, day: u32) -> NaiveDate {
-    NaiveDate::from_ymd_opt(year, month, day).unwrap()
+fn date(year: i32, month: u32, day: u32) -> Date {
+    Date::new(year as i16, month as i8, day as i8).unwrap()
 }
 
-fn at(day: NaiveDate) -> DateTime<Utc> {
-    day.and_hms_opt(10, 0, 0).unwrap().and_utc()
+fn at_nanos(day: Date, hour: i8, minute: i8, second: i8, nanos: i32) -> Timestamp {
+    jiff::tz::Offset::UTC
+        .to_timestamp(day.at(hour, minute, second, nanos))
+        .unwrap()
+}
+
+fn at_time(day: Date, hour: i8, minute: i8, second: i8) -> Timestamp {
+    at_nanos(day, hour, minute, second, 0)
+}
+
+fn utc_date(ts: Timestamp) -> Date {
+    ts.to_zoned_datetime(jiff::tz::Offset::UTC.to_time_zone())
+        .date()
+}
+
+fn at(day: Date) -> Timestamp {
+    at_time(day, 10, 0, 0)
 }
 
 fn flat_assignment(revision: &str) -> TickAssignment {
@@ -102,7 +117,7 @@ fn synthetic_isin(index: usize) -> String {
 fn normalized_equity(
     symbol: &str,
     isin: &str,
-    as_of: NaiveDate,
+    as_of: Date,
     status: ListingStatus,
     regime: SettlementRegime,
 ) -> NormalizedListing {
@@ -111,7 +126,7 @@ fn normalized_equity(
     listing
 }
 
-fn row(symbol: &str, isin: &str, as_of: NaiveDate, status: ListingStatus) -> NormalizedListing {
+fn row(symbol: &str, isin: &str, as_of: Date, status: ListingStatus) -> NormalizedListing {
     NormalizedListing {
         venue: Venue::Nse,
         segment: Segment::Cash,
@@ -132,8 +147,8 @@ fn row(symbol: &str, isin: &str, as_of: NaiveDate, status: ListingStatus) -> Nor
 
 fn snapshot(
     root: &Path,
-    valid_at: NaiveDate,
-    recorded_at: DateTime<Utc>,
+    valid_at: Date,
+    recorded_at: Timestamp,
     rows: Vec<NormalizedListing>,
     base: Option<&ReferenceSnapshot>,
     extra_assignments: Option<TickAssignment>,
@@ -151,8 +166,8 @@ fn snapshot(
 
 fn snapshot_from_source(
     root: &Path,
-    valid_at: NaiveDate,
-    recorded_at: DateTime<Utc>,
+    valid_at: Date,
+    recorded_at: Timestamp,
     rows: Vec<NormalizedListing>,
     base: Option<&ReferenceSnapshot>,
     extra_assignments: Option<TickAssignment>,
@@ -178,8 +193,8 @@ fn snapshot_from_source(
 #[allow(clippy::too_many_arguments)]
 fn snapshot_with_provenance(
     root: &Path,
-    valid_at: NaiveDate,
-    recorded_at: DateTime<Utc>,
+    valid_at: Date,
+    recorded_at: Timestamp,
     rows: Vec<NormalizedListing>,
     base: Option<&ReferenceSnapshot>,
     extra_assignments: Option<TickAssignment>,
@@ -189,7 +204,7 @@ fn snapshot_with_provenance(
     source_format_version: &str,
 ) -> ReferenceSnapshot {
     let archive = SourceArchive::open(&root.join("source-archive")).unwrap();
-    let retrieved_at = at(recorded_at.date_naive());
+    let retrieved_at = at(utc_date(recorded_at));
     archive
         .store(source_id, source_bytes, retrieved_at)
         .unwrap();
@@ -993,7 +1008,7 @@ fn rsv_05_history_appends_without_duplication() {
 // ---------------------------------------------------------------------------
 fn snapshot_with_lineage(
     root: &Path,
-    day: NaiveDate,
+    day: Date,
     reference_bytes: &[u8],
     schedule_bytes: &[u8],
     calendar_bytes: &[u8],
@@ -1016,7 +1031,7 @@ fn snapshot_with_lineage(
         reference_sha256_hex: Some(reference.sha256_hex.clone()),
         effective_month: Some(date(2026, 2, 1)),
         schedule_revision: "nse-tick-schedule:nse-tick-schedule-2026-04-15".to_owned(),
-        schedule_effective_from: Some("2026-01-01".parse::<NaiveDate>().unwrap()),
+        schedule_effective_from: Some(Date::strptime("%Y-%m-%d", "2026-01-01").unwrap()),
         schedule_sha256_hex: Some(schedule.sha256_hex.clone()),
         calendar_revision: Some("nse-cash-calendar:nse-cash-calendar-v1".to_owned()),
         calendar_sha256_hex: Some(calendar.sha256_hex.clone()),
@@ -1669,12 +1684,7 @@ fn rsv_11_restore_fails_closed_on_hash_mismatch() {
 // ---------------------------------------------------------------------------
 /// A BSE-shaped row: Scrip Code token, settlement group, decimal-rupee tick
 /// converted to exact paise.
-fn bse_row(
-    scrip_code: &str,
-    isin: &str,
-    as_of: NaiveDate,
-    status: ListingStatus,
-) -> NormalizedListing {
+fn bse_row(scrip_code: &str, isin: &str, as_of: Date, status: ListingStatus) -> NormalizedListing {
     NormalizedListing {
         venue: Venue::Bse,
         segment: Segment::Cash,
@@ -1876,10 +1886,7 @@ fn nanosecond_timestamp_round_trips_through_metadata() {
     let root = TestRoot::new();
     let day = date(2026, 1, 10);
     // A timestamp NOT aligned to microseconds or milliseconds.
-    let recorded = day
-        .and_hms_nano_opt(10, 0, 0, 123_456_789u32)
-        .unwrap()
-        .and_utc();
+    let recorded = at_nanos(day, 10, 0, 0, 123_456_789);
     let snap = snapshot(
         &root.data_dir(),
         day,
@@ -1912,7 +1919,7 @@ fn nanosecond_timestamp_round_trips_through_metadata() {
             .unwrap()
     };
     assert_eq!(
-        DateTime::parse_from_rfc3339(&metadata_str).unwrap(),
+        metadata_str.parse::<Timestamp>().unwrap(),
         recorded,
         "metadata must carry full nanosecond precision"
     );
@@ -2125,13 +2132,13 @@ fn unknown_nested_provenance_field_is_rejected() {
         "schema_version": 1,
         "snapshot": {
             "valid_at": "2026-01-10",
-            "recorded_at": snap.recorded_at.to_rfc3339(),
+            "recorded_at": snap.recorded_at.to_string(),
             "provenance": {
                 "schema_version": 1,
                 "source_id": "nse-cm-master",
                 "venue": "NSE",
                 "segment": "cash",
-                "retrieved_at": snap.provenance.retrieved_at.to_rfc3339(),
+                "retrieved_at": snap.provenance.retrieved_at.to_string(),
                 "sha256_hex": snap.provenance.sha256_hex,
                 "source_format_version": "nse-cm-master-v1",
                 "record_count": snap.provenance.record_count,
@@ -2190,7 +2197,7 @@ fn unknown_nested_tick_assignment_field_is_rejected() {
         "schema_version": 1,
         "snapshot": {
             "valid_at": "2026-01-10",
-            "recorded_at": snap.recorded_at.to_rfc3339(),
+            "recorded_at": snap.recorded_at.to_string(),
             "provenance": snap.provenance,
             "instruments": snap.instruments,
             "calendar": null,

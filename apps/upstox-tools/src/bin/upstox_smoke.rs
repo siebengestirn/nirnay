@@ -15,9 +15,9 @@ use std::{
 
 use anyhow::{Context, bail, ensure};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use chrono::{DateTime, Months, NaiveDate, SecondsFormat, Utc};
 use clap::Parser;
 use futures_util::{SinkExt, StreamExt};
+use jiff::{Timestamp, civil::Date};
 use reqwest::{Client, StatusCode, Url, header, redirect};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -45,11 +45,11 @@ struct Args {
 
     /// Inclusive start date for one-minute historical candles (YYYY-MM-DD).
     #[arg(long, value_parser = parse_date)]
-    from_date: NaiveDate,
+    from_date: Date,
 
     /// Inclusive end date for one-minute historical candles (YYYY-MM-DD).
     #[arg(long, value_parser = parse_date)]
-    to_date: NaiveDate,
+    to_date: Date,
 
     /// Output directory. A unique run directory is created beneath this path.
     #[arg(long, default_value = "var/upstox")]
@@ -66,11 +66,11 @@ struct Args {
     /// NSE session date for this live capture (YYYY-MM-DD). Defaults to
     /// `--to-date` when omitted.
     #[arg(long, value_parser = parse_date)]
-    session_date: Option<NaiveDate>,
+    session_date: Option<Date>,
 }
 
-fn parse_date(value: &str) -> Result<NaiveDate, String> {
-    NaiveDate::parse_from_str(value, "%Y-%m-%d")
+fn parse_date(value: &str) -> Result<Date, String> {
+    Date::strptime("%Y-%m-%d", value)
         .map_err(|_| format!("invalid date {value:?}; expected YYYY-MM-DD"))
 }
 
@@ -198,8 +198,8 @@ impl UpstoxClient {
     async fn historical_candles(
         &self,
         instrument_key: &str,
-        from_date: NaiveDate,
-        to_date: NaiveDate,
+        from_date: Date,
+        to_date: Date,
     ) -> anyhow::Result<Vec<u8>> {
         let url = self.endpoint(&[
             "v3",
@@ -207,8 +207,8 @@ impl UpstoxClient {
             instrument_key,
             "minutes",
             "1",
-            &to_date.format("%Y-%m-%d").to_string(),
-            &from_date.format("%Y-%m-%d").to_string(),
+            &to_date.strftime("%Y-%m-%d").to_string(),
+            &from_date.strftime("%Y-%m-%d").to_string(),
         ])?;
         self.get_json_bytes(url).await
     }
@@ -462,7 +462,7 @@ async fn run(args: Args) -> anyhow::Result<SmokeReport> {
     validate_inputs(&args)?;
     let token = AnalyticsToken::from_environment()?;
     let client = UpstoxClient::new(token)?;
-    let started_at = Utc::now();
+    let started_at = Timestamp::now();
     let run_directory = create_run_directory(&args.output_dir, started_at)?;
 
     // Historical Candle V3: preserve the exact provider response before validation.
@@ -498,7 +498,7 @@ async fn run(args: Args) -> anyhow::Result<SmokeReport> {
     let session_date = args
         .session_date
         .unwrap_or(args.to_date)
-        .format("%Y-%m-%d")
+        .strftime("%Y-%m-%d")
         .to_string();
     let (connected, binary_frames, decode_counters, observability) = capture_ltpc_frames(
         &authorized_uri,
@@ -511,18 +511,18 @@ async fn run(args: Args) -> anyhow::Result<SmokeReport> {
     .await
     .context("capturing Upstox Market Data Feed V3")?;
 
-    let completed_at = Utc::now();
+    let completed_at = Timestamp::now();
     let manifest = SmokeManifest {
         schema_version: 4,
         provider: "upstox",
         mode: "read_only_analytics_token",
-        started_at_utc: started_at.to_rfc3339_opts(SecondsFormat::Millis, true),
-        completed_at_utc: completed_at.to_rfc3339_opts(SecondsFormat::Millis, true),
+        started_at_utc: started_at.strftime("%Y-%m-%dT%H:%M:%S%.3fZ").to_string(),
+        completed_at_utc: completed_at.strftime("%Y-%m-%dT%H:%M:%S%.3fZ").to_string(),
         instrument_key: args.instrument_key.clone(),
         historical: HistoricalArtifact {
             endpoint: "GET /v3/historical-candle/{instrument_key}/minutes/1/{to_date}/{from_date}",
-            from_date: args.from_date.format("%Y-%m-%d").to_string(),
-            to_date: args.to_date.format("%Y-%m-%d").to_string(),
+            from_date: args.from_date.strftime("%Y-%m-%d").to_string(),
+            to_date: args.to_date.strftime("%Y-%m-%d").to_string(),
             interval: "1 minute",
             candle_count,
             provider_order,
@@ -602,7 +602,7 @@ fn validate_inputs(args: &Args) -> anyhow::Result<()> {
     );
     let maximum_to_date = args
         .from_date
-        .checked_add_months(Months::new(1))
+        .checked_add(jiff::Span::new().months(1))
         .context("could not calculate one-month request boundary")?;
     ensure!(
         args.to_date <= maximum_to_date,
@@ -651,10 +651,11 @@ fn validate_historical_candles(raw: &[u8]) -> anyhow::Result<HistoricalValidatio
         let timestamp = row[0]
             .as_str()
             .with_context(|| format!("candle {index} timestamp is not a string"))?;
-        let parsed_timestamp = DateTime::parse_from_rfc3339(timestamp)
+        let parsed_timestamp = timestamp
+            .parse::<Timestamp>()
             .with_context(|| format!("candle {index} timestamp is not RFC3339"))?;
-        let timestamp_nanos = parsed_timestamp
-            .timestamp_nanos_opt()
+        let timestamp_nanos = i64::try_from(parsed_timestamp.as_nanosecond())
+            .ok()
             .context("candle timestamp is outside the supported nanosecond range")?;
         if let Some(previous) = previous_timestamp_nanos {
             ensure!(
@@ -770,10 +771,11 @@ fn validate_quote(raw: &[u8], requested_instrument_key: &str) -> anyhow::Result<
         .get("timestamp")
         .and_then(Value::as_str)
         .context("quote record has no timestamp")?;
-    let parsed_timestamp =
-        DateTime::parse_from_rfc3339(timestamp).context("quote timestamp is not RFC3339")?;
+    let parsed_timestamp = timestamp
+        .parse::<Timestamp>()
+        .context("quote timestamp is not RFC3339")?;
     ensure!(
-        parsed_timestamp.timestamp_nanos_opt().is_some(),
+        i64::try_from(parsed_timestamp.as_nanosecond()).is_ok(),
         "quote timestamp is outside the supported range"
     );
 
@@ -1011,7 +1013,9 @@ async fn capture_ltpc_frames(
         .send(Message::Binary(subscription.into()))
         .await
         .context("sending binary LTPC subscription")?;
-    let subscription_sent_at_utc = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+    let subscription_sent_at_utc = Timestamp::now()
+        .strftime("%Y-%m-%dT%H:%M:%S%.3fZ")
+        .to_string();
     let capture_started_at_utc = subscription_sent_at_utc.clone();
     let file = OpenOptions::new()
         .write(true)
@@ -1054,7 +1058,9 @@ async fn capture_ltpc_frames(
                 }
                 Ok(Some(Ok(Message::Binary(payload)))) => {
                     sequence += 1;
-                    let received = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+                    let received = Timestamp::now()
+                        .strftime("%Y-%m-%dT%H:%M:%S%.3fZ")
+                        .to_string();
                     let (_outcome, frame_counters) = archive_and_diagnose_frame(
                         payload.as_ref(),
                         sequence,
@@ -1102,7 +1108,9 @@ async fn capture_ltpc_frames(
     capture_result?;
     raw_finalize?;
     diagnostic_finalize?;
-    let capture_completed_at_utc = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+    let capture_completed_at_utc = Timestamp::now()
+        .strftime("%Y-%m-%dT%H:%M:%S%.3fZ")
+        .to_string();
     let termination_reason =
         determine_termination_reason(sequence, max_frames, timed_out, remote_close, stream_end);
     let _ = socket.close(None).await;
@@ -1119,9 +1127,9 @@ async fn capture_ltpc_frames(
     ))
 }
 
-fn create_run_directory(root: &Path, started_at: DateTime<Utc>) -> anyhow::Result<PathBuf> {
+fn create_run_directory(root: &Path, started_at: Timestamp) -> anyhow::Result<PathBuf> {
     fs::create_dir_all(root).with_context(|| format!("creating output root {}", root.display()))?;
-    let stamp = started_at.format("%Y%m%dT%H%M%S%.3fZ");
+    let stamp = started_at.strftime("%Y%m%dT%H%M%S%.3fZ");
     let run_directory = root.join(format!("upstox-smoke-{stamp}-{}", std::process::id()));
     fs::create_dir(&run_directory)
         .with_context(|| format!("creating unique run directory {}", run_directory.display()))?;
@@ -1556,15 +1564,15 @@ mod tests {
     fn enforces_the_one_month_intraday_request_bound() {
         let mut args = Args {
             instrument_key: "NSE_EQ|INE848E01016".to_owned(),
-            from_date: NaiveDate::from_ymd_opt(2026, 10, 9).expect("date"),
-            to_date: NaiveDate::from_ymd_opt(2026, 11, 9).expect("date"),
+            from_date: Date::new(2026, 10, 9).expect("date"),
+            to_date: Date::new(2026, 11, 9).expect("date"),
             output_dir: PathBuf::from("var/upstox"),
             websocket_frames: 5,
             websocket_timeout_secs: 20,
             session_date: None,
         };
         assert!(validate_inputs(&args).is_ok());
-        args.to_date = NaiveDate::from_ymd_opt(2026, 11, 10).expect("date");
+        args.to_date = Date::new(2026, 11, 10).expect("date");
         assert!(validate_inputs(&args).is_err());
     }
 

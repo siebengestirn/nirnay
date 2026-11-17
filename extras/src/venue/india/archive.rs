@@ -26,7 +26,7 @@
 use std::path::{Path, PathBuf};
 use std::{fs::OpenOptions, io::Write as _};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 
 #[cfg(debug_assertions)]
@@ -52,7 +52,7 @@ pub struct ArchivedSource {
     /// Lowercase hex SHA-256 of the raw bytes (also the filename stem).
     pub sha256_hex: String,
     /// Retrieval time recorded at ingestion (knowledge time).
-    pub retrieved_at: DateTime<Utc>,
+    pub retrieved_at: Timestamp,
     /// Bytes stored.
     pub bytes: u64,
 }
@@ -64,7 +64,7 @@ pub struct ArchiveEntry {
     pub schema_version: u32,
     pub source_id: String,
     pub sha256_hex: String,
-    pub retrieved_at: DateTime<Utc>,
+    pub retrieved_at: Timestamp,
     pub bytes: u64,
 }
 
@@ -247,7 +247,7 @@ impl SourceArchive {
         &self,
         source_id: &str,
         bytes: &[u8],
-        retrieved_at: DateTime<Utc>,
+        retrieved_at: Timestamp,
     ) -> Result<ArchivedSource, anyhow::Error> {
         // The whole check-and-publish operation is one critical section:
         // looking up duplicate content outside the lock would let two
@@ -260,7 +260,7 @@ impl SourceArchive {
         &self,
         source_id: &str,
         bytes: &[u8],
-        retrieved_at: DateTime<Utc>,
+        retrieved_at: Timestamp,
     ) -> Result<ArchivedSource, anyhow::Error> {
         anyhow::ensure!(!source_id.is_empty(), "source_id must not be empty");
         let digest = sha256_hex(bytes);

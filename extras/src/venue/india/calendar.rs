@@ -24,8 +24,8 @@
 //! window, a misspelled purpose, or an empty string must never silently
 //! become a trading session.
 
-use chrono::{Datelike, NaiveDate, Weekday};
 use india_domain::{CalendarDay, Segment, SessionDay, TradingCalendar, Venue};
+use jiff::civil::{Date, Weekday};
 
 use crate::util::sha256_hex;
 
@@ -126,8 +126,8 @@ impl BuiltCalendar {
 /// file, exchange, segment, row count or archive entry fails closed.
 pub fn build_calendar(
     venue: Venue,
-    from: NaiveDate,
-    to: NaiveDate,
+    from: Date,
+    to: Date,
     holiday_csv: &str,
     provenance: SourceProvenance,
     archive: &SourceArchive,
@@ -179,8 +179,8 @@ pub fn build_calendar(
 
 fn build_dense_calendar(
     venue: Venue,
-    from: NaiveDate,
-    to: NaiveDate,
+    from: Date,
+    to: Date,
     exceptions: &TradingCalendar,
     provenance: SourceProvenance,
 ) -> Result<BuiltCalendar, anyhow::Error> {
@@ -215,8 +215,8 @@ fn build_dense_calendar(
             break;
         }
         current = current
-            .succ_opt()
-            .ok_or_else(|| anyhow::anyhow!("calendar range overflows the date space"))?;
+            .checked_add(jiff::Span::new().days(1))
+            .map_err(|_| anyhow::anyhow!("calendar range overflows the date space"))?;
     }
 
     let calendar = TradingCalendar { venue, days };
@@ -233,8 +233,8 @@ fn build_dense_calendar(
 /// Muhurat session is represented as a `Special` exception, never as a normal
 /// weekend session.
 #[must_use]
-pub fn is_trading_weekday(date: NaiveDate) -> bool {
-    !matches!(date.weekday(), Weekday::Sat | Weekday::Sun)
+pub fn is_trading_weekday(date: Date) -> bool {
+    !matches!(date.weekday(), Weekday::Saturday | Weekday::Sunday)
 }
 
 /// Parse a holiday calendar for `venue`.
@@ -251,8 +251,8 @@ pub fn parse_holiday_csv(venue: Venue, csv: &str) -> Result<TradingCalendar, any
     for (offset, row) in rows.iter().enumerate() {
         let line = offset + 2;
         let date_text = row[date_col].trim();
-        let date = NaiveDate::parse_from_str(date_text, "%d-%b-%Y")
-            .or_else(|_| NaiveDate::parse_from_str(date_text, "%Y-%m-%d"))
+        let date = Date::strptime("%d-%b-%Y", date_text)
+            .or_else(|_| Date::strptime("%Y-%m-%d", date_text))
             .map_err(|_| anyhow::anyhow!("line {line}: unparseable DATE {date_text}"))?;
         let purpose = match purpose_col {
             Some(index) => row[index].trim().to_uppercase(),

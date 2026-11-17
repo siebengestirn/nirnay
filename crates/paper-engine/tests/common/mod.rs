@@ -32,7 +32,8 @@ pub fn instrument_id() -> InstrumentId {
 }
 
 pub fn date(year: i32, month: u32, day: u32) -> Result<TradeDate, DomainError> {
-    TradeDate::from_ymd_opt(year, month, day)
+    TradeDate::new(year as i16, month as i8, day as i8)
+        .ok()
         .ok_or_else(|| DomainError::InvalidEventTime("invalid calendar date".to_owned()))
 }
 

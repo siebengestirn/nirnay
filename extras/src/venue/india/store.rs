@@ -22,8 +22,8 @@
 
 use std::collections::BTreeMap;
 
-use chrono::{DateTime, NaiveDate, Utc};
 use india_domain::{Instrument, InstrumentId, TradingCalendar, Venue};
+use jiff::{Timestamp, civil::Date};
 use serde::{Deserialize, Serialize};
 
 use crate::util::sha256_hex;
@@ -68,9 +68,9 @@ fn venue_label(venue: Venue) -> String {
 #[serde(deny_unknown_fields)]
 pub struct ReferenceSnapshot {
     /// Valid time: the trading date this snapshot is *about*.
-    pub valid_at: NaiveDate,
+    pub valid_at: Date,
     /// Knowledge time: when this snapshot was ingested.
-    pub recorded_at: DateTime<Utc>,
+    pub recorded_at: Timestamp,
     /// Raw-file provenance that produced the universe.
     pub provenance: SourceProvenance,
     /// Instruments sorted by [`InstrumentId`].
@@ -91,8 +91,8 @@ impl ReferenceSnapshot {
     /// this reconciliation's fresh states are appended to it.
     pub fn from_reconciled(
         reconciled: ReconciledUniverse,
-        valid_at: NaiveDate,
-        recorded_at: DateTime<Utc>,
+        valid_at: Date,
+        recorded_at: Timestamp,
         provenance: SourceProvenance,
         previous_states: &[ListingStateRecord],
     ) -> Result<Self, anyhow::Error> {
@@ -121,7 +121,7 @@ impl ReferenceSnapshot {
         // Envelope inputs that cannot be reconstructed after decode.
         self.provenance.validate()?;
         anyhow::ensure!(
-            self.recorded_at.timestamp_nanos_opt().is_some(),
+            i64::try_from(self.recorded_at.as_nanosecond()).is_ok(),
             "snapshot recorded_at is out of representable range"
         );
         // Instruments must already be in canonical strict order.
@@ -185,8 +185,7 @@ impl ReferenceSnapshot {
         // over an overlapping interval. The same instrument may repeat a
         // symbol across closed+reopened intervals (symbol/status changes);
         // `Instrument::validate` already forbids overlaps within one.
-        let mut claimed: Vec<(String, String, NaiveDate, Option<NaiveDate>, &InstrumentId)> =
-            Vec::new();
+        let mut claimed: Vec<(String, String, Date, Option<Date>, &InstrumentId)> = Vec::new();
         for instrument in &self.instruments {
             instrument.validate()?;
             for listing in &instrument.listings {
@@ -227,7 +226,7 @@ impl ReferenceSnapshot {
 
     /// Ids of instruments with an active listing on `date` (valid time).
     #[must_use]
-    pub fn universe_on(&self, date: NaiveDate) -> Vec<InstrumentId> {
+    pub fn universe_on(&self, date: Date) -> Vec<InstrumentId> {
         self.instruments
             .iter()
             .filter(|instrument| {
@@ -246,7 +245,7 @@ impl ReferenceSnapshot {
         &self,
         instrument_id: &InstrumentId,
         venue: Venue,
-        date: NaiveDate,
+        date: Date,
     ) -> Option<String> {
         self.instruments
             .iter()
@@ -283,11 +282,7 @@ impl ReferenceSnapshot {
     /// historical consumer never has to fall back to today's master.
     /// Ordered deterministically.
     #[must_use]
-    pub fn reference(
-        &self,
-        t_valid: NaiveDate,
-        t_recorded: DateTime<Utc>,
-    ) -> Vec<ListingStateRecord> {
+    pub fn reference(&self, t_valid: Date, t_recorded: Timestamp) -> Vec<ListingStateRecord> {
         latest_states_at(&self.listing_states, t_valid, t_recorded)
     }
 
@@ -326,10 +321,10 @@ impl ReferenceSnapshot {
 #[must_use]
 pub fn latest_states_at(
     states: &[ListingStateRecord],
-    t_valid: NaiveDate,
-    t_recorded: DateTime<Utc>,
+    t_valid: Date,
+    t_recorded: Timestamp,
 ) -> Vec<ListingStateRecord> {
-    type IntervalKey = (InstrumentId, u8, NaiveDate);
+    type IntervalKey = (InstrumentId, u8, Date);
     let mut versions: BTreeMap<IntervalKey, &ListingStateRecord> = BTreeMap::new();
     for state in states {
         if state.recorded_at > t_recorded {
@@ -373,12 +368,7 @@ pub fn latest_states_at(
 /// Whether two effective intervals [from, to] (open-ended when None)
 /// intersect. Intervals are inclusive at both ends (matches
 /// `india_domain`'s listing overlap rule).
-fn intervals_overlap(
-    a_from: NaiveDate,
-    a_to: Option<NaiveDate>,
-    b_from: NaiveDate,
-    b_to: Option<NaiveDate>,
-) -> bool {
+fn intervals_overlap(a_from: Date, a_to: Option<Date>, b_from: Date, b_to: Option<Date>) -> bool {
     let a_starts_before_b_ends = b_to.is_none_or(|b_end| a_from <= b_end);
     let b_starts_before_a_ends = a_to.is_none_or(|a_end| b_from <= a_end);
     a_starts_before_b_ends && b_starts_before_a_ends
@@ -392,12 +382,12 @@ fn intervals_overlap(
 /// failure must never silently fall back to hashing empty bytes.
 pub fn snapshot_hash_of(
     instruments: &[Instrument],
-    valid_at: NaiveDate,
+    valid_at: Date,
     calendar: Option<&TradingCalendar>,
     listing_states: &[ListingStateRecord],
 ) -> Result<String, anyhow::Error> {
     let serializable = serde_json::json!({
-        "valid_at": valid_at.format("%Y-%m-%d").to_string(),
+        "valid_at": valid_at.to_string(),
         "instruments": instruments,
         "calendar": calendar,
         "listing_states": listing_states,
@@ -450,11 +440,7 @@ impl ReferenceStore {
     /// the accumulated listing-state history, so enumerating earlier
     /// revisions would duplicate or resurrect stale records.
     #[must_use]
-    pub fn reference(
-        &self,
-        t_valid: NaiveDate,
-        t_recorded: DateTime<Utc>,
-    ) -> Vec<ListingStateRecord> {
+    pub fn reference(&self, t_valid: Date, t_recorded: Timestamp) -> Vec<ListingStateRecord> {
         self.revisions
             .last()
             .map(|head| latest_states_at(&head.listing_states, t_valid, t_recorded))
@@ -464,11 +450,7 @@ impl ReferenceStore {
     /// Ids of instruments with an `Active` listing state valid at `t_valid`
     /// and known by `t_recorded`.
     #[must_use]
-    pub fn known_universe(
-        &self,
-        t_valid: NaiveDate,
-        t_recorded: DateTime<Utc>,
-    ) -> Vec<InstrumentId> {
+    pub fn known_universe(&self, t_valid: Date, t_recorded: Timestamp) -> Vec<InstrumentId> {
         let mut ids: Vec<InstrumentId> = self
             .reference(t_valid, t_recorded)
             .into_iter()

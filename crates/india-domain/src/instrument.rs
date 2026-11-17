@@ -8,7 +8,7 @@
 //! Exchanges (NSE/BSE) are venues; Zerodha/Groww are brokers and never part
 //! of instrument identity. Prices are integer paise, quantities integer lots.
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 
 /// Venue: a regulated exchange facility. Distinct from a broker.
@@ -217,8 +217,8 @@ pub struct Listing {
     pub venue_symbol: String,
     /// Venue-assigned numeric token (e.g. NSE instrument token).
     pub token: Option<String>,
-    pub effective_from: NaiveDate,
-    pub effective_to: Option<NaiveDate>,
+    pub effective_from: Date,
+    pub effective_to: Option<Date>,
     pub status: ListingStatus,
     /// Settlement regime while the listing is tradable.
     pub settlement_regime: SettlementRegime,
@@ -239,8 +239,8 @@ pub struct Listing {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ListingTerms {
-    pub effective_from: NaiveDate,
-    pub effective_to: Option<NaiveDate>,
+    pub effective_from: Date,
+    pub effective_to: Option<Date>,
     /// The tick size assigned to this instrument for this term interval.
     ///
     /// (NSE assigns tick sizes monthly from the previous month-end close;
@@ -392,7 +392,7 @@ pub struct TickAssignment {
     /// Trading date of the reference close. For an NSE monthly assignment
     /// this is the last available close of the month immediately preceding
     /// `effective_month`; an arbitrary price cannot be assigned.
-    pub reference_close_date: Option<NaiveDate>,
+    pub reference_close_date: Option<Date>,
     /// Identity of the dataset the reference close came from (e.g.
     /// `nse-eod-close`). Never empty for a monthly assignment.
     pub reference_source: Option<String>,
@@ -401,12 +401,12 @@ pub struct TickAssignment {
     pub reference_sha256_hex: Option<String>,
     /// First day of the month this assignment governs; `None` for
     /// non-monthly assignments.
-    pub effective_month: Option<NaiveDate>,
+    pub effective_month: Option<Date>,
     /// Exchange tick-schedule revision the assignment was computed under,
     /// as `{source_id}:{source_format_version}`. Never empty.
     pub schedule_revision: String,
     /// Date from which that schedule revision is in force.
-    pub schedule_effective_from: Option<NaiveDate>,
+    pub schedule_effective_from: Option<Date>,
     /// SHA-256 of the exact schedule source bytes.
     pub schedule_sha256_hex: Option<String>,
     /// Exchange-calendar revision the assignment was determined under, as
@@ -429,25 +429,20 @@ pub fn is_sha256_hex(value: &str) -> bool {
 
 /// First day of `date`'s calendar month.
 #[must_use]
-pub fn month_start(date: NaiveDate) -> NaiveDate {
-    NaiveDate::from_ymd_opt(
-        chrono::Datelike::year(&date),
-        chrono::Datelike::month(&date),
-        1,
-    )
-    .unwrap_or(date)
+pub fn month_start(date: Date) -> Date {
+    Date::new(date.year(), date.month(), 1).unwrap_or(date)
 }
 
 /// First day of the calendar month before `month_start`.
-fn previous_month_start(month_start: NaiveDate) -> Option<NaiveDate> {
-    let year = chrono::Datelike::year(&month_start);
-    let month = chrono::Datelike::month(&month_start);
+fn previous_month_start(month_start: Date) -> Option<Date> {
+    let year = month_start.year();
+    let month = month_start.month();
     let (year, month) = if month == 1 {
         (year.checked_sub(1)?, 12)
     } else {
         (year, month - 1)
     };
-    NaiveDate::from_ymd_opt(year, month, 1)
+    Date::new(year, month, 1).ok()
 }
 
 impl TickAssignment {
@@ -554,7 +549,7 @@ impl TickSchedule {
 impl ListingTerms {
     /// Whether this term set is valid on `date` (inclusive bounds).
     #[must_use]
-    pub fn is_valid_on(&self, date: NaiveDate) -> bool {
+    pub fn is_valid_on(&self, date: Date) -> bool {
         self.effective_from <= date && self.effective_to.is_none_or(|end| date <= end)
     }
 }
@@ -574,7 +569,7 @@ pub enum ListingStatus {
 #[serde(deny_unknown_fields)]
 pub struct CorporateAction {
     pub action: CorporateActionKind,
-    pub effective_date: NaiveDate,
+    pub effective_date: Date,
     pub numerator: i64,
     pub denominator: i64,
     /// Per-share amount in paise (dividend/rights).
@@ -608,7 +603,7 @@ pub struct Instrument {
     pub underlying_instrument_id: Option<InstrumentId>,
     /// For derivatives: contract expiry in exchange calendar time.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub expiry_date: Option<NaiveDate>,
+    pub expiry_date: Option<Date>,
     /// For options: exact strike in paise.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub strike_price_paise: Option<Paise>,
@@ -669,7 +664,7 @@ impl Instrument {
             "instrument {} must have at least one listing",
             self.instrument_id
         );
-        let mut previous: Option<NaiveDate> = None;
+        let mut previous: Option<Date> = None;
         for action in &self.corporate_actions {
             if let Some(last) = previous {
                 anyhow::ensure!(
@@ -694,7 +689,7 @@ impl Instrument {
         // only for historical intervals that do not overlap. Each listing
         // must carry trading terms that are valid (ordered bounds cover
         // their effective ranges) and non-overlapping.
-        let mut seen: Vec<(Venue, Segment, &str, NaiveDate, Option<NaiveDate>)> = Vec::new();
+        let mut seen: Vec<(Venue, Segment, &str, Date, Option<Date>)> = Vec::new();
         for listing in &self.listings {
             anyhow::ensure!(
                 !listing.venue_symbol.is_empty(),
@@ -780,7 +775,7 @@ impl Instrument {
     /// Whether the instrument trades on the venue during the period implied
     /// by its listings' effective ranges.
     #[must_use]
-    pub fn lists_on(&self, venue: Venue, on_date: NaiveDate) -> bool {
+    pub fn lists_on(&self, venue: Venue, on_date: Date) -> bool {
         self.listings.iter().any(|listing| {
             listing.venue == venue
                 && listing.effective_from <= on_date
@@ -799,7 +794,7 @@ impl Instrument {
     /// venue: the first active listing is not necessarily the one the order
     /// targets.
     #[must_use]
-    pub fn effective_listing(&self, on_date: NaiveDate) -> Option<&Listing> {
+    pub fn effective_listing(&self, on_date: Date) -> Option<&Listing> {
         self.listings.iter().find(|listing| {
             listing.status == ListingStatus::Active
                 && listing.effective_from <= on_date
@@ -811,7 +806,7 @@ impl Instrument {
     /// venue-scoped lookup execution eligibility must use; it never falls
     /// back to another venue's listing.
     #[must_use]
-    pub fn effective_listing_on(&self, venue: Venue, on_date: NaiveDate) -> Option<&Listing> {
+    pub fn effective_listing_on(&self, venue: Venue, on_date: Date) -> Option<&Listing> {
         self.listings.iter().find(|listing| {
             listing.venue == venue
                 && listing.status == ListingStatus::Active
@@ -822,7 +817,7 @@ impl Instrument {
 
     /// Settlement regime in force on `date`, if the instrument is active.
     #[must_use]
-    pub fn settlement_regime_on(&self, on_date: NaiveDate) -> Option<SettlementRegime> {
+    pub fn settlement_regime_on(&self, on_date: Date) -> Option<SettlementRegime> {
         self.effective_listing(on_date)
             .map(|listing| listing.settlement_regime)
     }
@@ -831,7 +826,7 @@ impl Instrument {
     /// active. `Some(false)` is a definite "not Z"; `None` means the
     /// instrument is not active and the caller must fail closed.
     #[must_use]
-    pub fn z_category_on(&self, on_date: NaiveDate) -> Option<bool> {
+    pub fn z_category_on(&self, on_date: Date) -> Option<bool> {
         self.effective_listing(on_date)
             .map(|listing| listing.z_category)
     }
@@ -841,7 +836,7 @@ impl Instrument {
     /// covers it. `None` when no listing is active or it has no term cover
     /// on that date — callers must fail closed, never guess.
     #[must_use]
-    pub fn effective_terms(&self, on_date: NaiveDate) -> Option<&ListingTerms> {
+    pub fn effective_terms(&self, on_date: Date) -> Option<&ListingTerms> {
         self.effective_listing(on_date)
             .and_then(|listing| listing.terms.iter().find(|term| term.is_valid_on(on_date)))
     }
@@ -850,7 +845,7 @@ impl Instrument {
     /// set of that venue's active listing. `None` when the venue has no
     /// active listing or no covering term set — callers must fail closed.
     #[must_use]
-    pub fn effective_terms_on(&self, venue: Venue, on_date: NaiveDate) -> Option<&ListingTerms> {
+    pub fn effective_terms_on(&self, venue: Venue, on_date: Date) -> Option<&ListingTerms> {
         self.effective_listing_on(venue, on_date)
             .and_then(|listing| listing.terms.iter().find(|term| term.is_valid_on(on_date)))
     }
@@ -858,12 +853,7 @@ impl Instrument {
 
 /// Whether two effective intervals [from, to] (open-ended when `to` is None)
 /// intersect. Intervals are inclusive at both ends.
-fn ranges_overlap(
-    a_from: NaiveDate,
-    a_to: Option<NaiveDate>,
-    b_from: NaiveDate,
-    b_to: Option<NaiveDate>,
-) -> bool {
+fn ranges_overlap(a_from: Date, a_to: Option<Date>, b_from: Date, b_to: Option<Date>) -> bool {
     let a_starts_before_b_ends = b_to.is_none_or(|b_end| a_from <= b_end);
     let b_starts_before_a_ends = a_to.is_none_or(|a_end| b_from <= a_end);
     a_starts_before_b_ends && b_starts_before_a_ends
@@ -898,8 +888,8 @@ pub struct ListingWire {
     pub segment: Segment,
     pub venue_symbol: String,
     pub token: Option<String>,
-    pub effective_from: NaiveDate,
-    pub effective_to: Option<NaiveDate>,
+    pub effective_from: Date,
+    pub effective_to: Option<Date>,
     pub status: ListingStatus,
     pub settlement_regime: SettlementRegime,
     pub z_category: bool,
@@ -911,8 +901,8 @@ pub struct ListingWire {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ListingTermsWire {
-    pub effective_from: NaiveDate,
-    pub effective_to: Option<NaiveDate>,
+    pub effective_from: Date,
+    pub effective_to: Option<Date>,
     pub tick_assignment: TickAssignmentWire,
     pub market_lot: i64,
     pub quantity_increment: i64,
@@ -925,16 +915,16 @@ pub struct TickAssignmentWire {
     #[serde(default)]
     pub reference_close_paise: Option<i64>,
     #[serde(default)]
-    pub reference_close_date: Option<NaiveDate>,
+    pub reference_close_date: Option<Date>,
     #[serde(default)]
     pub reference_source: Option<String>,
     #[serde(default)]
     pub reference_sha256_hex: Option<String>,
     #[serde(default)]
-    pub effective_month: Option<NaiveDate>,
+    pub effective_month: Option<Date>,
     pub schedule_revision: String,
     #[serde(default)]
-    pub schedule_effective_from: Option<NaiveDate>,
+    pub schedule_effective_from: Option<Date>,
     #[serde(default)]
     pub schedule_sha256_hex: Option<String>,
     #[serde(default)]
@@ -1014,7 +1004,7 @@ impl From<&TickSchedule> for TickScheduleWire {
 #[serde(deny_unknown_fields)]
 pub struct CorporateActionWire {
     pub action: CorporateActionKind,
-    pub effective_date: NaiveDate,
+    pub effective_date: Date,
     pub numerator: i64,
     pub denominator: i64,
     pub amount_paise: Option<i64>,
@@ -1242,7 +1232,7 @@ impl Instrument {
 pub fn adjusted_price_paise(
     raw_paise: Paise,
     actions: &[CorporateAction],
-    as_of: chrono::NaiveDate,
+    as_of: Date,
 ) -> anyhow::Result<Paise> {
     let mut value = i128::from(raw_paise.0);
     for action in actions

@@ -9,7 +9,7 @@ description = "India-specific instrument, listing and effective-dated market ter
 
 [dependencies]
 anyhow.workspace = true
-chrono.workspace = true
+jiff.workspace = true
 serde.workspace = true
 sha2.workspace = true
 

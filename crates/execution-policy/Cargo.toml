@@ -9,8 +9,8 @@ description = "Signed execution permits and execution-mode policy."
 
 [dependencies]
 anyhow.workspace = true
-chrono.workspace = true
 ed25519-dalek.workspace = true
+jiff.workspace = true
 serde.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
