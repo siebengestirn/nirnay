@@ -106,9 +106,7 @@ impl CaptureManifest {
                 self.provider
             )));
         }
-        if let Some(error) = self.terminal_error.as_deref()
-            && !error.trim().is_empty()
-        {
+        if let Some(error) = self.terminal_error.as_deref() {
             return Err(ArchiveError::TerminalCaptureError(error.to_owned()));
         }
         if self.raw_journal.trim().is_empty() {
@@ -158,6 +156,26 @@ impl CaptureManifest {
     }
 }
 
+/// Read a manifest without ever buffering more than the declared limit.
+fn read_bounded_manifest(path: &Path) -> Result<Vec<u8>, ArchiveError> {
+    let mut file = File::open(path)?;
+    let mut bytes = Vec::new();
+    let mut buffer = [0_u8; 8192];
+    loop {
+        let count = file.read(&mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        if bytes.len().saturating_add(count) > MAX_MANIFEST_BYTES {
+            return Err(ArchiveError::InvalidManifest(format!(
+                "manifest exceeds the {MAX_MANIFEST_BYTES}-byte limit"
+            )));
+        }
+        bytes.extend_from_slice(&buffer[..count]);
+    }
+    Ok(bytes)
+}
+
 /// Hash bytes as they are consumed from the underlying reader.
 struct HashingReader<R> {
     inner: R,
@@ -183,7 +201,7 @@ pub fn verify_capture_session(
     expected_provider: &str,
 ) -> Result<SessionVerification, ArchiveError> {
     let manifest_path = manifest_path.as_ref();
-    let manifest_bytes = std::fs::read(manifest_path)?;
+    let manifest_bytes = read_bounded_manifest(manifest_path)?;
     let manifest = CaptureManifest::from_json(&manifest_bytes)?;
     manifest.validate_basics(expected_provider)?;
     let journal_path = manifest.journal_path(manifest_path)?;
@@ -415,6 +433,15 @@ mod tests {
             journal.exists(),
             "the journal is left untouched for diagnosis"
         );
+        value["terminal_error"] = json!("   ");
+        write_manifest(&manifest, &value);
+        assert!(
+            matches!(
+                verify_capture_session(&manifest, "Upstox"),
+                Err(ArchiveError::TerminalCaptureError(_))
+            ),
+            "a whitespace-only terminal error still marks the session incomplete"
+        );
     }
 
     #[test]
@@ -498,6 +525,16 @@ mod tests {
         assert!(
             CaptureManifest::from_json(b"{\"schema_version\":1}").is_err(),
             "a partial manifest is rejected"
+        );
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("huge-manifest.json");
+        std::fs::write(&path, vec![b' '; MAX_MANIFEST_BYTES + 1]).unwrap();
+        assert!(
+            matches!(
+                verify_capture_session(&path, "Upstox"),
+                Err(ArchiveError::InvalidManifest(_))
+            ),
+            "an oversized manifest file is rejected before being buffered"
         );
     }
 }
