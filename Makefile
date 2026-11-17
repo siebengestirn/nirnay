@@ -9,6 +9,7 @@ check:
 	$(MAKE) schema-check
 	$(MAKE) python-test
 rust-style:
+	python3 scripts/check_rust_style.py --self-test
 	python3 scripts/check_rust_style.py
 rust-test:
 	cargo test --workspace --all-targets --locked
