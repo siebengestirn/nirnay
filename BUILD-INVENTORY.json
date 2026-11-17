@@ -140,5 +140,5 @@
   },
   "extras_file_count": 61,
   "source_tree_count_note": "241 active source files plus 61 retained extras reference files (302 total excluding generated caches/build directories). The full 325-file predecessor snapshot is external at ../legacy-snapshot-2026-11-13/legacy-full-backup-2026-11-13.tar.gz (SHA-256 a49e864308a7e58d667a86049dd80e8ff2c631cd762e50a74aff60007464f9b1); the exact removed-file list is ../legacy-snapshot-2026-11-13/legacy-removed-manifest-2026-11-13.txt. The former exact duplicate engineering/engineering-anti-patterns.md was removed in the 2026-11-17 documentation-only change; engineering/anti-patterns.md is the canonical anti-pattern standard.",
-  "updated_on": "2026-11-13"
+  "updated_on": "2026-11-17"
 }
