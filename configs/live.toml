@@ -1,5 +1,6 @@
-# Production live mode remains disabled. The separate Kite operator tool is a
-# constrained manual path, not a production OMS or independent risk authority.
+# Production live mode remains disabled. The separate Kite operator tool is
+# read-only; its order submission method is unconditionally hard-blocked. It is
+# not a production OMS or independent risk authority.
 # This workspace mode requires compliance review, broker certification,
 # independent risk permits, reconciliation and human release controls.
 [mode]

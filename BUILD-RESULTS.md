@@ -88,6 +88,8 @@ Publication is downstream of the same ten checks that guard a pull request, and 
 
 `v0.1.0` was deleted because it produced no release object; deleting a published release was not an option, so `v0.1.1` stays with what it actually published. This record describes the tree at `v0.1.2`, which is the first complete release.
 
+**2026-11-17 tag-history clarification:** the statement above records the 2026-11-13 release state. On 2026-11-17 the tags `v0.1.1` and `v0.1.2` were deleted locally and from `origin`; the corresponding GitHub Release objects became drafts and were not deleted. Tag deletion is distinct from Release deletion. This paragraph is retained as historical evidence and is not the current tag state.
+
 **Provenance without GitHub attestations.** `actions/attest-build-provenance` refuses user-owned private repositories: the release run failed at that step with *"Feature not available for user-owned private repositories"*, before publishing anything. The repository stays private, so the workflow now records an unsigned in-toto statement instead — `scripts/record_provenance.py` writes `provenance.json` with the builder run id, the commit and ref as materials, and the SHA-256 of every published artifact — and uploads it beside the assets. The attestation step remains wired and pinned behind the repository variable `ENABLE_GITHUB_ATTESTATIONS`, off until the plan supports it. An unsigned statement is weaker than an attestation and is labelled as such wherever it appears.
 
 | Gate | Result |

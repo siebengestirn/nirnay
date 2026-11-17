@@ -251,3 +251,7 @@ The `make verify-local` target covers Python tests, compile/policy checks, schem
 ### Relocatable clean-extraction gate — 2026-11-12
 
 The `cpp-test` Make target now uses a repository-path-specific temporary build directory. This fixes CMake cache reuse across the working tree and a fresh extraction. Final package verification is performed against the extracted ZIP, not only the mutable preparation tree.
+
+### 2026-11-17 evidence note
+
+The post-merge verification for commit `f832789` is recorded in `VERIFICATION.md` under "2026-11-17 post-merge verification". Hosted CI run `44019753876` passed all 10 jobs on that commit. Extras tests currently report 92 passed plus 4 explicitly invoked child-only workers marked ignored; earlier `96 tests` statements in this report are historical 2026-11-13 figures. No M1 exit approval, M2 authorization, platform-readiness claim or live-trading change follows from this note.

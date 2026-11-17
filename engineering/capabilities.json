@@ -82,7 +82,7 @@
     },
     {
       "id": "CAP-010",
-      "name": "Validated profitable strategy",
+      "name": "Bounded research alpha screen (not validated)",
       "status": "partial",
       "evidence_status": "Deterministic streaming EMA-cross fixture and bounded 25-candidate close-based candidate family; chronological train/validation/untouched holdout, flat segment portfolios, one-return embargo, explicit net costs, Holm correction, approximate HAC p-values, development-only CSCV/PBO and validation-only Deflated Sharpe diagnostics. Not arbitrary code generation or validated alpha; no market-data result is asserted.",
       "owner": "research",
@@ -90,7 +90,7 @@
     },
     {
       "id": "CAP-011",
-      "name": "Live broker order routing",
+      "name": "Reference OMS lifecycle and durable outbox (paper only)",
       "status": "partial",
       "evidence_status": "Broker-neutral order domain state machine, durable SQLite WAL/FULL transactional intent/outbox store, event hash chain, leases, idempotent broker-event/execution ingestion, partial fills, cancel/unknown-outcome transitions and paper-only dispatcher. Signed permit verifier plus source-attested runtime risk and AWS KMS Ed25519 signer adapter exist. No live broker execution adapter, deployed independent risk service/control collectors or production KMS key exists. Live routing is hard-disabled.",
       "owner": "execution",
