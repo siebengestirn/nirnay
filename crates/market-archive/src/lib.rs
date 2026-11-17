@@ -14,5 +14,12 @@ mod manifest;
 pub use continuity::{ContinuityTracker, Observation, StreamQuality};
 pub use error::ArchiveError;
 pub use frame::RawFrame;
-pub use journal::{JournalScan, JournalSummary, JournalWriter, scan_journal, verify_journal};
+pub use journal::{
+    JournalReader, //
+    JournalScan,
+    JournalSummary,
+    JournalWriter,
+    scan_journal,
+    verify_journal,
+};
 pub use manifest::{DatasetManifest, ManifestDraft, StreamEntry};

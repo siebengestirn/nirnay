@@ -3,16 +3,32 @@
 //! This is an offline research preparation tool. It validates each RawFrame,
 //! decodes the original protobuf bytes, and preserves capture timestamps,
 //! local sequence and source frame SHA-256. It never connects to a broker.
+//!
+//! The journal is read through the shared bounded `JournalReader` so record
+//! limits, torn-tail detection and EOF semantics match the recorder and the
+//! rest of the archive. Output is published only after every record succeeds.
+
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 use std::{
     fs::OpenOptions,
-    io::{BufRead, BufReader, BufWriter, Write},
-    path::PathBuf,
+    io::{
+        BufReader, //
+        BufWriter,
+        Write,
+    },
+    path::{
+        Path, //
+        PathBuf,
+    },
 };
 
-use anyhow::{Context, bail, ensure};
+use anyhow::{
+    Context, //
+    ensure,
+};
 use clap::Parser;
-use market_archive::RawFrame;
+use market_archive::JournalReader;
 use serde_json::{Value, json};
 use upstox_feed_proto::{
     decode::decode_feed_response,
@@ -133,26 +149,15 @@ fn response_value(response: &FeedResponse) -> Value {
     })
 }
 
-fn main() -> anyhow::Result<()> {
-    let args = Args::parse();
-    ensure!(
-        args.input.is_file(),
-        "input raw frame journal does not exist"
-    );
-    ensure!(
-        args.input != args.output,
-        "input and output paths must differ"
-    );
-    let parent = args
-        .output
+fn decode_journal(input: &Path, output: &Path) -> anyhow::Result<u64> {
+    ensure!(input.is_file(), "input raw frame journal does not exist");
+    ensure!(input != output, "input and output paths must differ");
+    let parent = output
         .parent()
         .filter(|path| !path.as_os_str().is_empty())
         .unwrap_or(std::path::Path::new("."));
     std::fs::create_dir_all(parent).context("creating output directory")?;
-    let output_name = args
-        .output
-        .file_name()
-        .context("output path must name a file")?;
+    let output_name = output.file_name().context("output path must name a file")?;
     let temp_path = parent.join(format!(
         ".{}.decode-{}.tmp",
         output_name.to_string_lossy(),
@@ -160,38 +165,33 @@ fn main() -> anyhow::Result<()> {
     ));
 
     let decode_result = (|| -> anyhow::Result<u64> {
-        let input = std::fs::File::open(&args.input).context("opening raw frame journal")?;
-        let reader = BufReader::new(input);
-        let output = OpenOptions::new()
+        let input_file = std::fs::File::open(input).context("opening raw frame journal")?;
+        let mut reader = JournalReader::new(BufReader::new(input_file));
+        let output_file = OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(&temp_path)
             .context("creating temporary output exclusively")?;
-        let mut writer = BufWriter::new(output);
+        let mut writer = BufWriter::new(output_file);
         let mut count = 0_u64;
 
-        for (index, line) in reader.lines().enumerate() {
-            let line = line.with_context(|| format!("reading input line {}", index + 1))?;
-            if line.trim().is_empty() {
-                bail!("raw frame journal contains an empty line at {}", index + 1);
-            }
-            let frame = RawFrame::from_json_line(&line)
-                .with_context(|| format!("validating raw frame at line {}", index + 1))?;
+        while let Some(frame) = reader.next_frame().context("reading raw frame journal")? {
+            let index = reader.frame_count();
             ensure!(
                 frame.source == "upstox",
                 "raw frame line {} is not an Upstox frame",
-                index + 1
+                index
             );
             ensure!(
                 frame.received_utc_nanos > 0,
                 "raw frame has invalid receive timestamp at line {}",
-                index + 1
+                index
             );
             let payload = frame
                 .payload()
-                .context("verifying source payload SHA-256")?;
+                .with_context(|| format!("verifying source payload SHA-256 at line {}", index))?;
             let decoded = decode_feed_response(&payload)
-                .with_context(|| format!("decoding Upstox V3 Protobuf at line {}", index + 1))?;
+                .with_context(|| format!("decoding Upstox V3 Protobuf at line {}", index))?;
             let row = json!({
                 "schema_version": 1,
                 "provider": "upstox",
@@ -223,7 +223,7 @@ fn main() -> anyhow::Result<()> {
     };
     // Hard-link publication is atomic and fails rather than overwriting an
     // existing destination. Temp and destination are siblings on one filesystem.
-    if let Err(error) = std::fs::hard_link(&temp_path, &args.output) {
+    if let Err(error) = std::fs::hard_link(&temp_path, output) {
         let _ = std::fs::remove_file(&temp_path);
         return Err(error).context("publishing decoded output exclusively; refusing to overwrite");
     }
@@ -232,6 +232,157 @@ fn main() -> anyhow::Result<()> {
     directory
         .sync_all()
         .context("syncing output directory after publication")?;
+    Ok(count)
+}
+
+fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
+    let count = decode_journal(&args.input, &args.output)?;
     eprintln!("decoded_frames={count}");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::{
+        Path, //
+        PathBuf,
+    };
+
+    use market_archive::RawFrame;
+
+    use super::decode_journal;
+
+    struct TestDir {
+        path: PathBuf,
+    }
+
+    impl TestDir {
+        fn new(tag: &str) -> Self {
+            let path =
+                std::env::temp_dir().join(format!("nirnay-decode-{}-{tag}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&path);
+            std::fs::create_dir_all(&path).unwrap();
+            Self { path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TestDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
+
+    fn frame(sequence: u64, payload: &[u8]) -> RawFrame {
+        RawFrame::new(
+            "upstox",
+            "NSE_EQ|TEST",
+            sequence as i64,
+            sequence,
+            None,
+            Some(sequence),
+            "synthetic-fixture",
+            payload,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn decode_succeeds_for_a_valid_journal() {
+        let dir = TestDir::new("valid");
+        let input = dir.path().join("raw.jsonl");
+        let output = dir.path().join("decoded.jsonl");
+        let lines = [
+            frame(1, b"").to_json_line().unwrap(),
+            frame(2, b"").to_json_line().unwrap(),
+        ];
+        std::fs::write(&input, format!("{}\n", lines.join("\n"))).unwrap();
+
+        let count = decode_journal(&input, &output).unwrap();
+
+        assert_eq!(count, 2, "both frames decode");
+        assert!(output.is_file(), "output is published");
+        let content = std::fs::read_to_string(&output).unwrap();
+        assert_eq!(content.lines().count(), 2, "one output row per frame");
+        assert!(
+            content.contains("\"provider\":\"upstox\""),
+            "output carries provider metadata"
+        );
+    }
+
+    #[test]
+    fn decode_empty_journal_is_rejected() {
+        let dir = TestDir::new("empty");
+        let input = dir.path().join("raw.jsonl");
+        let output = dir.path().join("decoded.jsonl");
+        std::fs::write(&input, b"").unwrap();
+
+        assert!(
+            decode_journal(&input, &output).is_err(),
+            "empty input is rejected"
+        );
+        assert!(!output.exists(), "no output is published for empty input");
+    }
+
+    #[test]
+    fn decode_failure_after_several_records_publishes_nothing() {
+        let dir = TestDir::new("late-failure");
+        let input = dir.path().join("raw.jsonl");
+        let output = dir.path().join("decoded.jsonl");
+        let good = frame(1, b"").to_json_line().unwrap();
+        let bad = frame(2, b"not protobuf at all").to_json_line().unwrap();
+        std::fs::write(&input, format!("{good}\n{bad}\n")).unwrap();
+
+        assert!(
+            decode_journal(&input, &output).is_err(),
+            "a late decode error aborts the run"
+        );
+        assert!(!output.exists(), "partial output is not published");
+        let leftovers: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.file_name().to_string_lossy().contains("decode-"))
+            .collect();
+        assert!(leftovers.is_empty(), "temporary output is removed");
+    }
+
+    #[test]
+    fn decode_torn_tail_publishes_nothing() {
+        let dir = TestDir::new("torn");
+        let input = dir.path().join("raw.jsonl");
+        let output = dir.path().join("decoded.jsonl");
+        let good = frame(1, b"").to_json_line().unwrap();
+        let torn = frame(2, b"").to_json_line().unwrap();
+        std::fs::write(&input, format!("{good}\n{torn}")).unwrap();
+
+        assert!(
+            decode_journal(&input, &output).is_err(),
+            "a torn tail aborts decoding"
+        );
+        assert!(!output.exists(), "partial output is not published");
+    }
+
+    #[test]
+    fn decode_rejects_an_existing_output_identity() {
+        let dir = TestDir::new("no-overwrite");
+        let input = dir.path().join("raw.jsonl");
+        let output = dir.path().join("decoded.jsonl");
+        let line = frame(1, b"").to_json_line().unwrap();
+        std::fs::write(&input, format!("{line}\n")).unwrap();
+        std::fs::write(&output, b"existing immutable output").unwrap();
+
+        assert!(
+            decode_journal(&input, &output).is_err(),
+            "reusing an output identity fails"
+        );
+        assert_eq!(
+            std::fs::read(&output).unwrap(),
+            b"existing immutable output",
+            "the existing output is not overwritten"
+        );
+    }
 }

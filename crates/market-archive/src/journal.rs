@@ -200,68 +200,118 @@ pub struct JournalSummary {
     pub bytes_scanned: u64,
 }
 
+/// A bounded, streaming reader for newline-delimited raw-frame journals.
+///
+/// Each call to [`JournalReader::next_frame`] returns at most one decoded
+/// frame. The record buffer is reused and never grows beyond
+/// [`MAX_RAW_RECORD_BYTES`]; callers that need every frame resident should use
+/// [`scan_journal`] instead. After any error the reader is terminal and must be
+/// discarded.
+pub struct JournalReader<R> {
+    inner: R,
+    record: Vec<u8>,
+    bytes_scanned: u64,
+    frame_count: u64,
+    line_number: u64,
+    eof: bool,
+}
+
+impl<R: BufRead> JournalReader<R> {
+    /// Wrap a buffered reader. No bytes are read until [`Self::next_frame`].
+    pub fn new(inner: R) -> Self {
+        Self {
+            inner,
+            record: Vec::new(),
+            bytes_scanned: 0,
+            frame_count: 0,
+            line_number: 0,
+            eof: false,
+        }
+    }
+
+    /// Return the next complete record, `Ok(None)` at a clean EOF, or an error.
+    ///
+    /// An unterminated final record is [`ArchiveError::TornTail`]; a record
+    /// larger than [`MAX_RAW_RECORD_BYTES`] (newline excluded) is
+    /// [`ArchiveError::RecordTooLarge`]. Both fail closed: nothing is repaired
+    /// or skipped. I/O failures are propagated unchanged.
+    pub fn next_frame(&mut self) -> Result<Option<RawFrame>, ArchiveError> {
+        if self.eof {
+            return Ok(None);
+        }
+        loop {
+            let available = self.inner.fill_buf()?;
+            if available.is_empty() {
+                if !self.record.is_empty() {
+                    return Err(ArchiveError::TornTail);
+                }
+                self.eof = true;
+                return Ok(None);
+            }
+            let newline = available.iter().position(|byte| *byte == b'\n');
+            let take = newline.map_or(available.len(), |index| index + 1);
+            // The limit applies to record bytes, excluding the newline.
+            let content_len = newline.map_or(self.record.len().saturating_add(take), |index| {
+                self.record.len().saturating_add(index)
+            });
+            if content_len > MAX_RAW_RECORD_BYTES {
+                return Err(ArchiveError::RecordTooLarge {
+                    size: content_len,
+                    limit: MAX_RAW_RECORD_BYTES,
+                });
+            }
+            self.record.extend_from_slice(&available[..take]);
+            self.inner.consume(take);
+            self.bytes_scanned = self.bytes_scanned.saturating_add(take as u64);
+            if newline.is_none() {
+                continue;
+            }
+
+            self.line_number = self.line_number.saturating_add(1);
+            let line = &self.record[..self.record.len() - 1];
+            if line.is_empty() {
+                return Err(ArchiveError::MalformedRecord(format!(
+                    "line {} is empty",
+                    self.line_number
+                )));
+            }
+            let text = std::str::from_utf8(line).map_err(|error| {
+                ArchiveError::MalformedRecord(format!(
+                    "line {} is not UTF-8: {error}",
+                    self.line_number
+                ))
+            })?;
+            let frame = RawFrame::from_json_line(text)?;
+            self.frame_count = self.frame_count.saturating_add(1);
+            self.record.clear();
+            return Ok(Some(frame));
+        }
+    }
+
+    /// Number of complete frames returned so far.
+    pub fn frame_count(&self) -> u64 {
+        self.frame_count
+    }
+
+    /// Number of bytes consumed from the underlying reader so far.
+    pub fn bytes_scanned(&self) -> u64 {
+        self.bytes_scanned
+    }
+}
+
 /// Visit and validate each journal record using record-by-record streaming.
 /// The callback determines whether callers retain frames or only count them.
-/// Stream a journal through a bounded record buffer.
-///
-/// `fill_buf`/`consume` are used instead of `read_until` so a malformed record
-/// cannot grow a buffer beyond [`MAX_RAW_RECORD_BYTES`]. The same buffer is
-/// reused for every record; only the current record is ever resident here.
 fn visit_reader<R: BufRead>(
     reader: &mut R,
     mut visit: impl FnMut(RawFrame) -> Result<(), ArchiveError>,
 ) -> Result<JournalSummary, ArchiveError> {
-    let mut record = Vec::new();
-    let mut bytes_scanned = 0_u64;
-    let mut frame_count = 0_u64;
-    let mut line_number = 0_u64;
-
-    loop {
-        let available = reader.fill_buf()?;
-        if available.is_empty() {
-            if !record.is_empty() {
-                return Err(ArchiveError::TornTail);
-            }
-            break;
-        }
-        let newline = available.iter().position(|byte| *byte == b'\n');
-        let take = newline.map_or(available.len(), |index| index + 1);
-        // The limit applies to record bytes, excluding the newline delimiter.
-        let content_len = newline.map_or(record.len().saturating_add(take), |index| {
-            record.len().saturating_add(index)
-        });
-        if content_len > MAX_RAW_RECORD_BYTES {
-            return Err(ArchiveError::RecordTooLarge {
-                size: content_len,
-                limit: MAX_RAW_RECORD_BYTES,
-            });
-        }
-        record.extend_from_slice(&available[..take]);
-        reader.consume(take);
-        bytes_scanned = bytes_scanned.saturating_add(take as u64);
-        if newline.is_none() {
-            continue;
-        }
-
-        line_number = line_number.saturating_add(1);
-        let line = &record[..record.len() - 1];
-        if line.is_empty() {
-            return Err(ArchiveError::MalformedRecord(format!(
-                "line {line_number} is empty"
-            )));
-        }
-        let text = std::str::from_utf8(line).map_err(|error| {
-            ArchiveError::MalformedRecord(format!("line {line_number} is not UTF-8: {error}"))
-        })?;
-        let frame = RawFrame::from_json_line(text)?;
+    let mut reader = JournalReader::new(reader);
+    while let Some(frame) = reader.next_frame()? {
         visit(frame)?;
-        frame_count = frame_count.saturating_add(1);
-        record.clear();
     }
-
     Ok(JournalSummary {
-        frame_count,
-        bytes_scanned,
+        frame_count: reader.frame_count(),
+        bytes_scanned: reader.bytes_scanned(),
     })
 }
 
@@ -823,6 +873,142 @@ mod tests {
                 Err(ArchiveError::RecordTooLarge { .. })
             ),
             "legacy oversized journal must not be reopened for append"
+        );
+    }
+
+    fn reader_from_lines(lines: &[String]) -> JournalReader<std::io::Cursor<Vec<u8>>> {
+        let mut bytes = Vec::new();
+        for line in lines {
+            bytes.extend_from_slice(line.as_bytes());
+            bytes.push(b'\n');
+        }
+        JournalReader::new(std::io::Cursor::new(bytes))
+    }
+
+    #[test]
+    fn reader_streams_a_valid_journal_record_by_record() {
+        let lines = vec![
+            frame(1).to_json_line().unwrap(),
+            frame(2).to_json_line().unwrap(),
+            frame(3).to_json_line().unwrap(),
+        ];
+        let expected_bytes: usize = lines.iter().map(|line| line.len() + 1).sum();
+        let mut reader = reader_from_lines(&lines);
+        let mut seen = Vec::new();
+        while let Some(frame) = reader.next_frame().unwrap() {
+            seen.push(frame);
+        }
+        assert_eq!(
+            seen,
+            vec![frame(1), frame(2), frame(3)],
+            "all frames stream in order"
+        );
+        assert_eq!(reader.frame_count(), 3, "frame count matches");
+        assert_eq!(
+            reader.bytes_scanned() as usize,
+            expected_bytes,
+            "every byte consumed"
+        );
+        assert_eq!(reader.next_frame().unwrap(), None, "EOF is sticky");
+    }
+
+    #[test]
+    fn reader_returns_explicit_empty_result_for_empty_journal() {
+        let mut reader = JournalReader::new(std::io::Cursor::new(Vec::new()));
+        assert_eq!(
+            reader.next_frame().unwrap(),
+            None,
+            "empty journal has no first frame"
+        );
+        assert_eq!(reader.frame_count(), 0, "empty journal has zero frames");
+        assert_eq!(reader.bytes_scanned(), 0, "empty journal consumes no bytes");
+    }
+
+    #[test]
+    fn reader_reports_torn_tail_for_json_without_final_newline() {
+        let line = frame(7).to_json_line().unwrap();
+        let mut reader = JournalReader::new(std::io::Cursor::new(line.into_bytes()));
+        assert!(
+            matches!(reader.next_frame(), Err(ArchiveError::TornTail)),
+            "valid JSON without a newline is still a torn tail"
+        );
+    }
+
+    #[test]
+    fn reader_rejects_oversized_record() {
+        let (_, mut line) = frame_with_serialized_size(MAX_RAW_RECORD_BYTES);
+        line.insert(line.len() - 1, ' ');
+        let mut reader = JournalReader::new(std::io::Cursor::new(format!("{line}\n").into_bytes()));
+        assert!(
+            matches!(
+                reader.next_frame(),
+                Err(ArchiveError::RecordTooLarge { .. })
+            ),
+            "oversized record fails closed"
+        );
+    }
+
+    #[test]
+    fn reader_rejects_empty_record() {
+        let mut reader = JournalReader::new(std::io::Cursor::new(b"\n".to_vec()));
+        assert!(
+            matches!(reader.next_frame(), Err(ArchiveError::MalformedRecord(_))),
+            "an empty record is rejected"
+        );
+    }
+
+    #[test]
+    fn reader_rejects_corrupt_payload_hash() {
+        let line = frame(1).to_json_line().unwrap();
+        let tampered = line.replace("cGF5bG9hZC0x", "cGF5bG9hZC0y");
+        let mut reader =
+            JournalReader::new(std::io::Cursor::new(format!("{tampered}\n").into_bytes()));
+        assert!(
+            matches!(reader.next_frame(), Err(ArchiveError::PayloadHashMismatch)),
+            "corrupt payload hash is rejected"
+        );
+    }
+
+    #[test]
+    fn reader_propagates_read_error() {
+        let line = frame(1).to_json_line().unwrap();
+        let mut bytes = line.into_bytes();
+        bytes.push(b'\n');
+        let failing = FailingReader {
+            bytes,
+            offset: 0,
+            fail_at: 4,
+        };
+        let mut reader = JournalReader::new(std::io::BufReader::new(failing));
+        assert!(
+            matches!(reader.next_frame(), Err(ArchiveError::Io(_))),
+            "a read failure is propagated"
+        );
+    }
+
+    #[test]
+    fn reader_streams_large_journal_with_bounded_record_buffer() {
+        let line = frame(1).to_json_line().unwrap();
+        let mut bytes = Vec::new();
+        for _ in 0..2_000 {
+            bytes.extend_from_slice(line.as_bytes());
+            bytes.push(b'\n');
+        }
+        let total = bytes.len();
+        let mut reader = JournalReader::new(std::io::Cursor::new(bytes));
+        let mut count = 0_u64;
+        while reader.next_frame().unwrap().is_some() {
+            count = count.saturating_add(1);
+        }
+        assert_eq!(count, 2_000, "all large-journal frames streamed");
+        assert_eq!(
+            reader.bytes_scanned() as usize,
+            total,
+            "every byte was scanned"
+        );
+        assert!(
+            reader.record.capacity() <= MAX_RAW_RECORD_BYTES,
+            "the reused record buffer stays bounded"
         );
     }
 }
