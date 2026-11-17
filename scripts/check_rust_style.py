@@ -39,8 +39,10 @@ def parse_added_lines(diff_text: str) -> dict[str, list[tuple[int, str]]]:
     current = ""
     number = 0
     for line in diff_text.splitlines():
-        if FILE_HEADER.match(line):
-            current = line[6:]
+        if line.startswith("+++ "):
+            # A deletion target has no added lines; do not treat its marker as
+            # added content left over from the previous file.
+            current = line[6:] if FILE_HEADER.match(line) else ""
             number = 0
             continue
         if line.startswith("@@"):
@@ -192,6 +194,10 @@ class StyleCheckerTests(unittest.TestCase):
                 "b.rs": [(1, "fourth")],
             },
         )
+
+    def test_dev_null_marker_is_not_an_added_line(self) -> None:
+        diff = "+++ b/a.rs\n@@ -1,1 +1,1 @@\n+real\n+++ /dev/null\n@@ -1,1 +0,0 @@\n-removed\n"
+        self.assertEqual(parse_added_lines(diff), {"a.rs": [(1, "real")]})
 
     def test_added_line_beginning_with_double_plus_is_kept(self) -> None:
         diff = "+++ b/a.rs\n@@ -1,1 +1,1 @@\n+++content\n"
