@@ -70,7 +70,13 @@ mkdir -p /tmp/unpacked && cd /tmp/unpacked && unzip -q /path/to/bundle.zip
 python3 /path/to/repo/scripts/verify_bundle.py --bundle . --zip /path/to/bundle.zip
 ```
 
-`scripts/make_bundle.py` writes the manifest and the archive from one file list, so a manifest path and an archive member name cannot diverge; both are compared as exact strings, because a case-insensitive filesystem cannot tell `sbom.cdx.json` from `SBOM.cdx.json`.
+`scripts/make_bundle.py` writes the manifest and the archive from one file
+list, so a manifest path and an archive member name cannot diverge; both are
+compared as exact strings, because a case-insensitive filesystem cannot tell
+`sbom.cdx.json` from `SBOM.cdx.json`. Release jobs stage compiled output under
+`$RUNNER_TEMP/release`, outside the checkout, and the bundler rejects an
+artifacts directory inside the source tree so wheels and binaries cannot be
+packed twice.
 
 Run the deterministic synthetic strategy/backtest smoke test:
 
@@ -240,11 +246,11 @@ ctest --test-dir /tmp/nirnay-cpp-oracle --output-on-failure
 ```
 
 The oracle is not wired into production Rust. On 2026-11-18 the pinned Rust
-1.99.1 gates were rerun on `main` at `6363fd9`: local `make check` passed with
+1.99.1 gates were rerun on `main` at `c91ad3f`: local `make check` passed with
 410 Rust test cases across the workspace and extras targets, 156 Python tests
 and 2 subtests, plus formatting, style, Clippy `-D warnings` for both
 workspaces, `cargo deny check`, `cargo xtask check` and contract validation.
-Hosted CI run `44189114143` passed 10/10 jobs. CI also builds both C++ targets
+Hosted CI run `44199935228` passed 11/11 jobs. CI also builds both C++ targets
 under GCC and runs schema validation and the required Parquet round-trip. The
 Parquet test executes rather than skips. Live Upstox/FYERS/Kite accounts were
 not accessed; provider tests use deterministic fixtures and fake clients/SDK
@@ -295,11 +301,12 @@ new crate, ADR, owner and tests.
 
 ### 2026-11-18 current-state note
 
-The authoritative verification for the current `main` commit `6363fd9` is
-recorded in `VERIFICATION.md`: hosted CI run `44189114143` passed 10/10 jobs,
-and the pinned-toolchain local `make check` passed all project gates (410 Rust
-test cases, 156 Python tests, 2 subtests). Older counts and commit hashes in
-dated documents are historical. These results verify the named commit only and
-do not grant M1 exit approval, M2 authorization, platform readiness or live
+The verification for the current `main` commit `c91ad3f` is recorded in this
+note and in hosted CI run `44199935228`, which passed 11/11 jobs; the
+pinned-toolchain local `make check` passed all project gates (410 Rust test
+cases, 156 Python tests, 2 subtests). `VERIFICATION.md` still contains the
+older dated 2026-11-17 record; older counts and commit hashes in dated
+documents are historical. These results verify the named commit only and do
+not grant M1 exit approval, M2 authorization, platform readiness or live
 trading. Capture-session verification and the raw-to-paper vertical slice are
 still outstanding.
