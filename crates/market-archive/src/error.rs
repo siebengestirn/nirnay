@@ -14,6 +14,14 @@ pub enum ArchiveError {
     TornTail,
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("commit outcome unknown after {context}; the record may or may not be durable")]
+    CommitOutcomeUnknown {
+        context: &'static str,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("journal writer is poisoned after an uncertain commit; drop and reopen to recover")]
+    Poisoned,
     #[error("manifest is invalid: {0}")]
     InvalidManifest(String),
     #[error("manifest content hash does not match dataset_id")]

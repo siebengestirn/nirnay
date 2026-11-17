@@ -14,8 +14,33 @@ use crate::{ArchiveError, RawFrame};
 /// The OS file lock prevents two processes from concurrently appending. A
 /// future recorder may add bounded group commit, but must preserve the recovery
 /// contract and measure its durability/latency trade-off.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum WriterState {
+    Healthy,
+    Poisoned,
+}
+
+/// Private test seam: inject a failure at one I/O step without a generic
+/// storage abstraction or an external dependency. Production writers always
+/// use `None`; the variants are only set by tests in this module.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+enum FailPoint {
+    #[default]
+    None,
+    PartialRecordWrite,
+    RecordWrite,
+    NewlineWrite,
+    Sync,
+}
+
 pub struct JournalWriter {
     file: File,
+    state: WriterState,
+    fail_point: FailPoint,
+}
+
+fn uncertain_outcome(context: &'static str, source: std::io::Error) -> ArchiveError {
+    ArchiveError::CommitOutcomeUnknown { context, source }
 }
 
 impl JournalWriter {
@@ -30,7 +55,11 @@ impl JournalWriter {
         if let Some(parent) = path.parent() {
             File::open(parent)?.sync_all()?;
         }
-        Ok(Self { file })
+        Ok(Self {
+            file,
+            state: WriterState::Healthy,
+            fail_point: FailPoint::None,
+        })
     }
 
     pub fn open_append(path: impl AsRef<Path>) -> Result<Self, ArchiveError> {
@@ -41,15 +70,77 @@ impl JournalWriter {
         // while the exclusive lock is held, so reopening a large journal does
         // not require loading every historical frame into memory.
         let _ = verify_journal(path)?;
-        Ok(Self { file })
+        Ok(Self {
+            file,
+            state: WriterState::Healthy,
+            fail_point: FailPoint::None,
+        })
     }
 
+    /// Append one validated frame.
+    ///
+    /// Validation and serialization happen before any file I/O, so an invalid
+    /// frame leaves the writer healthy. Once any write or sync fails the commit
+    /// outcome is unknown: the writer is poisoned and every later append is
+    /// refused before touching the file. Recovery requires dropping and
+    /// reopening the journal, which verifies the committed tail.
     pub fn append(&mut self, frame: &RawFrame) -> Result<(), ArchiveError> {
+        if self.state == WriterState::Poisoned {
+            return Err(ArchiveError::Poisoned);
+        }
         let line = frame.to_json_line()?;
-        self.file.write_all(line.as_bytes())?;
-        self.file.write_all(b"\n")?;
-        self.file.sync_data()?;
+        let bytes = line.as_bytes();
+        if self.fail_point == FailPoint::PartialRecordWrite {
+            let split = bytes.len().saturating_sub(1);
+            if let Err(error) = self.file.write_all(&bytes[..split]) {
+                self.state = WriterState::Poisoned;
+                return Err(uncertain_outcome("record write", error));
+            }
+            self.state = WriterState::Poisoned;
+            return Err(uncertain_outcome(
+                "record write",
+                std::io::Error::other("injected partial record write failure"),
+            ));
+        }
+        if self.fail_point == FailPoint::RecordWrite {
+            self.state = WriterState::Poisoned;
+            return Err(uncertain_outcome(
+                "record write",
+                std::io::Error::other("injected record write failure"),
+            ));
+        }
+        if let Err(error) = self.file.write_all(bytes) {
+            self.state = WriterState::Poisoned;
+            return Err(uncertain_outcome("record write", error));
+        }
+        if self.fail_point == FailPoint::NewlineWrite {
+            self.state = WriterState::Poisoned;
+            return Err(uncertain_outcome(
+                "commit marker write",
+                std::io::Error::other("injected newline write failure"),
+            ));
+        }
+        if let Err(error) = self.file.write_all(b"\n") {
+            self.state = WriterState::Poisoned;
+            return Err(uncertain_outcome("commit marker write", error));
+        }
+        if self.fail_point == FailPoint::Sync {
+            self.state = WriterState::Poisoned;
+            return Err(uncertain_outcome(
+                "sync_data",
+                std::io::Error::other("injected sync_data failure"),
+            ));
+        }
+        if let Err(error) = self.file.sync_data() {
+            self.state = WriterState::Poisoned;
+            return Err(uncertain_outcome("sync_data", error));
+        }
         Ok(())
+    }
+
+    #[cfg(test)]
+    fn inject_fail_point(&mut self, point: FailPoint) {
+        self.fail_point = point;
     }
 }
 
@@ -227,5 +318,125 @@ mod tests {
                 bytes_scanned: 0,
             }
         );
+    }
+
+    fn unknown_context(error: &ArchiveError) -> &'static str {
+        match error {
+            ArchiveError::CommitOutcomeUnknown { context, .. } => context,
+            other => panic!("expected uncertain commit outcome, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn partial_record_write_is_uncertain_and_poisons_writer() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("raw.jsonl");
+        let mut writer = JournalWriter::create_new(&path).unwrap();
+        writer.inject_fail_point(FailPoint::PartialRecordWrite);
+
+        let error = writer.append(&frame(1)).unwrap_err();
+        assert_eq!(unknown_context(&error), "record write");
+        assert!(matches!(
+            &error,
+            ArchiveError::CommitOutcomeUnknown { source, .. }
+                if source.to_string().contains("partial record write")
+        ));
+        assert_eq!(writer.state, WriterState::Poisoned);
+        let bytes_after_failure = std::fs::read(&path).unwrap();
+        assert!(!bytes_after_failure.is_empty());
+
+        assert!(matches!(
+            writer.append(&frame(2)),
+            Err(ArchiveError::Poisoned)
+        ));
+        assert_eq!(std::fs::read(&path).unwrap(), bytes_after_failure);
+    }
+
+    #[test]
+    fn newline_write_failure_is_uncertain_and_poisons_writer() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("raw.jsonl");
+        let mut writer = JournalWriter::create_new(&path).unwrap();
+        writer.inject_fail_point(FailPoint::NewlineWrite);
+
+        let error = writer.append(&frame(1)).unwrap_err();
+        assert_eq!(unknown_context(&error), "commit marker write");
+        assert_eq!(writer.state, WriterState::Poisoned);
+        let bytes = std::fs::read(&path).unwrap();
+        assert!(!bytes.ends_with(b"\n"));
+        assert!(matches!(
+            writer.append(&frame(2)),
+            Err(ArchiveError::Poisoned)
+        ));
+    }
+
+    #[test]
+    fn sync_data_failure_is_uncertain_and_poisons_writer() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("raw.jsonl");
+        let mut writer = JournalWriter::create_new(&path).unwrap();
+        writer.inject_fail_point(FailPoint::Sync);
+
+        let error = writer.append(&frame(1)).unwrap_err();
+        assert_eq!(unknown_context(&error), "sync_data");
+        assert_eq!(writer.state, WriterState::Poisoned);
+        let bytes = std::fs::read(&path).unwrap();
+        assert!(bytes.ends_with(b"\n"));
+        assert!(matches!(
+            writer.append(&frame(2)),
+            Err(ArchiveError::Poisoned)
+        ));
+    }
+
+    #[test]
+    fn append_after_poisoning_refuses_before_mutating_the_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("raw.jsonl");
+        let mut writer = JournalWriter::create_new(&path).unwrap();
+        writer.inject_fail_point(FailPoint::RecordWrite);
+        assert!(matches!(
+            writer.append(&frame(1)),
+            Err(ArchiveError::CommitOutcomeUnknown { .. })
+        ));
+        let bytes = std::fs::read(&path).unwrap();
+        assert!(matches!(
+            writer.append(&frame(2)),
+            Err(ArchiveError::Poisoned)
+        ));
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+    }
+
+    #[test]
+    fn invalid_frame_before_writing_leaves_writer_healthy() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("raw.jsonl");
+        let mut writer = JournalWriter::create_new(&path).unwrap();
+        let mut invalid = frame(1);
+        invalid.payload_sha256 =
+            "0000000000000000000000000000000000000000000000000000000000000000".to_owned();
+
+        assert!(matches!(
+            writer.append(&invalid),
+            Err(ArchiveError::PayloadHashMismatch)
+        ));
+        assert_eq!(writer.state, WriterState::Healthy);
+        assert_eq!(std::fs::read(&path).unwrap(), b"");
+        writer.append(&frame(1)).unwrap();
+        assert_eq!(verify_journal(&path).unwrap().frame_count, 1);
+    }
+
+    #[test]
+    fn successful_append_writes_a_complete_synced_record() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("raw.jsonl");
+        let mut writer = JournalWriter::create_new(&path).unwrap();
+        writer.append(&frame(7)).unwrap();
+
+        let bytes = std::fs::read(&path).unwrap();
+        assert!(bytes.ends_with(b"\n"));
+        assert_eq!(writer.state, WriterState::Healthy);
+        let summary = verify_journal(&path).unwrap();
+        assert_eq!(summary.frame_count, 1);
+        assert_eq!(summary.bytes_scanned as usize, bytes.len());
     }
 }
