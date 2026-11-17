@@ -134,6 +134,16 @@ superseded r2 archive it fails with four named errors, and `--self-test` clears
 one execute bit in a copy of the archive and requires the run to fail: both are
 evidence that the gates can fail.
 
+**Compiled output is staged once, from outside the checkout.** The bundler copies
+`--source-dir` into `nirnay-quant/` and `--artifacts` into `artifacts/`. If the
+artifacts directory sits *inside* the source tree, both copies happen: the same
+wheels and binaries appear at the bundle root and again under
+`nirnay-quant/artifacts/`, so the bundle claims to describe sources that contain
+build output. `v0.1.2` shipped exactly that, because its release job ran
+`mkdir -p artifacts` in the workspace. The bundler now rejects an `--artifacts`
+path equal to or inside `--source-dir`, and `release.yml` assembles into
+`$RUNNER_TEMP/release` so the checkout stays a clean tree.
+
 **Source permissions survive the trip.** `make_bundle.py` derives the archived
 mode from the staged file (`0o755` when any execute bit is set, `0o644`
 otherwise) and writes `(stat.S_IFREG | mode) << 16`. Seven members are

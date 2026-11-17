@@ -24,6 +24,12 @@ jobs:
       contents: write
       id-token: write
       attestations: write
+    # Compiled output is assembled outside the checkout: an
+    # `artifacts/` directory inside the source tree is packed twice, once as
+    # artifacts/** and once as <source>/artifacts/**, which is what `v0.1.2`
+    # shipped. The bundler now refuses that layout outright.
+    env:
+      WORK: ${{ runner.temp }}/release
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -34,42 +40,48 @@ jobs:
           toolchain: 1.99.1
       - name: Build wheels from the tagged commit
         run: |
-          rm -rf build dist research/python/build apps/kite-ops/build apps/fyers-recorder/build
+          mkdir -p "$WORK/dist"
+          rm -rf build research/python/build apps/kite-ops/build apps/fyers-recorder/build
           find . -type d -name __pycache__ -prune -exec rm -rf {} +
           python -m pip install --disable-pip-version-check build
-          python -m build --wheel research/python --outdir dist
-          python -m build --wheel apps/kite-ops --outdir dist
-          python -m build --wheel apps/fyers-recorder --outdir dist
-          python scripts/check_wheels.py --dist dist
+          python -m build --wheel research/python --outdir "$WORK/dist"
+          python -m build --wheel apps/kite-ops --outdir "$WORK/dist"
+          python -m build --wheel apps/fyers-recorder --outdir "$WORK/dist"
+          python scripts/check_wheels.py --dist "$WORK/dist"
       - name: Build release binaries from the tagged commit
         run: cargo build --release --locked --bins
       - name: Assemble the artifact directory
         run: |
-          mkdir -p artifacts
-          cp dist/*.whl artifacts/
+          mkdir -p "$WORK/artifacts"
+          cp "$WORK"/dist/*.whl "$WORK/artifacts/"
           for bin in upstox-smoke upstox-recorder upstox-decode-export; do
-            cp "target/release/$bin" "artifacts/$bin"
+            cp "target/release/$bin" "$WORK/artifacts/$bin"
           done
-          (cd artifacts && shasum -a 256 ./* > SHA256SUMS && cat SHA256SUMS)
+          (cd "$WORK/artifacts" && shasum -a 256 ./* > SHA256SUMS && cat SHA256SUMS)
       - name: Generate the SBOM from this commit's manifests
-        run: python scripts/supply_chain.py sbom sbom.cdx.json
+        run: python scripts/supply_chain.py sbom "$WORK/sbom.cdx.json"
       - name: Assemble the reproducible source bundle
+        working-directory: ${{ runner.temp }}/release
         run: |
-          python scripts/make_bundle.py \
-            --source-dir . \
+          python "$GITHUB_WORKSPACE/scripts/make_bundle.py" \
+            --source-dir "$GITHUB_WORKSPACE" \
             --artifacts artifacts \
+            --sbom sbom.cdx.json \
             --output "nirnay-quant-${GITHUB_REF_NAME}.zip"
       - name: Verify the bundle the way a consumer would
+        working-directory: ${{ runner.temp }}/release
         run: |
           rm -rf consumer-check && mkdir consumer-check && cd consumer-check
           unzip -q "../nirnay-quant-${GITHUB_REF_NAME}.zip"
-          python ../scripts/verify_bundle.py --bundle . --zip "../nirnay-quant-${GITHUB_REF_NAME}.zip"
+          python "$GITHUB_WORKSPACE/scripts/verify_bundle.py" \
+            --bundle . --zip "../nirnay-quant-${GITHUB_REF_NAME}.zip"
       # GitHub refuses `actions/attest-build-provenance` for user-owned private
       # repositories, so the repository records an unsigned in-toto statement
       # instead and keeps the attestation opt-in for the day the plan supports it.
       - name: Record unsigned build provenance
+        working-directory: ${{ runner.temp }}/release
         run: |
-          python scripts/record_provenance.py --output provenance.json \
+          python "$GITHUB_WORKSPACE/scripts/record_provenance.py" --output provenance.json \
             --subject "nirnay-quant-${GITHUB_REF_NAME}.zip" \
             --subject "nirnay-quant-${GITHUB_REF_NAME}.zip.sha256" \
             --subject "nirnay-quant-${GITHUB_REF_NAME}.zip.manifest.sha256" \
@@ -87,6 +99,7 @@ jobs:
             artifacts/upstox-*
             sbom.cdx.json
       - name: Publish release assets
+        working-directory: ${{ runner.temp }}/release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

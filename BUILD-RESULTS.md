@@ -3,7 +3,7 @@
 **Bundle:** `nirnay-quant-production-upgrade-2026-11-13-r0.zip`
 **Bundle SHA-256:** published as `nirnay-quant-production-upgrade-2026-11-13-r0.zip.sha256` beside the archive, written by `scripts/make_bundle.py` from the archive itself. A file cannot contain its own archive hash, so this document does not quote one.
 **Contents:** `nirnay-quant/`, `artifacts/`, `sbom.cdx.json`, `BUILD-RESULTS.md`, `SOURCE-MANIFEST.sha256`
-**Source manifest:** `SOURCE-MANIFEST.sha256`, 330 file hashes over `nirnay-quant/`, `artifacts/` and `sbom.cdx.json`; digest `3e264ab8b16f129048a03f0ca7c5f13df1650416fba87945a9f05d5ab234d3d9`. The bundler also writes `<archive>.manifest.sha256` beside the archive, so a release publishes the same manifest it verified against.
+**Source manifest:** `SOURCE-MANIFEST.sha256`, 330 file hashes over `nirnay-quant/`, `artifacts/` and `sbom.cdx.json`; digest `7164ac17d8a98a668cfb116afebf62bae820571a9d4fc47533a0616e5c06252c`. The bundler also writes `<archive>.manifest.sha256` beside the archive, so a release publishes the same manifest it verified against.
 **Date:** 2026-11-13
 **Environment:** macOS 27.0.1 arm64; AppleClang 21.0.0.21000334; Apple Swift 6.4; Homebrew GCC 16.2.0; CMake 4.4.3; pinned Rust 1.99.1; Python 3.14.8; pytest 9.2.0; PyArrow 26.0.1; clang-format 21.1.8; uv 0.11.27.
 
@@ -78,17 +78,18 @@ tag
 
 Publication is downstream of the same ten checks that guard a pull request, and the two jobs that touch the release are serialised. The reusable-workflow reference is local (`./.github/workflows/ci.yml`) and is not a remote action to pin — 43 remote action references remain SHA-pinned.
 
-**The tags before this one.** Three tag attempts, each failing for a different reason, each recorded rather than tidied away:
+**The tags before this one.** Four tag attempts, each failing or falling short for a different reason, each recorded rather than tidied away:
 
 | Tag | Outcome | Cause |
 |---|---|---|
 | `v0.1.0` | retired, nothing published | the provenance step referenced `SOURCE-MANIFEST.sha256` in the workspace; the bundler wrote that file only inside the archive |
 | `v0.1.1` | published, Linux assets and provenance only | `release.yml` still requested `macos-14`, which provisions no runner, so the macOS job was cancelled before its first step |
-| `v0.1.2` | both platforms | bundler writes `<archive>.manifest.sha256` beside the archive; release assets run on `macos-latest` and assert arm64 |
+| `v0.1.2` | published, both platforms, bundle contents wrong | the release built `artifacts/` inside the checkout, so the bundler packed the seven compiled files twice: once at the bundle root and once inside `nirnay-quant/artifacts/` |
+| `v0.1.3` | both platforms, sources free of build output | compiled output is assembled outside the checkout, and the bundler now refuses an `--artifacts` directory inside `--source-dir` |
 
-`v0.1.0` was deleted because it produced no release object; deleting a published release was not an option, so `v0.1.1` stays with what it actually published. This record describes the tree at `v0.1.2`, which is the first complete release.
+**2026-11-13 release record:** `v0.1.0` was deleted because it produced no release object; deleting a published release was not an option, so `v0.1.1` and `v0.1.2` stay with what they actually published. This record describes the tree at `v0.1.3`, the first release whose bundle matches the sources it claims to describe.
 
-**2026-11-17 tag-history clarification:** the statement above records the 2026-11-13 release state. On 2026-11-17 the tags `v0.1.1` and `v0.1.2` were deleted locally and from `origin`; the corresponding GitHub Release objects became drafts and were not deleted. Tag deletion is distinct from Release deletion. This paragraph is retained as historical evidence and is not the current tag state.
+**2026-11-17 tag-history clarification:** the statement above records the 2026-11-13 release state. On 2026-11-17 the tags `v0.1.1` and `v0.1.2` were deleted locally and from `origin`; the corresponding GitHub Release objects became drafts and were not deleted. Tag deletion is distinct from Release deletion. The historical paragraph is retained as evidence and is not the current tag state.
 
 **Provenance without GitHub attestations.** `actions/attest-build-provenance` refuses user-owned private repositories: the release run failed at that step with *"Feature not available for user-owned private repositories"*, before publishing anything. The repository stays private, so the workflow now records an unsigned in-toto statement instead — `scripts/record_provenance.py` writes `provenance.json` with the builder run id, the commit and ref as materials, and the SHA-256 of every published artifact — and uploads it beside the assets. The attestation step remains wired and pinned behind the repository variable `ENABLE_GITHUB_ATTESTATIONS`, off until the plan supports it. An unsigned statement is weaker than an attestation and is labelled as such wherever it appears.
 
@@ -106,6 +107,7 @@ Publication is downstream of the same ten checks that guard a pull request, and 
 | `python3 scripts/check_git_policy.py --strict` | **PASS — branch, subjects, tracked paths, inventory** |
 | `python3 scripts/record_provenance.py --output … --subject …` | **PASS — 12 subjects, in-toto statement with builder, commit and per-file digests; a subject pattern matching nothing fails** |
 | Bundler writes the manifest beside the archive | `make_bundle.py` then `ls` | **PASS — `<archive>.sha256` and `<archive>.manifest.sha256`** |
+| Compiled output cannot be packed into the sources | `make_bundle.py --artifacts artifacts` with `artifacts/` inside the tree | **FAIL as required — "it would be packed as build output inside the sources as well as at artifacts/"** |
 | `xcrun swiftc -typecheck` and `-O` on the bundled Keychain helper | **PASS — Swift 6.4, Mach-O arm64** |
 
 ## 2026-11-13 verification
