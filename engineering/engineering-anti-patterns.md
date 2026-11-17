@@ -91,7 +91,7 @@ External repositories are references, not authorities. Stars, popularity, market
 Use sources according to what they can prove:
 
 1. **Binding authority:** applicable law, regulation, exchange rules, contract, licence and accepted repository decisions.
-2. **Primary technical authority:** official language specifications, standard-library/runtime documentation, protocol specifications, database manuals and vendor/tool documentation. These establish documented semantics and supported behavior, not that our implementation is correct.
+2. **Primary technical authority:** official language specifications, standard-library/runtime documentation, protocol specifications, database manuals and vendor/tool documentation. These establish documented semantics and supported behavior, not that the implementation is correct.
 3. **Independent engineering standards:** NIST SSDF, SLSA, OWASP ASVS, C++ Core Guidelines, SRE practices and similar guidance. Adopt only the controls applicable to the system and threat model.
 4. **Practitioner discussions:** Reddit, issue trackers, mailing lists, Q&A and incident write-ups. These are useful for discovering failure modes and operational surprises; they are anecdotal, may be incomplete or wrong, and MUST NOT independently create a `B0` rule. Corroborate material claims against primary documentation, tests or a documented incident.
 5. **Marketing, benchmarks and social posts:** discovery only. Never proof of correctness, security, scale, latency or production fitness.
@@ -306,7 +306,7 @@ Anti-patterns:
 
 ## 6. HFT and low-latency engineering standard
 
-This section is intentionally stricter than ordinary application engineering. Low latency is not a substitute for correctness. A trading path that is fast but cannot prove sequencing, risk, recovery or order state is defective.
+This section sets stricter requirements than ordinary application engineering. Low latency is not a substitute for correctness. A trading path that is fast but cannot prove sequencing, risk, recovery or order state is defective.
 
 ### 6.1 Establish the latency budget before optimising
 
@@ -751,7 +751,7 @@ Pinned Rust toolchain is authoritative. Do not upgrade compiler or edition as a 
 - `OPS-032` `B0 / REVIEW`: A deployment MUST NOT silently apply destructive database/schema changes before the new application version is compatible. Use expand/contract, staged backfills or an explicit forward-repair plan; define rollback compatibility before rollout.
 - `OPS-033` `H1 / TEST`: Exercise deployment rollback or forward recovery using the exact release artifact and realistic state. A documented command that has never been exercised is not a recovery capability.
 - `OPS-034` `H1 / REVIEW`: Use progressive rollout/canary only with explicit health signals, abort thresholds, an owner and a tested stop/rollback path. A canary is not safe merely because traffic is small.
-- `OPS-035` `H1 / REVIEW`: Release builds MUST NOT depend on undeclared workstation state, ambient credentials, mutable downloads, untracked generated files or an unpinned toolchain. Record any intentionally variable build inputs.
+- `OPS-035` `H1 / REVIEW`: Release builds MUST NOT depend on undeclared workstation state, ambient credentials, mutable downloads, untracked generated files or an unpinned toolchain. Record build inputs that vary by design.
 - `OPS-036` `H1 / EVIDENCE`: Produce a machine-readable SBOM (SPDX or CycloneDX, as selected by policy) for each releasable artifact. Include direct and transitive dependencies, relevant base images/runtime components and exact versions; retain it with the artifact digest and scan results.
 - `OPS-037` `B0 / EVIDENCE`: Release artifacts and provenance attestations MUST be signed/attested by an approved build identity and independently verifiable before deployment. Signing keys MUST NOT be exposed to untrusted build steps; record verification identity, trust root and result.
 
@@ -1069,7 +1069,7 @@ A language/runtime/compiler/database/CI tool upgrade is its own reviewed change.
 
 ## 26. External research and engineering references
 
-**Research boundary:** reviewed 2026-11-12. Official sources below are primary documentation or standards. Versioned documentation must be rechecked against the project's pinned version before use. Community threads are intentionally placed in a separate non-normative subsection. This is a curated reference set, not a claim of exhaustive audit of every listed project.
+**Research boundary:** reviewed 2026-11-12. Official sources below are primary documentation or standards. Versioned documentation must be rechecked against the project's pinned version before use. Community threads appear in a separate non-normative subsection. This is a curated reference set, not a claim of exhaustive audit of every listed project.
 
 ### 26.1 Language specifications, official guidance and tool docs
 

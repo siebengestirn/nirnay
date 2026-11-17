@@ -5,7 +5,7 @@ engineering-challenge project that is **not** part of the production Nirnay
 graph. It is a separate Cargo workspace, is not imported by active Python code,
 and is not linked into any runtime, broker or live-trading path.
 
-It is deliberately *not* called "legacy": the code here is tested, licensed and
+The directory is named `extras`, not `legacy`, because the code is tested, licensed and
 retained as a reference for future promotion, not as dead code. It remains
 outside the active workspace so that the production build does not acquire
 SQLite, filesystem or predecessor dependencies by accident.

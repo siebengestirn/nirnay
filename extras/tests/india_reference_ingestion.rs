@@ -41,7 +41,7 @@ fn flat_assignment(paise: i64, revision: &str) -> TickAssignment {
 
 /// A provenanced no-holiday NSE calendar for `[from, to]`.
 ///
-/// The holiday file lists no exceptions, so the builder's weekday rule is the
+/// The holiday file has an empty exception list, so the builder's weekday rule is the
 /// only input; provenance is bound to the exact CSV bytes, which are retained
 /// in `archive` under `nse-cash-calendar`.
 fn provenanced_range(

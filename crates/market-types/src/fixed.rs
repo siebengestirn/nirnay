@@ -262,7 +262,7 @@ mod tests {
         assert_eq!(parse_price("1.0000").unwrap(), 1_000_000);
         assert!(parse_price("1.000001").is_err());
         assert!(parse_price("-0.1").is_err());
-        // The general parser deliberately does not impose the range.
+        // The general parser does not impose the range.
         assert_eq!(parse_scaled("-2.5", 6).unwrap(), -2_500_000);
     }
 

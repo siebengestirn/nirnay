@@ -19,7 +19,7 @@ as 0o644 extracts into a binary nobody can run, which is what the r3 bundle did 
 all five of its compiled binaries. `--self-test` proves that check can fail by
 clearing one executable bit in a copy of the archive.
 
-Record files that are deliberately outside the manifest:
+Record files excluded from the manifest:
     BUILD-RESULTS.md      describes the bundle, so it cannot be inside its own hash set
     SOURCE-MANIFEST.sha256
 """
@@ -126,7 +126,7 @@ def check_directory(bundle: Path, entries: dict[str, str]) -> list[str]:
     present = list_files(bundle)
 
     # Exact string membership, never a filesystem lookup: this is the check that
-    # a case-insensitive volume cannot perform for us.
+    # a case-insensitive volume cannot perform.
     for name, expected in entries.items():
         if name not in present:
             near = sorted(candidate for candidate in present if candidate.lower() == name.lower())

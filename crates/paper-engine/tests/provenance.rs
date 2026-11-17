@@ -103,15 +103,15 @@ fn custom_quote(
     })
 }
 
-fn scaffold(
+fn build_rows(
     side: Side,
     quantity: i64,
     limit_price: i64,
 ) -> Result<Vec<Row>, Box<dyn std::error::Error>> {
-    scaffold_for_product(side, Product::Intraday, quantity, limit_price)
+    build_rows_for_product(side, Product::Intraday, quantity, limit_price)
 }
 
-fn scaffold_for_product(
+fn build_rows_for_product(
     side: Side,
     product: Product,
     quantity: i64,
@@ -344,7 +344,7 @@ fn legacy_journal_with_valid_fill_still_replays() -> TestResult {
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("ledger");
     let mut rows = vec![genesis(1)?, quote_row(2, 1, quote_at(1_005, 1, 995, 1)?)];
-    rows.extend(scaffold(Side::Buy, 1, 1_020)?);
+    rows.extend(build_rows(Side::Buy, 1, 1_020)?);
     rows.push(fill_row_with_fees(
         1,
         None,
@@ -369,7 +369,7 @@ fn provenance_journal_rejects_a_legacy_fill() -> TestResult {
     // A v1 fill in a provenance journal is a downgrade: the run declared
     // provenance at genesis, so every fill must carry it.
     let mut rows = vec![genesis(2)?, quote_row(2, 1, quote_at(1_005, 1, 995, 1)?)];
-    rows.extend(scaffold(Side::Buy, 1, 1_020)?);
+    rows.extend(build_rows(Side::Buy, 1, 1_020)?);
     rows.push(fill_row(1, None, 6, Side::Buy, 1_005, -1_005)?);
     build_journal(&path, &rows)?;
 
@@ -384,7 +384,7 @@ fn legacy_journal_rejects_a_provenance_event() -> TestResult {
     // Mixed journals are not a migration: a v2 fill inside a legacy
     // journal is rejected rather than partially validated.
     let mut rows = vec![genesis(1)?, quote_row(2, 1, quote_at(1_005, 1, 995, 1)?)];
-    rows.extend(scaffold(Side::Buy, 1, 1_020)?);
+    rows.extend(build_rows(Side::Buy, 1, 1_020)?);
     rows.push(fill_row(2, Some(2), 6, Side::Buy, 1_005, -1_005)?);
     build_journal(&path, &rows)?;
 
@@ -404,7 +404,7 @@ fn fill_citing_a_stale_quote_is_rejected() -> TestResult {
         quote_row(2, 1, quote_at(1_005, 1, 995, 1)?),
         quote_row(3, 2, quote_at(1_010, 1, 995, 1)?),
     ];
-    rows.extend(scaffold(Side::Buy, 1, 1_020)?);
+    rows.extend(build_rows(Side::Buy, 1, 1_020)?);
     rows.push(fill_row(2, Some(2), 7, Side::Buy, 1_005, -1_005)?);
     build_journal(&path, &rows)?;
 
@@ -423,7 +423,7 @@ fn fill_citing_the_active_book_passes() -> TestResult {
         quote_row(2, 1, quote_at(1_005, 1, 995, 1)?),
         quote_row(3, 2, quote_at(1_010, 1, 995, 1)?),
     ];
-    rows.extend(scaffold(Side::Buy, 1, 1_020)?);
+    rows.extend(build_rows(Side::Buy, 1, 1_020)?);
     rows.push(fill_row_with_fees(
         2,
         Some(3),
@@ -448,7 +448,7 @@ fn fill_beyond_configured_slippage_is_rejected() -> TestResult {
     // the 1005 ask and still under the 1020 limit — is a price the
     // matcher would never generate.
     let mut rows = vec![genesis(2)?, quote_row(2, 1, quote_at(1_005, 1, 995, 1)?)];
-    rows.extend(scaffold(Side::Buy, 1, 1_020)?);
+    rows.extend(build_rows(Side::Buy, 1, 1_020)?);
     rows.push(fill_row(2, Some(2), 6, Side::Buy, 1_010, -1_010)?);
     build_journal(&path, &rows)?;
 
@@ -463,7 +463,7 @@ fn sell_fill_beyond_configured_slippage_is_rejected() -> TestResult {
     // Sell at 990 — one tick below the 995 bid, still above the 985
     // limit — exceeds the configured slippage in the sell direction.
     let mut rows = vec![genesis(2)?, quote_row(2, 1, quote_at(1_005, 1, 995, 1)?)];
-    rows.extend(scaffold(Side::Sell, 1, 985)?);
+    rows.extend(build_rows(Side::Sell, 1, 985)?);
     rows.push(fill_row(2, Some(2), 6, Side::Sell, 990, 990)?);
     build_journal(&path, &rows)?;
 
@@ -478,7 +478,7 @@ fn fill_with_understated_fees_is_rejected() -> TestResult {
     // The shared fixture charges 1% brokerage, so this otherwise-valid,
     // zero-fee fill understates the schedule.
     let mut rows = vec![genesis(2)?, quote_row(2, 1, quote_at(1_005, 1, 995, 1)?)];
-    rows.extend(scaffold(Side::Buy, 1, 1_020)?);
+    rows.extend(build_rows(Side::Buy, 1, 1_020)?);
     rows.push(fill_row(2, Some(2), 6, Side::Buy, 1_005, -1_005)?);
     build_journal(&path, &rows)?;
 
@@ -493,7 +493,7 @@ fn fill_with_wrong_fee_component_allocation_is_rejected() -> TestResult {
     // Same total charges (10) and cash impact, wrong component: replay
     // compares each component, not only the balanced total.
     let mut rows = vec![genesis(2)?, quote_row(2, 1, quote_at(1_005, 1, 995, 1)?)];
-    rows.extend(scaffold(Side::Buy, 1, 1_020)?);
+    rows.extend(build_rows(Side::Buy, 1, 1_020)?);
     rows.push(fill_row_with_fees(
         2,
         Some(2),
@@ -539,7 +539,7 @@ fn legacy_journal_rejects_fill_under_changed_fee_schedule() -> TestResult {
     // configuration: a fee-bearing v1 fill opened with the schedule that
     // produced it replays, but a changed schedule rejects it.
     let mut rows = vec![genesis(1)?, quote_row(2, 1, quote_at(1_005, 1, 995, 1)?)];
-    rows.extend(scaffold(Side::Buy, 1, 1_020)?);
+    rows.extend(build_rows(Side::Buy, 1, 1_020)?);
     rows.push(fill_row_with_fees(
         1,
         None,
@@ -626,7 +626,7 @@ fn fee_schedule_selection_covers_product_side_and_gst() -> TestResult {
         let directory = tempfile::tempdir()?;
         let path = directory.path().join("ledger");
         let mut rows = vec![genesis(2)?, quote_row(2, 1, quote_at(10_050, 1, 9_950, 1)?)];
-        rows.extend(scaffold_for_product(
+        rows.extend(build_rows_for_product(
             case.side,
             case.product,
             1,
@@ -647,7 +647,7 @@ fn fee_schedule_selection_covers_product_side_and_gst() -> TestResult {
         let directory = tempfile::tempdir()?;
         let path = directory.path().join("ledger");
         let mut rows = vec![genesis(2)?, quote_row(2, 1, quote_at(10_050, 1, 9_950, 1)?)];
-        rows.extend(scaffold_for_product(
+        rows.extend(build_rows_for_product(
             case.side,
             case.product,
             1,
@@ -790,7 +790,7 @@ fn fill_against_gapped_delta_is_rejected() -> TestResult {
             )?,
         ),
     ];
-    rows.extend(scaffold(Side::Buy, 1, 1_020)?);
+    rows.extend(build_rows(Side::Buy, 1, 1_020)?);
     rows.push(fill_row(2, Some(3), 7, Side::Buy, 1_005, -1_005)?);
     build_journal(&path, &rows)?;
 
@@ -805,7 +805,7 @@ fn fill_after_quote_becomes_stale_is_rejected() -> TestResult {
     // The shared risk policy permits a maximum quote age of 1000 ns. The
     // fill's availability time is later than that after the quote.
     let mut rows = vec![genesis(2)?, quote_row(2, 1, quote_at(1_005, 1, 995, 1)?)];
-    rows.extend(scaffold(Side::Buy, 1, 1_020)?);
+    rows.extend(build_rows(Side::Buy, 1, 1_020)?);
     rows.push(fill_row(2, Some(2), 2_000, Side::Buy, 1_005, -1_005)?);
     build_journal(&path, &rows)?;
 
@@ -818,7 +818,7 @@ fn fill_against_crossed_book_is_rejected() -> TestResult {
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("ledger");
     let mut rows = vec![genesis(2)?, quote_row(2, 1, quote_at(995, 1, 1_000, 1)?)];
-    rows.extend(scaffold(Side::Buy, 1, 1_020)?);
+    rows.extend(build_rows(Side::Buy, 1, 1_020)?);
     rows.push(fill_row(2, Some(2), 6, Side::Buy, 995, -995)?);
     build_journal(&path, &rows)?;
 
@@ -838,7 +838,7 @@ fn fill_against_one_sided_book_is_rejected() -> TestResult {
             custom_quote(None, 0, Some(995), 1, trading_core::Continuity::Snapshot)?,
         ),
     ];
-    rows.extend(scaffold(Side::Buy, 1, 1_020)?);
+    rows.extend(build_rows(Side::Buy, 1, 1_020)?);
     rows.push(fill_row(2, Some(2), 6, Side::Buy, 1_005, -1_005)?);
     build_journal(&path, &rows)?;
 
@@ -851,7 +851,7 @@ fn fill_against_incomplete_book_is_rejected() -> TestResult {
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("ledger");
     let mut rows = vec![genesis(2)?, quote_row(2, 1, quote_at(1_005, 0, 995, 1)?)];
-    rows.extend(scaffold(Side::Buy, 1, 1_020)?);
+    rows.extend(build_rows(Side::Buy, 1, 1_020)?);
     rows.push(fill_row(2, Some(2), 6, Side::Buy, 1_005, -1_005)?);
     build_journal(&path, &rows)?;
 

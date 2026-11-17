@@ -37,7 +37,7 @@ impl fmt::Display for SourceId {
 /// one machine word. Prices are signed: negative prices are valid for yield,
 /// spread, and other non-probability instruments.
 ///
-/// `Price` and [`Quantity`] are deliberately not interchangeable:
+/// `Price` and [`Quantity`] are not interchangeable:
 ///
 /// ```compile_fail
 /// use market_types::model::{Price, Quantity};

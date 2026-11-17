@@ -481,7 +481,7 @@ class SignedEvidenceRiskGate:
             attested_at_utc_ns=latest_attestation, expires_at_utc_ns=expiry,
         )
         # Consume sequences transactionally only after all signatures, roles,
-        # scopes and payloads have passed. A signing failure intentionally burns
+        # scopes and payloads have passed. A signing failure burns
         # the observations; source agents must issue fresh attestations.
         self.replay_ledger.consume(observations)
         return self.risk_service._sign_after_verified_sources(

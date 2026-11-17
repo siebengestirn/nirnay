@@ -168,7 +168,7 @@ def _cmd_normalize(args: argparse.Namespace) -> int:
             continue
         if args.provider == "fyers" and event_type not in (None, "market_data"):
             continue
-        # The Upstox recorder's diagnostic observations intentionally do not
+        # The Upstox recorder's diagnostic observations do not
         # contain decoded prices/depth. Raw binary Protobuf frames must first
         # pass through the Rust decoder and be exported as full decoded JSON.
         receive = row.get("received_utc_ns", row.get("received_at_utc_ns"))

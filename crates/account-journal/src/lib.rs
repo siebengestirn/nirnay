@@ -6,7 +6,7 @@
 //!
 //! This is the **account/execution** journal. The repository's existing
 //! `src/journal.rs` remains the raw market-data frame journal; the two serve
-//! different purposes and are deliberately not merged.
+//! serve separate purposes and remain separate.
 //!
 //! The on-disk frame format (`NRJ1`, 84-byte header, BLAKE3 chain over the
 //! sequence, previous hash and body) is preserved. Bodies are validated
@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use trading_core::{DomainError, EventId, RunId, StoredBody};
 
-const MAGIC: [u8; 4] = *b"NRJ1";
+const FILE_SIGNATURE: [u8; 4] = *b"NRJ1";
 const FORMAT_VERSION: u16 = 1;
 const HEADER_LEN: usize = 84;
 const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
@@ -303,8 +303,8 @@ impl Journal {
             let header = bytes
                 .get(offset..offset + HEADER_LEN)
                 .ok_or_else(|| corrupt(path, offset, "header range is invalid"))?;
-            if header.get(0..4) != Some(MAGIC.as_slice()) {
-                return Err(corrupt(path, offset, "magic bytes do not match"));
+            if header.get(0..4) != Some(FILE_SIGNATURE.as_slice()) {
+                return Err(corrupt(path, offset, "file signature does not match"));
             }
             let version = read_u16(header, 4, path, offset)?;
             let flags = read_u16(header, 6, path, offset)?;
@@ -486,7 +486,7 @@ impl Journal {
             }
         }
         let mut header = Vec::with_capacity(HEADER_LEN);
-        header.extend_from_slice(&MAGIC);
+        header.extend_from_slice(&FILE_SIGNATURE);
         header.extend_from_slice(&FORMAT_VERSION.to_be_bytes());
         header.extend_from_slice(&0_u16.to_be_bytes());
         let body_len = u32::try_from(body_bytes.len()).map_err(|_| {

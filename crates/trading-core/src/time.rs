@@ -31,7 +31,7 @@ impl UtcNanos {
 }
 
 /// Run-local monotonic time used for availability and expiry checks. It is
-/// deliberately not convertible to or from a UTC timestamp.
+/// not convertible to or from a UTC timestamp.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct LogicalNanos(u64);

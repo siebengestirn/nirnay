@@ -20,7 +20,7 @@ production graph free of predecessor dependencies.
 | Runtime / broker path | Not imported, not linked, not required |
 | Licence | MIT, Copyright (c) 2026 Kartik Jangid (`extras/LICENSE`) |
 
-`extras/` is deliberately described as extras rather than legacy: it is tested,
+`extras/` is named extras rather than legacy because it contains tested,
 licensed reference material that may be promoted later. It is not dead code and
 it is not a second production tree.
 

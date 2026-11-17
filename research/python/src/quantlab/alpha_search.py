@@ -1,6 +1,6 @@
 """Constrained alpha search with costs, chronologically separated validation.
 
-This module deliberately searches a finite, declared family.  It is not an
+This module searches a finite, declared family.  It is not an
 unbounded genetic-programming engine.  A candidate is never called validated
 unless it survives the untouched final holdout under the specified cost model.
 """

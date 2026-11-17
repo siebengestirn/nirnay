@@ -73,7 +73,7 @@ The demo reports `not_real_market_data=true` and `not_alpha_evidence=true`. It i
 
 ### 1. Capture and preserve provider data
 
-Upstox V3 captures original binary Protobuf payloads in `raw-frames.jsonl`. The companion diagnostic projection is useful for inspection but is deliberately not treated as complete depth/quote data. Decode the raw frame journal before normalization:
+Upstox V3 captures original binary Protobuf payloads in `raw-frames.jsonl`. The companion diagnostic projection is useful for inspection but is not treated as complete depth/quote data. Decode the raw frame journal before normalization:
 
 ```bash
 cargo run --release -p upstox-tools --bin upstox-decode-export -- \
@@ -81,7 +81,7 @@ cargo run --release -p upstox-tools --bin upstox-decode-export -- \
   --output data/market-sessions/upstox/<session>/decoded-full.jsonl
 ```
 
-Copy and edit the example maps using an independently reconciled instrument master (do not accept the placeholders as live mappings):
+Copy and edit the example maps using an independently reconciled instrument master (do not treat the example entries as live mappings):
 
 ```bash
 cp configs/providers/upstox-instrument-map.example.json data/upstox-instrument-map.json
@@ -196,7 +196,7 @@ The search family is finite and predeclared. It selects on validation only, appl
 
 The active OMS components are `quantlab.oms` (domain state machine) and `quantlab.durable_oms.DurableOMSStore` (single-node SQLite WAL/FULL transactional store with atomic intent+outbox acceptance, leases, hash-chain event journal, idempotent broker event/execution IDs, monotonic broker sequence, partial fills, cancel request/ack separation and unknown-outcome quarantine). `PaperOutboxDispatcher` admits only paper adapters. SQLite is not replicated HA or distributed exactly-once delivery. There is no certified Upstox/FYERS/Kite execution adapter behind this OMS; Kite operations are read-only and its submission method is hard-blocked.
 
-The permit verifier expects an externally root-signed trust registry, independent issuer signature, distinct approver roles, separate risk-service runtime attestation, bounded scope/time and one-time consumption. Runtime evidence can only be constructed from eight fresh, independently signed source observations (account risk, kill switch, market data, reconciliation, broker entitlement, session, clock and deployed artifact); direct caller-supplied `RiskFacts` signing is rejected. `AwsKmsEd25519Signer` supports a customer-managed AWS KMS Ed25519 key, but no key or separate risk service is deployed here. Private keys must stay in separately administered KMS/HSM/offline services, not in Git, fixtures or the OMS process. Test signing keys are ephemeral. The OMS intentionally rejects every live submission, even when a test permit verifies.
+The permit verifier expects an externally root-signed trust registry, independent issuer signature, distinct approver roles, separate risk-service runtime attestation, bounded scope/time and one-time consumption. Runtime evidence can only be constructed from eight fresh, independently signed source observations (account risk, kill switch, market data, reconciliation, broker entitlement, session, clock and deployed artifact); direct caller-supplied `RiskFacts` signing is rejected. `AwsKmsEd25519Signer` supports a customer-managed AWS KMS Ed25519 key, but no key or separate risk service is deployed here. Private keys must stay in separately administered KMS/HSM/offline services, not in Git, fixtures or the OMS process. Test signing keys are ephemeral. The OMS rejects every live submission, even when a test permit verifies.
 
 Before live use, the organization needs (at minimum) legally reviewed broker/exchange/SEBI applicability, account and data entitlements, certified broker adapters, independent real-time risk service, operational kill switch, static-IP/session checks where applicable, clock/feed health, reconciliation, key management, audit retention, deployment controls, controlled canaries and incident/restore drills. A signed permit is necessary policy evidence, not a substitute for those controls. Consult `engineering/market-compliance-and-entitlements.md` and qualified compliance counsel; this README is not legal advice.
 

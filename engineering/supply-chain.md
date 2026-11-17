@@ -3,7 +3,7 @@
 This repository previously left dependency integrity to `cargo deny` for Rust
 only. Python resolution was floating, workflow actions were tag-pinned, and no
 SBOM was produced. This document records what is now enforced, what it does not
-cover, and which residual risk is knowingly accepted.
+cover, and which residual risk is documented as accepted.
 
 ## 1. Workflow actions are pinned to commit SHAs
 

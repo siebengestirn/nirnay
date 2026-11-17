@@ -27,7 +27,7 @@ const RUN: RunId = RunId::from_bytes([
     0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x00, 0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa, 0x99, 0x88,
 ]);
 
-/// NSE and BSE terms deliberately differ by more than price: NSE has a
+/// NSE and BSE terms differ by more than price: NSE has a
 /// 5-paise tick and a 1-unit lot, BSE a 1-paise tick and a 5-unit lot.
 fn venue_terms(venue: Venue) -> (i64, i64) {
     match venue {

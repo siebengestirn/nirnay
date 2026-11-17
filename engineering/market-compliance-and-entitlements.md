@@ -29,6 +29,6 @@ Do not mix market-data and order-routing entitlements. The ability to read an or
 
 ## 3. Runtime conditions
 
-The live pathway is deliberately disabled. No user may turn it on by editing `configs/live.toml`, a Kite private policy, an environment variable or a test permit. A future enablement decision requires current broker approvals, exchange procedures, static network/IP controls where applicable, user authentication, rate limits, strategy registration/identification where required, order tagging, audit evidence, risk controls, incident and mock-session evidence.
+The live pathway is disabled. No user may turn it on by editing `configs/live.toml`, a Kite private policy, an environment variable or a test permit. A future enablement decision requires current broker approvals, exchange procedures, static network/IP controls where applicable, user authentication, rate limits, strategy registration/identification where required, order tagging, audit evidence, risk controls, incident and mock-session evidence.
 
 This policy must be reviewed whenever SEBI, NSE, BSE, broker API rules, market-data licences, exchange holidays, or the project's operating model changes.

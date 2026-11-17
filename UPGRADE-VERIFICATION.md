@@ -124,7 +124,7 @@ Not established: no new job has run on a hosted runner, no attestation has been 
 - A displayed L2 queue-ahead approximation is used; it is not FIFO truth. Passive queue consumption requires a real `trade` event with known compatible aggressor side. LTP snapshot changes do not qualify.
 - Repeated identical snapshots cannot be reused as fresh liquidity. Displayed-size increases are the only newly displayed liquidity tranche accepted by the current model.
 - Execution cash/P&L includes fill prices and fees. Impact is itemized but not double-debited. Signed spread cost is measured against the last fresh two-sided midpoint; maker improvement may be negative. Gross/net attribution is regression-tested.
-- The simulator is intentionally single-instrument, long-only, one-active-order cash equity. It does not implement exchange FIFO, multi-asset portfolio/risk, short borrow, derivatives, auctions, settlement, corporate cash flows or calibrated real market impact.
+- The simulator is single-instrument, long-only, one-active-order cash equity. It does not implement exchange FIFO, multi-asset portfolio/risk, short borrow, derivatives, auctions, settlement, corporate cash flows or calibrated real market impact.
 
 ### Strategy and alpha research
 

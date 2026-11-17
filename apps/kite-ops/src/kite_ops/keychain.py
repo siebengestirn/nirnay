@@ -2,7 +2,7 @@
 
 The Swift helper uses Security.framework. Secrets are sent over stdin when
 writing and captured from stdout only inside the caller process when reading.
-This module deliberately refuses to fall back to shell commands that would
+This module refuses to fall back to shell commands that would
 place secret values in argv or shell history.
 """
 from __future__ import annotations

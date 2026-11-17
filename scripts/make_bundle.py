@@ -24,7 +24,7 @@ Two files are written beside the archive and not inside it: `<archive>.sha256`
 and `<archive>.manifest.sha256`, the latter a copy of the archive's own manifest
 so a release can publish the manifest it verified against.
 
-The manifest deliberately excludes `BUILD-RESULTS.md` and itself.
+The manifest excludes `BUILD-RESULTS.md` and itself.
 """
 from __future__ import annotations
 

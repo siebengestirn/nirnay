@@ -597,7 +597,7 @@ class OutboxBroker(Protocol):
 
 
 class PaperOutboxDispatcher:
-    """One-shot dispatcher for fake/paper adapters; live mode is always refused."""
+    """One-shot dispatcher for paper adapters; live mode is always refused."""
 
     def __init__(self, store: DurableOMSStore, adapter: OutboxBroker, *, mode: str = "paper"):
         if mode not in {"paper", "live"}:

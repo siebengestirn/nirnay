@@ -94,7 +94,7 @@ impl BuiltCalendar {
     /// Wrap a hand-built calendar for tests that exercise non-lineage
     /// behaviour (coverage, session classification, rejection paths).
     ///
-    /// The result deliberately carries no provenance, so it is rejected by
+    /// The result carries no provenance and is therefore rejected by
     /// every monthly tick-assignment path. This is the only constructor that
     /// bypasses source verification; production code must use
     /// [`build_calendar`].

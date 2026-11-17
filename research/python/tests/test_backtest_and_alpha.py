@@ -154,7 +154,7 @@ class AlphaSearchTests(unittest.TestCase):
         bars = []
         price = 100.0
         for i in range(360):
-            # Deterministic regime changes; deliberately not a return claim.
+            # Deterministic regime changes; not a return claim.
             drift = (0.0008 if (i // 60) % 2 == 0 else -0.0006)
             noise = (((i * 37) % 11) - 5) * 0.00005
             price *= 1 + drift + noise

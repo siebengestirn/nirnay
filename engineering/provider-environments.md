@@ -65,7 +65,7 @@ use a fake socket.
 
 ## Combined boundary
 
-The combined install is intentionally unsupported until the FYERS SDK removes
+The combined install remains unsupported until the FYERS SDK removes
 its exact `requests==2.31.0` pin or a compatible release is tested.
 
 CI runs a canary (`provider-boundary`) that performs:
