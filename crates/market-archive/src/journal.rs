@@ -347,11 +347,14 @@ mod tests {
             "record write",
             "partial write context"
         );
-        assert!(matches!(
-            &error,
-            ArchiveError::CommitOutcomeUnknown { source, .. }
-                if source.to_string().contains("partial record write")
-        ));
+        assert!(
+            matches!(
+                &error,
+                ArchiveError::CommitOutcomeUnknown { source, .. }
+                    if source.to_string().contains("partial record write")
+            ),
+            "partial write reports uncertain outcome with original error"
+        );
         assert_eq!(
             writer.state,
             WriterState::Poisoned,
@@ -363,10 +366,10 @@ mod tests {
             "partial record bytes must remain on disk"
         );
 
-        assert!(matches!(
-            writer.append(&frame(2)),
-            Err(ArchiveError::Poisoned)
-        ));
+        assert!(
+            matches!(writer.append(&frame(2)), Err(ArchiveError::Poisoned)),
+            "poisoned writer refuses append"
+        );
         assert_eq!(
             std::fs::read(&path).unwrap(),
             bytes_after_failure,
@@ -397,10 +400,10 @@ mod tests {
             !bytes.ends_with(b"\n"),
             "failed newline must not be present"
         );
-        assert!(matches!(
-            writer.append(&frame(2)),
-            Err(ArchiveError::Poisoned)
-        ));
+        assert!(
+            matches!(writer.append(&frame(2)), Err(ArchiveError::Poisoned)),
+            "poisoned writer refuses append"
+        );
     }
 
     #[test]
@@ -422,10 +425,10 @@ mod tests {
             bytes.ends_with(b"\n"),
             "bytes written before failed sync remain"
         );
-        assert!(matches!(
-            writer.append(&frame(2)),
-            Err(ArchiveError::Poisoned)
-        ));
+        assert!(
+            matches!(writer.append(&frame(2)), Err(ArchiveError::Poisoned)),
+            "poisoned writer refuses append"
+        );
     }
 
     #[test]
@@ -434,16 +437,23 @@ mod tests {
         let path = directory.path().join("raw.jsonl");
         let mut writer = JournalWriter::create_new(&path).unwrap();
         writer.inject_fail_point(FailPoint::RecordWrite);
-        assert!(matches!(
-            writer.append(&frame(1)),
-            Err(ArchiveError::CommitOutcomeUnknown { .. })
-        ));
+        assert!(
+            matches!(
+                writer.append(&frame(1)),
+                Err(ArchiveError::CommitOutcomeUnknown { .. })
+            ),
+            "failed dispatch reports uncertain outcome"
+        );
         let bytes = std::fs::read(&path).unwrap();
-        assert!(matches!(
-            writer.append(&frame(2)),
-            Err(ArchiveError::Poisoned)
-        ));
-        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        assert!(
+            matches!(writer.append(&frame(2)), Err(ArchiveError::Poisoned)),
+            "poisoned writer refuses append"
+        );
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            bytes,
+            "poisoned append leaves file unchanged"
+        );
     }
 
     #[test]
@@ -455,10 +465,13 @@ mod tests {
         invalid.payload_sha256 =
             "0000000000000000000000000000000000000000000000000000000000000000".to_owned();
 
-        assert!(matches!(
-            writer.append(&invalid),
-            Err(ArchiveError::PayloadHashMismatch)
-        ));
+        assert!(
+            matches!(
+                writer.append(&invalid),
+                Err(ArchiveError::PayloadHashMismatch)
+            ),
+            "invalid frame is rejected before I/O"
+        );
         assert_eq!(
             writer.state,
             WriterState::Healthy,
