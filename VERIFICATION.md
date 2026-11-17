@@ -28,12 +28,12 @@
 | Artifact hashes | **PASS — 8/8 against `artifacts/SHA256SUMS`** |
 | `scripts/supply_chain.py pins` | **PASS — 43 action references pinned to commit SHAs** (30 at r2, 13 added with the packaging, macOS and release jobs) |
 | `scripts/supply_chain.py constraints` | **PASS — 3 constraint sets, 79 pins, full declared coverage** |
-| `scripts/supply_chain.py sbom` | **PASS — 342 components; byte-identical across two runs** |
+| `scripts/supply_chain.py sbom` | **PASS — 342 components; byte-identical across two runs (historical 2026-11-13 count; current 2026-11-17 SBOM has 337 components after the Jiff migration)** |
 | `pip-audit` via `scripts/supply_chain.py audit` | **PASS — research 0, kite-ops 0, fyers-recorder 51 waived (dated waivers)** |
 | Installed Kite wheel smoke test | **PASS — `keychain.swift` present, `pip check` clean, CLI entry point runs** |
 | Deterministic `quantlab demo` | **PASS — two runs, identical SHA-256 `2a214de59eee15cbe5d4b7e3c698463d43df48b36076d1bea7e3ba3b47e16084`** |
 
-CI now runs the root Rust workspace, the separate `extras/` Rust workspace, both C++ targets under GCC, the pinned C++ formatter, schema validation, the required Parquet test, and isolated Kite/FYERS environments. The `provider-boundary` canary fails if the documented `fyers-apiv3`/`requests` conflict silently disappears. The hosted run is not claimed here until it executes on a pushed commit; the table records the equivalent commands run locally.
+CI now runs the root Rust workspace, the separate `extras/` Rust workspace, both C++ targets under GCC, the pinned C++ formatter, schema validation, the required Parquet test, and isolated Kite/FYERS environments. The `provider-boundary` canary fails if the documented `fyers-apiv3`/`requests` conflict silently disappears. That statement was true at the time. 2026-11-17 update: hosted CI has executed; run 44094127311 on current main 0b0a912 passed all 10 jobs. The table above remains the record of the equivalent local commands.
 
 ## 2026-11-13 r3 — release identity, packaging and provenance gates
 
@@ -52,7 +52,7 @@ Both are fixed structurally, and both fixes have a negative control showing the 
 | Workflow syntax and inventory | YAML parse | **PASS — `ci.yml` 9 jobs, `nightly.yml` 5, `release.yml` 2** |
 | Action pinning across every workflow | `python3 scripts/supply_chain.py pins` | **PASS — 43 references** |
 
-The release workflow (`release.yml`, `v*` tags) rebuilds wheels and binaries from the tagged commit, re-verifies the bundle, and attests assets with `actions/attest-build-provenance@4d101475…` (v4.2.2). No hosted run and no attestation exists yet.
+The release workflow (`release.yml`, `v*` tags) rebuilds wheels and binaries from the tagged commit, re-verifies the bundle, and attests assets with `actions/attest-build-provenance@4d101475…` (v4.2.2). This was true at the time. 2026-11-17 update: hosted runs now exist (44019753876 for f832789, 44094127311 for 0b0a912, both 10/10). Native GitHub build attestations remain unavailable for this user-owned private repository; release provenance is an unsigned in-toto statement.
 
 ## 2026-11-13 r0 — executable modes and release gating
 
@@ -200,10 +200,40 @@ These are local synthetic/structural checks. The 2026-11-13 rerun installed PyAr
 
 A clean-extraction run initially found that `make cpp-test` reused a fixed `/tmp/nirnay-cpp-oracle` CMake cache created from the original source path. The Makefile now derives `CPP_BUILD_DIR` from the current absolute repository path, so independent worktrees and freshly extracted archives cannot accidentally reuse another source tree's CMake cache. The `make verify-local` result above was rerun after this fix. The final archive is also verified by extracting it into a new directory and rerunning `make verify-local` there.
 
-## 2026-11-17 post-merge verification (authoritative for `f832789`)
+## 2026-11-17 post-merge verification (historical: `f832789`)
 
 **Revision verified:** `f8327892c373931e097b52893f4f2395bdc5fb57` (PR #7 sweep remediation, squash merge).
 **Hosted CI:** run `44019753876` on `main` — 10/10 jobs SUCCESS (`rust`, `extras-rust`, `cpp`, `macos`, `python-research`, `python-provider (fyers)`, `python-provider (kite)`, `packaging`, `provider-boundary`, `supply-chain`).
 **Local rerun (macOS arm64, pinned Rust 1.99.1):** `make check` exit 0; root Rust 278 tests; extras Rust 92 passed, 0 failed, 4 ignored; Python 156 passed, 2 subtests; schemas, C++ builds/tests/format, supply-chain pins/constraints/SBOM/pip-audit, clean wheel builds/installs, bundle verification with negative self-test, Swift keychain typecheck/compile, and Git policy all PASSED.
 **Extras count semantics:** the earlier `96 tests` figure is the pre-sweep 2026-11-13 total. The current invocation reports **92 passed, 0 failed, 4 ignored**; the four ignored items are child-process-only workers invoked explicitly by parent tests with `--ignored`. Historical totals above remain records of their dated runs and are not current results.
 **Scope of this evidence:** engineering verification for the named commit only. It is not platform-readiness certification, M1 exit-gate approval, M2 implementation authorization, broker/KMS/provider/Keychain runtime verification, or live-trading authorization.
+
+## 2026-11-17 current-main verification (authoritative for `0b0a912`)
+
+**Revision verified:** `0b0a9128522396dbe7a566bba9543a896ad57f63` (`main`, identical locally and on `origin/main`).
+**Hosted CI:** run `44094127311` — **10/10 jobs SUCCESS** (`rust`, `extras-rust`, `cpp`, `macos`, `python-research`, `python-provider (fyers)`, `python-provider (kite)`, `packaging`, `provider-boundary`, `supply-chain`).
+**Local pinned-toolchain rerun:** `make check` exit 0; 381 Rust tests (284 root + 97 extras) and 156 Python tests with 2 subtests; `cargo deny check` advisories/bans/licenses/sources ok with no Chrono advisory.
+**Supply chain:** 43 SHA-pinned workflow actions, 3 constraint files / 79 pins, 337-component CycloneDX SBOM (sha256 `c48a56cdb50696b8c4652003fb74f472b94f3669b901e16ee6b2202bd529f1fb`).
+
+### F3 — GitHub Release draft state (direct evidence)
+
+Commands executed 2026-11-17 against `siebengestirn/nirnay`:
+
+```
+gh api repos/siebengestirn/nirnay/releases --jq '.[] | {tag_name, draft, prerelease, published_at, html_url}'
+```
+
+Observed result:
+
+```
+{"draft":true,"html_url":"https://github.com/siebengestirn/nirnay/releases/tag/untagged-a6af7e31eee8219b18a7","id":443575131,"prerelease":false,"published_at":"2026-11-12T22:18:16Z","tag_name":"v0.1.2"}
+{"draft":true,"html_url":"https://github.com/siebengestirn/nirnay/releases/tag/untagged-8107cbe86160107e52ec","id":443563311,"prerelease":false,"published_at":"2026-11-12T22:04:44Z","tag_name":"v0.1.1"}
+```
+
+`git ls-remote --tags origin` returned no entries. A tag-name lookup (`gh api repos/.../releases/tags/v0.1.1`) returns HTTP 404, consistent with draft releases whose Git tags were deleted. Tag deletion and Release deletion are distinct operations: the Git tags were removed, the Release objects remain as **drafts** and were not deleted. `gh release list` reports both as `Draft`.
+
+This evidence corrects the older statement that the tags/Releases "stay"; that statement is retained above as a historical 2026-11-13 record.
+
+### Scope of this section
+
+These results verify the named commit only. They do not grant M1 exit approval, M2 implementation authorization, platform-readiness certification or live-trading authorization. Native GitHub attestations remain unavailable on this user-owned private repository; release provenance is an unsigned in-toto statement.

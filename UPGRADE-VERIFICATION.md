@@ -34,7 +34,7 @@ Live order submission remains hard-disabled. The OMS module is a broker-neutral 
 | Artifact hashes and bundle integrity | **PASS — 8/8 artifacts; ZIP and sidecar hashes recorded separately** |
 | `scripts/supply_chain.py pins` | **PASS — 43 workflow action references pinned to commit SHAs** (30 at r2; 13 added by the packaging, macOS and release jobs) |
 | `scripts/supply_chain.py constraints` | **PASS — 3 constraint sets, 79 exact pins, every declared dependency covered** |
-| `scripts/supply_chain.py sbom` | **PASS — 342 components, deterministic (identical sha256 across runs)** |
+| `scripts/supply_chain.py sbom` | **PASS — 342 components, deterministic (historical 2026-11-13 count; current 2026-11-17 SBOM has 337 components)** |
 | `pip-audit` (research, kite-ops, fyers-recorder) | **PASS — 0 undocumented advisories; 51 inherited FYERS advisories waived with owner and expiry** |
 
 CI now covers the root Rust workspace, the separate `extras/` Rust workspace, both C++ targets under GCC, the pinned C++ formatter, schema validation, the required Parquet test, and isolated Kite/FYERS environments. A `provider-boundary` canary confirms the known `fyers-apiv3`/`requests` conflict is still present, so isolation cannot silently rot. The hosted CI run itself is not evidence in this local report until it executes on the pushed commit; the table above records the equivalent commands run locally.
@@ -46,11 +46,11 @@ Dependency integrity moved from "future work" to enforced gates:
 - **Workflow actions are commit-SHA pinned** in `ci.yml`, `nightly.yml` and `release.yml` (43 references), each with a `# vX` provenance comment. `taiki-e/install-action` selects its tool through `tool:` because pinning its per-tool tags by hash is discouraged upstream.
 - **Python resolution is pinned** in `constraints/` — 37 pins for research, 10 for Kite, 32 for FYERS — compiled with `uv` against the Python 3.12 target CI uses. CI installs from the constraint file and then installs the local package with `--no-deps`; all three environments were rebuilt that way locally and passed `pip check` and their test suites (research 156, Kite 21, FYERS 7).
 - **`pip-audit` gates every Python job**, with owner-assigned, expiring waivers in `constraints/pip-audit-allowlist.toml`. Research and Kite report zero advisories. FYERS reports 51, all inherited from `fyers-apiv3 3.2.1` pinning `aiohttp==3.9.3`, `requests==2.31.0` and `setuptools==68.0.0`; this is recorded as accepted residual risk, not silently waived.
-- **A CycloneDX 1.5 SBOM** is generated deterministically from `Cargo.lock` plus the constraint sets (`scripts/supply_chain.py sbom`, 342 components).
+- **A CycloneDX 1.5 SBOM** is generated deterministically from `Cargo.lock` plus the constraint sets (`scripts/supply_chain.py sbom`, 342 components at the 2026-11-13 audit; 337 components after the 2026-11-17 Jiff migration).
 - **Wheel packaging defect fixed:** a stale `src/**/__pycache__` was being shipped as package data in all three wheels. `include-package-data = false` is now set, wheels are rebuilt clean, and the Kite wheel still carries `kite_ops/native/keychain.swift` (verified by installing the wheel in a fresh environment).
 - **Artifacts rebuilt** in this environment (three wheels, three Rust binaries, the C++ oracle and the Swift helper) and re-hashed; `artifacts/SHA256SUMS` verifies 8/8.
 
-Gate 0 exit condition is met for CI coverage: every required gate runs in CI, and no gate is excluded for an undocumented platform reason. The remaining Gap 0 caveat is unchanged and cannot be closed by repository code — **the workflow changes have not executed on a pushed commit**; only the equivalent commands were run locally.
+Gate 0 exit condition is met for CI coverage: every required gate runs in CI, and no gate is excluded for an undocumented platform reason. The Gap 0 caveat was true at the time. 2026-11-17 update: hosted CI has executed on pushed commits — run 44019753876 on f832789 and run 44094127311 on current main 0b0a912, both 10/10 SUCCESS. Native attestations remain unavailable on the private user-owned plan.
 
 
 ### Release identity and packaging gates (r3, 2026-11-13)
@@ -254,4 +254,4 @@ The `cpp-test` Make target now uses a repository-path-specific temporary build d
 
 ### 2026-11-17 evidence note
 
-The post-merge verification for commit `f832789` is recorded in `VERIFICATION.md` under "2026-11-17 post-merge verification". Hosted CI run `44019753876` passed all 10 jobs on that commit. Extras tests currently report 92 passed plus 4 explicitly invoked child-only workers marked ignored; earlier `96 tests` statements in this report are historical 2026-11-13 figures. No M1 exit approval, M2 authorization, platform-readiness claim or live-trading change follows from this note.
+Current `main` is `0b0a912`; its authoritative verification is in `VERIFICATION.md` under "2026-11-17 current-main verification", with hosted CI run `44094127311` passing all 10 jobs. The earlier run `44019753876` on `f832789` is retained as historical evidence for that commit. Extras tests currently report 92 passed plus 4 explicitly invoked child-only workers marked ignored; earlier `96 tests` statements in this report are historical 2026-11-13 figures. No M1 exit approval, M2 authorization, platform-readiness claim or live-trading change follows from this note.

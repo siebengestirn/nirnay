@@ -15,7 +15,7 @@ production graph free of predecessor dependencies.
 | Directory | `extras/` |
 | Cargo package | `nirnay-extras` (library crate `nirnay_extras`) |
 | Workspace | Separate `[workspace]`; **not** a member of the root workspace |
-| Tests | `cargo test --manifest-path extras/Cargo.toml` — **96 passed** (5 unit, 42 ingestion, 49 durable-store) |
+| Tests | `cargo test --manifest-path extras/Cargo.toml --locked` — **92 passed, 0 failed, 4 ignored** (5 unit, 42 ingestion, 45 durable-store); the four ignored items are child-only workers invoked explicitly by parent tests with `--ignored`. After the 2026-11-17 Jiff migration the result is **97 passed, 0 failed, 4 ignored**, including 5 new temporal-compatibility tests. The earlier **96 passed** figure was a pre-sweep total and is historical. |
 | C++ probes | `ctest --test-dir <build>` — **1/1 passed** |
 | Runtime / broker path | Not imported, not linked, not required |
 | Licence | MIT, Copyright (c) 2026 Kartik Jangid (`extras/LICENSE`) |
