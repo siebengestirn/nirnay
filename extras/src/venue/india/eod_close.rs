@@ -16,8 +16,8 @@
 //! different instrument, date or price therefore has no matching row and
 //! fails closed.
 
-use chrono::NaiveDate;
 use india_domain::Isin;
+use jiff::civil::Date;
 
 use super::csv::{column, split_csv_file};
 
@@ -25,7 +25,7 @@ use super::csv::{column, split_csv_file};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EodCloseRow {
     /// Trading date of the close.
-    pub date: NaiveDate,
+    pub date: Date,
     /// Exchange symbol (lookup attribute, never identity).
     pub symbol: String,
     /// Instrument identity.
@@ -46,11 +46,10 @@ pub fn parse_eod_close_csv(csv: &str) -> Result<Vec<EodCloseRow>, anyhow::Error>
     // One close per instrument per trading date. A second row for the same
     // (ISIN, date) is contradictory source data, not a second observation:
     // accepting it would let a caller pick whichever price it prefers.
-    let mut seen: std::collections::BTreeSet<(String, NaiveDate)> =
-        std::collections::BTreeSet::new();
+    let mut seen: std::collections::BTreeSet<(String, Date)> = std::collections::BTreeSet::new();
     for (index, row) in rows.iter().enumerate() {
         let line = index + 2;
-        let date = row[date_col].parse::<NaiveDate>().map_err(|_| {
+        let date = Date::strptime("%Y-%m-%d", &row[date_col]).map_err(|_| {
             anyhow::anyhow!("line {line}: invalid ISO close date `{}`", row[date_col])
         })?;
         let symbol = row[symbol_col].trim().to_owned();

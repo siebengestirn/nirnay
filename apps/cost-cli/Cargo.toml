@@ -9,8 +9,8 @@ description = "JSON-lines bridge to the authoritative Rust transaction cost mode
 
 [dependencies]
 anyhow.workspace = true
-chrono.workspace = true
 cost-model.workspace = true
+jiff.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 trading-core.workspace = true

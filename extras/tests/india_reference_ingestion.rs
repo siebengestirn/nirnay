@@ -2,11 +2,11 @@
 //! capability `INDIA-REF-INGEST`), extended per the P1-03 reviews.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use chrono::NaiveDate;
 use india_domain::{
     CalendarDay, CorporateActionKind, InstrumentId, InstrumentType, Isin, ListingStatus, Segment,
     SessionDay, SettlementRegime, TickAssignment, TradingCalendar, Venue,
 };
+use jiff::{Timestamp, civil::Date};
 use nirnay_extras::venue::india::{
     BuiltCalendar, CorporateActionLedger, CorporateActionRecord, ExchangeTickSchedule,
     InstrumentChange, NormalizedListing, ReferenceClose, ReferenceSnapshot, ReferenceStore,
@@ -19,8 +19,14 @@ use nirnay_extras::venue::india::{
 const RELIANCE_ISIN: &str = "INE002A01018";
 const HDFC_ISIN: &str = "INE040A01026";
 
-fn date(year: i32, month: u32, day: u32) -> NaiveDate {
-    NaiveDate::from_ymd_opt(year, month, day).unwrap()
+fn date(year: i32, month: u32, day: u32) -> Date {
+    Date::new(year as i16, month as i8, day as i8).unwrap()
+}
+
+fn at_time(day: Date, hour: i8, minute: i8, second: i8) -> Timestamp {
+    jiff::tz::Offset::UTC
+        .to_timestamp(day.at(hour, minute, second, 0))
+        .unwrap()
 }
 
 fn flat_assignment(paise: i64, revision: &str) -> TickAssignment {
@@ -44,12 +50,7 @@ fn flat_assignment(paise: i64, revision: &str) -> TickAssignment {
 /// The holiday file has an empty exception list, so the builder's weekday rule is the
 /// only input; provenance is bound to the exact CSV bytes, which are retained
 /// in `archive` under `nse-cash-calendar`.
-fn provenanced_range(
-    archive: &SourceArchive,
-    from: NaiveDate,
-    to: NaiveDate,
-    csv: &str,
-) -> BuiltCalendar {
+fn provenanced_range(archive: &SourceArchive, from: Date, to: Date, csv: &str) -> BuiltCalendar {
     archive
         .store("nse-cash-calendar", csv.as_bytes(), at(from))
         .unwrap();
@@ -57,7 +58,7 @@ fn provenanced_range(
         "nse-cash-calendar",
         Venue::Nse,
         Segment::Cash,
-        from.and_hms_opt(9, 0, 0).unwrap().and_utc(),
+        at_time(from, 9, 0, 0),
         "nse-cash-calendar-v1",
         "test",
         csv.as_bytes(),
@@ -76,7 +77,7 @@ fn provenanced_month(archive: &SourceArchive, year: i32, month: u32) -> BuiltCal
     provenanced_range(
         archive,
         start,
-        next.pred_opt().unwrap(),
+        next.checked_add(jiff::Span::new().days(-1)).unwrap(),
         "DATE,DAY,HOLIDAY,PURPOSE\n",
     )
 }
@@ -88,7 +89,7 @@ fn archived_reference_for(
     archive: &SourceArchive,
     isin: &str,
     symbol: &str,
-    day: NaiveDate,
+    day: Date,
     close_paise: i64,
 ) -> ReferenceClose {
     let bytes = format!("DATE,SYMBOL,ISIN,CLOSE_PAISE\n{day},{symbol},{isin},{close_paise}\n");
@@ -104,7 +105,7 @@ fn archived_reference_for(
     }
 }
 
-fn archived_reference(archive: &SourceArchive, day: NaiveDate, close_paise: i64) -> ReferenceClose {
+fn archived_reference(archive: &SourceArchive, day: Date, close_paise: i64) -> ReferenceClose {
     archived_reference_for(archive, RELIANCE_ISIN, "RELIANCE", day, close_paise)
 }
 
@@ -113,15 +114,15 @@ fn provenance(venue: Venue, csv: &str) -> SourceProvenance {
         "nse-cm-master",
         venue,
         Segment::Cash,
-        date(2026, 1, 1).and_hms_opt(10, 0, 0).unwrap().and_utc(),
+        at_time(date(2026, 1, 1), 10, 0, 0),
         "nse-cm-master-v1",
         "test",
         csv.as_bytes(),
     )
 }
 
-fn at(day: NaiveDate) -> chrono::DateTime<chrono::Utc> {
-    day.and_hms_opt(10, 0, 0).unwrap().and_utc()
+fn at(day: Date) -> Timestamp {
+    at_time(day, 10, 0, 0)
 }
 
 const NSE_CSV: &str = "SYMBOL,NAME OF COMPANY,SERIES,MARKET LOT,ISIN NUMBER\n\
@@ -134,7 +135,7 @@ HDFCBANK,HDFC Bank,EQ,1,INE040A01026\n";
 const BSE_CSV: &str = "Scrip Code,Instrument Code,Scrip Name,Group Name,ISIN CODE,New Tick Size,Market Lot,Security Type Flag\n\
 500325,RELIANCE,Reliance Industries,T,INE002A01018,0.05,1,EQ\n";
 
-fn normalized_nse(symbol: &str, isin: &str, as_of: NaiveDate) -> NormalizedListing {
+fn normalized_nse(symbol: &str, isin: &str, as_of: Date) -> NormalizedListing {
     NormalizedListing {
         venue: Venue::Nse,
         segment: Segment::Cash,
@@ -156,7 +157,7 @@ fn normalized_nse(symbol: &str, isin: &str, as_of: NaiveDate) -> NormalizedListi
 fn normalized_with(
     symbol: &str,
     isin: &str,
-    as_of: NaiveDate,
+    as_of: Date,
     status: ListingStatus,
     regime: SettlementRegime,
     z: bool,
@@ -168,7 +169,7 @@ fn normalized_with(
     row
 }
 
-fn normalized_bse(symbol: &str, isin: &str, as_of: NaiveDate) -> NormalizedListing {
+fn normalized_bse(symbol: &str, isin: &str, as_of: Date) -> NormalizedListing {
     NormalizedListing {
         venue: Venue::Bse,
         segment: Segment::Cash,
@@ -188,7 +189,7 @@ fn normalized_bse(symbol: &str, isin: &str, as_of: NaiveDate) -> NormalizedListi
 }
 
 fn reconciled(
-    day: NaiveDate,
+    day: Date,
     rows: Vec<NormalizedListing>,
 ) -> nirnay_extras::venue::india::ReconciledUniverse {
     let prov = provenance(Venue::Nse, NSE_CSV);
@@ -198,7 +199,7 @@ fn reconciled(
 fn reconcile_from(
     existing: &[india_domain::Instrument],
     incoming: Vec<NormalizedListing>,
-    as_of: NaiveDate,
+    as_of: Date,
     full: bool,
 ) -> nirnay_extras::venue::india::ReconciledUniverse {
     let prov = provenance(Venue::Nse, NSE_CSV);
@@ -206,7 +207,7 @@ fn reconcile_from(
     reconcile(existing, incoming, as_of, full, recorded, &prov).unwrap()
 }
 
-fn bootstrapped(symbol: &str, isin: &str, as_of: NaiveDate) -> Vec<india_domain::Instrument> {
+fn bootstrapped(symbol: &str, isin: &str, as_of: Date) -> Vec<india_domain::Instrument> {
     reconciled(as_of, vec![normalized_nse(symbol, isin, as_of)]).instruments
 }
 
@@ -540,7 +541,7 @@ fn status_change_preserves_valid_time_history() {
         false,
     );
 
-    let status_on = |universe: &[india_domain::Instrument], day: NaiveDate| {
+    let status_on = |universe: &[india_domain::Instrument], day: Date| {
         universe[0]
             .listings
             .iter()
@@ -991,7 +992,7 @@ fn corporate_action_ledger_rejects_duplicate_slot_and_backdating() {
         "nse-corp-actions",
         Venue::Nse,
         Segment::Cash,
-        date(2026, 1, 10).and_hms_opt(10, 0, 0).unwrap().and_utc(),
+        at_time(date(2026, 1, 10), 10, 0, 0),
         "nse-corp-actions-v1",
         "test",
         b"action",
@@ -1003,7 +1004,7 @@ fn corporate_action_ledger_rejects_duplicate_slot_and_backdating() {
         numerator: 1,
         denominator: 2,
         amount_paise: None,
-        recorded_at: date(2026, 1, 10).and_hms_opt(10, 0, 0).unwrap().and_utc(),
+        recorded_at: at_time(date(2026, 1, 10), 10, 0, 0),
         provenance: prov.clone(),
     };
     let mut ledger = CorporateActionLedger::default();
@@ -1018,22 +1019,16 @@ fn corporate_action_ledger_rejects_duplicate_slot_and_backdating() {
     assert!(ledger.append(bad).is_err(), "ratio must be positive");
 
     let mut backdated = record.clone();
-    backdated.recorded_at = date(2026, 1, 1).and_hms_opt(10, 0, 0).unwrap().and_utc();
+    backdated.recorded_at = at_time(date(2026, 1, 1), 10, 0, 0);
     backdated.effective_date = date(2026, 2, 2);
     assert!(
         ledger.append(backdated).is_err(),
         "backdating must be rejected"
     );
 
-    let known = ledger.known_by(
-        date(2026, 2, 2),
-        date(2026, 1, 10).and_hms_opt(11, 0, 0).unwrap().and_utc(),
-    );
+    let known = ledger.known_by(date(2026, 2, 2), at_time(date(2026, 1, 10), 11, 0, 0));
     assert_eq!(known.len(), 1);
-    let unknown = ledger.known_by(
-        date(2026, 2, 2),
-        date(2026, 1, 9).and_hms_opt(11, 0, 0).unwrap().and_utc(),
-    );
+    let unknown = ledger.known_by(date(2026, 2, 2), at_time(date(2026, 1, 9), 11, 0, 0));
     assert!(unknown.is_empty(), "knowledge time gates availability");
 }
 
@@ -1244,7 +1239,7 @@ fn calendar_builder_expands_holiday_exceptions_into_a_complete_month() {
         "nse-cash-calendar",
         Venue::Nse,
         Segment::Cash,
-        date(2025, 5, 1).and_hms_opt(9, 0, 0).unwrap().and_utc(),
+        at_time(date(2025, 5, 1), 9, 0, 0),
         "nse-cash-calendar-v1",
         "test",
         holiday_csv.as_bytes(),
@@ -1360,7 +1355,7 @@ fn calendar_builder_binds_provenance_to_the_exact_holiday_bytes() {
         "nse-cash-calendar",
         Venue::Nse,
         Segment::Cash,
-        date(2025, 5, 1).and_hms_opt(9, 0, 0).unwrap().and_utc(),
+        at_time(date(2025, 5, 1), 9, 0, 0),
         "nse-cash-calendar-v1",
         "test",
         holiday_csv.as_bytes(),
@@ -1403,7 +1398,7 @@ fn calendar_builder_binds_provenance_to_the_exact_holiday_bytes() {
         "nse-cash-calendar",
         Venue::Nse,
         Segment::Cash,
-        date(2025, 5, 1).and_hms_opt(9, 0, 0).unwrap().and_utc(),
+        at_time(date(2025, 5, 1), 9, 0, 0),
         "nse-cash-calendar-v1",
         "test",
         b"DATE,DAY,HOLIDAY,PURPOSE\n",
@@ -1455,7 +1450,7 @@ fn calendar_builder_binds_provenance_to_the_exact_holiday_bytes() {
         "bse-cash-calendar",
         Venue::Bse,
         Segment::Cash,
-        date(2025, 5, 1).and_hms_opt(9, 0, 0).unwrap().and_utc(),
+        at_time(date(2025, 5, 1), 9, 0, 0),
         "bse-cash-calendar-v1",
         "test",
         holiday_csv.as_bytes(),
@@ -1496,7 +1491,7 @@ fn calendar_builder_binds_provenance_to_the_exact_holiday_bytes() {
         "nse-cash-calendar",
         Venue::Nse,
         Segment::Cash,
-        date(2025, 5, 1).and_hms_opt(9, 0, 0).unwrap().and_utc(),
+        at_time(date(2025, 5, 1), 9, 0, 0),
         "nse-cash-calendar-v1",
         "test",
         unarchived_csv.as_bytes(),
@@ -1639,7 +1634,7 @@ fn reconcile_rejects_knowledge_before_retrieval() {
         "nse-cm-master",
         Venue::Nse,
         Segment::Cash,
-        date(2026, 2, 1).and_hms_opt(10, 0, 0).unwrap().and_utc(),
+        at_time(date(2026, 2, 1), 10, 0, 0),
         "nse-cm-master-v1",
         "test",
         NSE_CSV.as_bytes(),
@@ -1649,7 +1644,7 @@ fn reconcile_rejects_knowledge_before_retrieval() {
         vec![normalized_nse("RELIANCE", RELIANCE_ISIN, day)],
         day,
         false,
-        date(2026, 1, 15).and_hms_opt(10, 0, 0).unwrap().and_utc(),
+        at_time(date(2026, 1, 15), 10, 0, 0),
         &prov,
     );
     assert!(result.is_err(), "recorded before retrieval is backdating");
@@ -1662,19 +1657,14 @@ fn bse_provenance(csv: &str) -> SourceProvenance {
         "bse-security-master",
         Venue::Bse,
         Segment::Cash,
-        date(2026, 1, 1).and_hms_opt(10, 0, 0).unwrap().and_utc(),
+        at_time(date(2026, 1, 1), 10, 0, 0),
         "bse-security-master-v1",
         "test",
         csv.as_bytes(),
     )
 }
 
-fn normalized_bse_group(
-    symbol: &str,
-    isin: &str,
-    as_of: NaiveDate,
-    group: &str,
-) -> NormalizedListing {
+fn normalized_bse_group(symbol: &str, isin: &str, as_of: Date, group: &str) -> NormalizedListing {
     let mut row = normalized_bse(symbol, isin, as_of);
     row.settlement_group = Some(group.to_owned());
     let class = classify_bse_group(group).unwrap();
@@ -1824,7 +1814,7 @@ fn settlement_group_history_is_bitemporal() {
     store.publish(mar_snap).unwrap();
     store.publish(apr_snap).unwrap();
 
-    let group_at = |valid: NaiveDate, recorded: NaiveDate| {
+    let group_at = |valid: Date, recorded: Date| {
         store
             .reference(valid, at(recorded))
             .into_iter()
@@ -1906,7 +1896,7 @@ fn nse_carry_binds_the_assignment_to_the_reference_observation() {
         "nse-tick-schedule",
         Venue::Nse,
         Segment::Cash,
-        date(2025, 4, 15).and_hms_opt(9, 0, 0).unwrap().and_utc(),
+        at_time(date(2025, 4, 15), 9, 0, 0),
         "nse-tick-bands-v1",
         "test",
         b"LOWER_PAISE,UPPER_PAISE,TICK_PAISE\n0,,1\n",

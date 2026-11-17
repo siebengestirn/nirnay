@@ -15,8 +15,8 @@
 
 use std::collections::{BTreeSet, HashMap};
 
-use chrono::{DateTime, NaiveDate, Utc};
 use india_domain::{CorporateActionKind, InstrumentId};
+use jiff::{Timestamp, civil::Date};
 use serde::{Deserialize, Serialize};
 
 use super::provenance::SourceProvenance;
@@ -27,7 +27,7 @@ pub struct CorporateActionRecord {
     pub instrument_id: InstrumentId,
     pub kind: CorporateActionKind,
     /// Valid time: when the action takes effect (ex-date).
-    pub effective_date: NaiveDate,
+    pub effective_date: Date,
     /// Exact adjustment numerator.
     pub numerator: i64,
     /// Exact adjustment denominator.
@@ -36,7 +36,7 @@ pub struct CorporateActionRecord {
     /// carries no amount.
     pub amount_paise: Option<i64>,
     /// Knowledge time: when this record was ingested.
-    pub recorded_at: DateTime<Utc>,
+    pub recorded_at: Timestamp,
     /// Raw announcement provenance.
     pub provenance: SourceProvenance,
 }
@@ -117,11 +117,7 @@ impl CorporateActionLedger {
 
     /// Records effective on or before `date` that were known by `knowledge_at`.
     #[must_use]
-    pub fn known_by(
-        &self,
-        date: NaiveDate,
-        knowledge_at: DateTime<Utc>,
-    ) -> Vec<&CorporateActionRecord> {
+    pub fn known_by(&self, date: Date, knowledge_at: Timestamp) -> Vec<&CorporateActionRecord> {
         self.records
             .iter()
             .filter(|record| record.effective_date <= date && record.recorded_at <= knowledge_at)

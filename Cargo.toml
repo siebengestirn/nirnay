@@ -28,11 +28,11 @@ trading-core = { path = "crates/trading-core", version = "0.1.0" }
 anyhow = "1"
 base64 = "0.22"
 blake3 = "1"
-chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.5", features = ["derive", "env"] }
 ed25519-dalek = { version = "3.0", features = ["pkcs8", "pem", "rand_core"] }
 fs2 = "0.4"
 futures-util = "0.3"
+jiff = { version = "=1.0.0", features = ["serde"] }
 prost = "=0.14.4"
 prost-build = "=0.14.4"
 protoc-bin-vendored = "=3.3.0"

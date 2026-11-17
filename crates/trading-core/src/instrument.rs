@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 
 use crate::DomainError;
 
@@ -19,7 +19,7 @@ pub use india_domain::{
 
 /// Whether at least one listing is active on `date`.
 #[must_use]
-pub fn is_active_on(instrument: &Instrument, date: NaiveDate) -> bool {
+pub fn is_active_on(instrument: &Instrument, date: Date) -> bool {
     instrument.listings.iter().any(|listing| {
         listing.status == ListingStatus::Active
             && listing.effective_from <= date
@@ -52,7 +52,7 @@ impl InstrumentCatalog {
 
     /// The instrument only when it is active on `date`.
     #[must_use]
-    pub fn at(&self, identity: &InstrumentId, date: NaiveDate) -> Option<&Instrument> {
+    pub fn at(&self, identity: &InstrumentId, date: Date) -> Option<&Instrument> {
         self.instruments
             .get(identity)
             .filter(|instrument| is_active_on(instrument, date))

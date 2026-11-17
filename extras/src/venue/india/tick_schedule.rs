@@ -19,10 +19,10 @@
 //! selects, for any date, the latest revision effective on or before it —
 //! failing closed when no revision covers the date.
 
-use chrono::{Datelike, NaiveDate};
 use india_domain::{
     Isin, Segment, SessionDay, TickAssignment, TickBand, TickSchedule, Venue, month_start,
 };
+use jiff::civil::Date;
 
 use super::archive::SourceArchive;
 use super::calendar::BuiltCalendar;
@@ -34,7 +34,7 @@ use super::provenance::SourceProvenance;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExchangeTickSchedule {
     /// Date from which this schedule is in force (inclusive).
-    pub effective_from: NaiveDate,
+    pub effective_from: Date,
     /// The banded schedule.
     pub schedule: TickSchedule,
     /// Provenance of the source circular/table it was transcribed from.
@@ -53,7 +53,7 @@ impl ExchangeTickSchedule {
 /// Parse one revision CSV (see module docs) without provenance; bind the
 /// result with [`ExchangeTickSchedule`] once provenance is recorded.
 pub fn parse_tick_schedule_csv(
-    effective_from: NaiveDate,
+    effective_from: Date,
     csv: &str,
 ) -> Result<TickSchedule, anyhow::Error> {
     let (header, rows) = split_csv_file(csv)?;
@@ -168,7 +168,7 @@ impl TickScheduleBook {
 
     /// Schedule in force on `date`: the latest revision effective on or
     /// before it. Fails closed before the first known revision.
-    pub fn schedule_for(&self, date: NaiveDate) -> Option<&TickSchedule> {
+    pub fn schedule_for(&self, date: Date) -> Option<&TickSchedule> {
         self.revisions
             .iter()
             .rev()
@@ -179,12 +179,12 @@ impl TickScheduleBook {
     /// Tick (paise) for `price_paise` on `date`, or `None` when the date
     /// or price is uncovered.
     #[must_use]
-    pub fn tick_for(&self, date: NaiveDate, price_paise: i64) -> Option<i64> {
+    pub fn tick_for(&self, date: Date, price_paise: i64) -> Option<i64> {
         self.schedule_for(date)?.tick_for(price_paise)
     }
 
     /// Revision in force on `date`: the latest effective on or before it.
-    pub fn revision_for(&self, date: NaiveDate) -> Option<&ExchangeTickSchedule> {
+    pub fn revision_for(&self, date: Date) -> Option<&ExchangeTickSchedule> {
         self.revisions
             .iter()
             .rev()
@@ -208,7 +208,7 @@ impl TickScheduleBook {
     /// assignment. A schedule revision without a source hash is also rejected.
     pub fn monthly_assignment(
         &self,
-        as_of: NaiveDate,
+        as_of: Date,
         reference: &ReferenceClose,
         archive: &SourceArchive,
         calendar: &BuiltCalendar,
@@ -259,7 +259,7 @@ impl TickScheduleBook {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReferenceClose {
     /// Trading date of the close.
-    pub date: NaiveDate,
+    pub date: Date,
     /// Instrument the close belongs to. The archived source must contain a
     /// record for this ISIN on this date at this price.
     pub isin: Isin,
@@ -354,7 +354,7 @@ impl ReferenceClose {
     pub fn verify_last_session(
         &self,
         calendar: &BuiltCalendar,
-        effective_month: NaiveDate,
+        effective_month: Date,
     ) -> Result<(), anyhow::Error> {
         let provenance = calendar.require_provenance()?;
         anyhow::ensure!(
@@ -402,7 +402,7 @@ impl ReferenceClose {
 }
 
 /// First day of the calendar month before `month`.
-fn previous_month_start(month: NaiveDate) -> Option<NaiveDate> {
+fn previous_month_start(month: Date) -> Option<Date> {
     let year = month.year();
     let month_number = month.month();
     let (year, month_number) = if month_number == 1 {
@@ -410,5 +410,5 @@ fn previous_month_start(month: NaiveDate) -> Option<NaiveDate> {
     } else {
         (year, month_number - 1)
     };
-    NaiveDate::from_ymd_opt(year, month_number, 1)
+    Date::new(year, month_number, 1).ok()
 }

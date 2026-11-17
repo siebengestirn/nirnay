@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
-use chrono::{SecondsFormat, Utc};
+use jiff::Timestamp;
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 
@@ -17,6 +17,19 @@ use super::durable::{DurableReferenceStore, PAYLOAD_SCHEMA_VERSION, STORE_SCHEMA
 
 /// Backup format version.
 pub const BACKUP_FORMAT_VERSION: u32 = 1;
+
+/// Format a timestamp exactly as chrono's `%Y%m%dT%H%M%S%9fZ` did: nine
+/// fractional digits with no decimal point. Public so the wire-format golden
+/// can be verified from `tests/temporal_compat.rs`.
+#[doc(hidden)]
+#[must_use]
+pub fn backup_id_timestamp(ts: Timestamp) -> String {
+    format!(
+        "{}{:09}Z",
+        ts.strftime("%Y%m%dT%H%M%S"),
+        ts.as_nanosecond().rem_euclid(1_000_000_000)
+    )
+}
 
 /// Machine-readable backup manifest (`backup.json`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -57,7 +70,7 @@ pub fn backup(store: &mut DurableReferenceStore) -> Result<BackupResult, anyhow:
 
     let backup_id = format!(
         "{}-{}",
-        Utc::now().format("%Y%m%dT%H%M%S%9fZ"),
+        backup_id_timestamp(Timestamp::now()),
         std::process::id()
     );
     let root = store.root().to_owned();
@@ -132,7 +145,9 @@ pub fn backup(store: &mut DurableReferenceStore) -> Result<BackupResult, anyhow:
 
     let manifest = BackupManifest {
         format_version: BACKUP_FORMAT_VERSION,
-        created_at: Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true),
+        created_at: Timestamp::now()
+            .strftime("%Y-%m-%dT%H:%M:%S%.6fZ")
+            .to_string(),
         store_schema_version: STORE_SCHEMA_VERSION,
         payload_schema_version: PAYLOAD_SCHEMA_VERSION,
         head_revision_id: copied_head,
@@ -222,7 +237,7 @@ pub fn restore(
         .to_string();
     let temp = parent.join(format!(
         ".{name}.restore-tmp-{}-{}",
-        Utc::now().format("%Y%m%dT%H%M%S%9fZ"),
+        backup_id_timestamp(Timestamp::now()),
         std::process::id()
     ));
     std::fs::create_dir_all(temp.join("source-archive"))?;
@@ -284,7 +299,7 @@ pub fn restore(
     //    store aside first; if the swap fails, move it back.
     let retired = parent.join(format!(
         ".{name}.retired-{}-{}",
-        Utc::now().format("%Y%m%dT%H%M%S%9fZ"),
+        backup_id_timestamp(Timestamp::now()),
         std::process::id()
     ));
     let had_existing = target_root.exists();

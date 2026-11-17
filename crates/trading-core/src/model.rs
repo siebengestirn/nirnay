@@ -940,7 +940,8 @@ mod tests {
             payload: EventPayload::AccountOpened {
                 account_id: AccountId::new(1)?,
                 starting_cash: Paise(1_000_000),
-                trade_date: crate::TradeDate::from_ymd_opt(2026, 10, 28)
+                trade_date: jiff::civil::Date::new(2026, 10, 28)
+                    .ok()
                     .ok_or_else(|| DomainError::InvalidEventTime("invalid date".to_owned()))?,
             },
         };
@@ -954,7 +955,8 @@ mod tests {
             payload: EventPayload::AccountOpened {
                 account_id: AccountId::new(1)?,
                 starting_cash: Paise(1_000_000),
-                trade_date: crate::TradeDate::from_ymd_opt(2026, 10, 28)
+                trade_date: jiff::civil::Date::new(2026, 10, 28)
+                    .ok()
                     .ok_or_else(|| DomainError::InvalidEventTime("invalid date".to_owned()))?,
             },
         };
@@ -1006,7 +1008,8 @@ mod tests {
             payload: EventPayload::AccountOpened {
                 account_id: AccountId::new(1)?,
                 starting_cash: Paise(0),
-                trade_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 28)
+                trade_date: jiff::civil::Date::new(2026, 10, 28)
+                    .ok()
                     .ok_or(DomainError::InvalidInstrument("bad date".to_owned()))?,
             },
         };

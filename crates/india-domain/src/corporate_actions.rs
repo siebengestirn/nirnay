@@ -5,7 +5,7 @@
 //! Raw prices are never overwritten. Dividends are cash-flow events, not price
 //! adjustments. Complex actions fail closed until an approved transform exists.
 
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::{Timestamp, civil::Date};
 use serde::{Deserialize, Serialize};
 
 use crate::{CorporateActionKind, InstrumentId, Paise, SourceProvenance};
@@ -16,10 +16,10 @@ pub struct CorporateActionEvent {
     pub action_id: String,
     pub instrument_id: InstrumentId,
     pub kind: CorporateActionKind,
-    pub effective_date: NaiveDate,
-    pub announced_at: DateTime<Utc>,
+    pub effective_date: Date,
+    pub announced_at: Timestamp,
     /// Knowledge time: when this exact source record entered the system.
-    pub recorded_at: DateTime<Utc>,
+    pub recorded_at: Timestamp,
     pub share_ratio_numerator: i64,
     pub share_ratio_denominator: i64,
     pub amount_paise: Option<i64>,
@@ -100,7 +100,7 @@ impl CorporateActionLedger {
     pub fn known_as_of(
         &self,
         instrument_id: &InstrumentId,
-        knowledge_at: DateTime<Utc>,
+        knowledge_at: Timestamp,
     ) -> Vec<&CorporateActionEvent> {
         self.records
             .iter()
@@ -119,8 +119,8 @@ impl CorporateActionLedger {
         &self,
         instrument_id: &InstrumentId,
         raw_price: Paise,
-        observation_date: NaiveDate,
-        knowledge_at: DateTime<Utc>,
+        observation_date: Date,
+        knowledge_at: Timestamp,
     ) -> Result<(Paise, Vec<String>), anyhow::Error> {
         anyhow::ensure!(raw_price.0 > 0, "raw price must be positive");
         let mut price = i128::from(raw_price.0);
@@ -172,9 +172,9 @@ mod tests {
 
     fn record(
         kind: CorporateActionKind,
-        retrieved: DateTime<Utc>,
-        announced: DateTime<Utc>,
-        recorded: DateTime<Utc>,
+        retrieved: Timestamp,
+        announced: Timestamp,
+        recorded: Timestamp,
     ) -> CorporateActionEvent {
         let provenance = provenance_for_source(
             "exchange-corporate-actions",
@@ -189,7 +189,7 @@ mod tests {
             action_id: "CA1".into(),
             instrument_id: InstrumentId::new("in.test").unwrap(),
             kind,
-            effective_date: NaiveDate::from_ymd_opt(2026, 11, 20).unwrap(),
+            effective_date: Date::new(2026, 11, 20).unwrap(),
             announced_at: announced,
             recorded_at: recorded,
             share_ratio_numerator: 2,
@@ -201,23 +201,15 @@ mod tests {
 
     #[test]
     fn split_is_bitemporal_exact_and_source_hashed() {
-        let retrieved = DateTime::parse_from_rfc3339("2026-11-10T10:00:00Z")
-            .unwrap()
-            .to_utc();
-        let announced = DateTime::parse_from_rfc3339("2026-11-09T10:00:00Z")
-            .unwrap()
-            .to_utc();
-        let recorded = DateTime::parse_from_rfc3339("2026-11-10T10:01:00Z")
-            .unwrap()
-            .to_utc();
+        let retrieved = "2026-11-10T10:00:00Z".parse::<Timestamp>().unwrap();
+        let announced = "2026-11-09T10:00:00Z".parse::<Timestamp>().unwrap();
+        let recorded = "2026-11-10T10:01:00Z".parse::<Timestamp>().unwrap();
         let mut ledger = CorporateActionLedger::default();
         let action = record(CorporateActionKind::Split, retrieved, announced, recorded);
         let id = action.instrument_id.clone();
         ledger.append(action).unwrap();
-        let observation = NaiveDate::from_ymd_opt(2026, 11, 12).unwrap();
-        let before_knowledge = DateTime::parse_from_rfc3339("2026-11-10T10:00:30Z")
-            .unwrap()
-            .to_utc();
+        let observation = Date::new(2026, 11, 12).unwrap();
+        let before_knowledge = "2026-11-10T10:00:30Z".parse::<Timestamp>().unwrap();
         assert!(ledger.known_as_of(&id, before_knowledge).is_empty());
         let (adjusted, lineage) = ledger
             .adjusted_pre_action_price(&id, Paise(10_000), observation, recorded)
@@ -229,15 +221,9 @@ mod tests {
 
     #[test]
     fn action_cannot_be_backdated_and_duplicates_are_rejected() {
-        let retrieved = DateTime::parse_from_rfc3339("2026-11-10T10:00:00Z")
-            .unwrap()
-            .to_utc();
-        let announced = DateTime::parse_from_rfc3339("2026-11-09T10:00:00Z")
-            .unwrap()
-            .to_utc();
-        let before_retrieval = DateTime::parse_from_rfc3339("2026-11-10T09:59:00Z")
-            .unwrap()
-            .to_utc();
+        let retrieved = "2026-11-10T10:00:00Z".parse::<Timestamp>().unwrap();
+        let announced = "2026-11-09T10:00:00Z".parse::<Timestamp>().unwrap();
+        let before_retrieval = "2026-11-10T09:59:00Z".parse::<Timestamp>().unwrap();
         let mut bad = record(
             CorporateActionKind::Split,
             retrieved,

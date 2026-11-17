@@ -2,15 +2,15 @@
 use std::io::{BufRead, Write};
 
 use anyhow::{Context, Result, bail};
-use chrono::NaiveDate;
 use cost_model::{ChargeBook, ChargeRate};
+use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
 use trading_core::{Paise, Product, Side};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct TradeInput {
-    trade_date: NaiveDate,
+    trade_date: Date,
     product: Product,
     side: Side,
     turnover_paise: i64,
