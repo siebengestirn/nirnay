@@ -10,7 +10,7 @@ The source was promoted from the predecessor tree:
 
 Those canonical copies now live only in this directory. The duplicate copies were removed from `extras/cpp`; `extras/cpp` retains only the SBE and conformance probes and links against these sources.
 
-The test covers fixed-point parse/format/rescale, integer overflow boundaries, rational exactness, order-book level updates, tick grids, quantity steps and lot sizes. The implementation uses compiler-supported `__int128` for checked intermediate arithmetic; this is intentionally a GCC/Clang verification target, not a claim of ISO C++ portability.
+The test covers fixed-point parse/format/rescale, integer overflow boundaries, rational exactness, order-book level updates, tick grids, quantity steps and lot sizes. The implementation uses compiler-supported `__int128` for checked intermediate arithmetic; this verification target requires GCC or Clang and makes no claim of ISO C++ portability.
 
 Build and run independently:
 

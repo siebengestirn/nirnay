@@ -3,7 +3,7 @@
 The daemon obtains control observations directly from configured independent
 source endpoints, verifies their signatures through SignedEvidenceRiskGate,
 and signs the resulting scoped RuntimeEvidence using AWS KMS. Its default
-configuration refuses signing until an operator deliberately enables it.
+configuration refuses signing until an operator enables it.
 """
 from __future__ import annotations
 

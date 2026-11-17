@@ -1,7 +1,7 @@
 """Independent risk-service decision core for signed runtime evidence.
 
 This module creates a bounded, domain-separated signature over the exact
-runtime facts consumed by `verify_live_permit`. It deliberately does not issue
+runtime facts consumed by `verify_live_permit`. It does not issue
 permits, approve orders, connect to brokers, or enable live routing. Production
 independence requires deploying it as a separately administered service with
 separate IAM/KMS policy, network identity, audit retention and operator roles.
@@ -115,8 +115,8 @@ class IndependentRiskService:
 
         Runtime evidence must be issued through SignedEvidenceRiskGate, which
         verifies the root trust registry and source signatures before calling
-        the private capability-gated signer. This public method intentionally
-        remains as a fail-closed compatibility surface.
+        the private capability-gated signer. This public method remains
+        a fail-closed compatibility surface.
         """
         raise RiskServiceError(
             "direct RiskFacts signing is disabled; use SignedEvidenceRiskGate with independently signed controls"

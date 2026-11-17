@@ -43,8 +43,8 @@ pub const DEFAULT_BUSY_TIMEOUT_MS: u64 = 5_000;
 
 const PUBLICATION_KEY_MARKER: &str = "p1-04-publication-v1";
 
-/// Crash-injection points, used by the chaos harness only. Zero effect on the
-/// production path beyond an `Option` comparison.
+/// Crash-injection points compiled into debug builds for the chaos harness.
+#[cfg(debug_assertions)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CrashPoint {
     /// Crash before the archive object write (before archive publication).
@@ -63,6 +63,7 @@ pub enum CrashPoint {
     AfterCommitBeforeReturn,
 }
 
+#[cfg(debug_assertions)]
 impl std::str::FromStr for CrashPoint {
     type Err = anyhow::Error;
 
@@ -82,14 +83,11 @@ impl std::str::FromStr for CrashPoint {
 #[cfg(debug_assertions)]
 static CRASH_POINT: std::sync::Mutex<Option<CrashPoint>> = std::sync::Mutex::new(None);
 
-/// Set the crash-injection point. No-op outside debug builds.
+/// Set the crash-injection point for debug-build verification.
 #[cfg(debug_assertions)]
 pub fn debug_set_crash_point(point: Option<CrashPoint>) {
     *CRASH_POINT.lock().unwrap_or_else(|err| err.into_inner()) = point;
 }
-
-#[cfg(not(debug_assertions))]
-pub fn debug_set_crash_point(_point: Option<CrashPoint>) {}
 
 #[cfg(debug_assertions)]
 pub(crate) fn maybe_crash(point: CrashPoint) {
@@ -99,9 +97,6 @@ pub(crate) fn maybe_crash(point: CrashPoint) {
         std::process::abort();
     }
 }
-
-#[cfg(not(debug_assertions))]
-pub(crate) fn maybe_crash(_point: CrashPoint) {}
 
 /// Encoded payload envelope: schema version plus the full snapshot.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -343,6 +338,7 @@ impl DurableReferenceStore {
         let payload_sha256_hex = payload_sha256;
         let key = publication_key(expected_parent, PAYLOAD_SCHEMA_VERSION, &payload_sha256_hex)?;
 
+        #[cfg(debug_assertions)]
         maybe_crash(CrashPoint::AfterArchiveManifestAppend);
 
         self.connection
@@ -402,6 +398,7 @@ impl DurableReferenceStore {
         };
         let parent: Option<i64> = head.map(|value| value as i64);
 
+        #[cfg(debug_assertions)]
         maybe_crash(CrashPoint::InTransaction);
 
         transaction.execute(
@@ -428,6 +425,7 @@ impl DurableReferenceStore {
             rusqlite::params![next_id],
         )?;
 
+        #[cfg(debug_assertions)]
         maybe_crash(CrashPoint::AfterInsertBeforeCommit);
 
         // COMMIT is the durability boundary for the revision and head pair.
@@ -446,6 +444,7 @@ impl DurableReferenceStore {
             }
         }
 
+        #[cfg(debug_assertions)]
         maybe_crash(CrashPoint::AfterCommitBeforeReturn);
         Ok(PublishOutcome {
             revision_id: next_id as u64,

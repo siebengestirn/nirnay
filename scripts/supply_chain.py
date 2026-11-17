@@ -105,7 +105,7 @@ def declared_requirements(project: Path, extras: tuple[str, ...]) -> dict[str, s
     optional = data.get("project", {}).get("optional-dependencies", {})
     for extra in extras:
         absorb(optional.get(extra, []))
-    # `[build-system].requires` is deliberately excluded: it is satisfied inside
+    # `[build-system].requires` is excluded: it is satisfied inside
     # pip's isolated build environment and is not part of the runtime resolution
     # that these constraint files pin.
     return declared

@@ -1,6 +1,6 @@
 """Deterministic event-driven cash-equity simulator.
 
-The engine is intentionally a *single-instrument, single-active-order* model.
+The engine models one instrument and one active order.
 It consumes one selected provider feed, a bounded displayed L2 book and
 explicit last-trade observations. It never claims FIFO certainty from L2.
 Liquidity is consumed across repeated snapshots so unchanged displayed size
@@ -312,7 +312,7 @@ class EventDrivenBacktester:
 
             # Only a confirmed `trade` event can consume modeled resting queue.
             # Vendor LTP snapshots are represented by last_trade_observation and
-            # are deliberately excluded: they are not trade prints.
+            # are excluded because they are not trade prints.
             for order in active_orders():
                 if event.received_utc_ns >= order.expires_ns and order.cancel_effective_ns is None:
                     order.status = "pending_cancel"
@@ -351,7 +351,7 @@ class EventDrivenBacktester:
                         # On activation, the current book is eligible once. On
                         # later updates, only net newly displayed size is fresh
                         # executable liquidity. An identical snapshot cannot
-                        # be reused; a reduction does not imply our fill.
+                        # be reused; a reduction does not imply a fill for the simulated order.
                         tranche = level.quantity if activated_now else new_liquidity[opposite_side].get(level.price, 0)
                         if tranche <= 0:
                             continue

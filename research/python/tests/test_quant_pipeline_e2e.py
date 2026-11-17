@@ -1,6 +1,6 @@
 """End-to-end synthetic acceptance path for research-to-paper workflows.
 
-This test intentionally uses checked-in synthetic fixtures. It proves that the
+This test uses checked-in synthetic fixtures. It proves that the
 components compose and preserve their declared contracts; it does not certify
 provider entitlements, exchange data fidelity, alpha or live execution.
 """

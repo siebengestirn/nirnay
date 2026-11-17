@@ -1,6 +1,6 @@
 """Independent Ed25519 live-risk permit verification.
 
-This verifier is fail-closed and intentionally cannot sign or mint permits.
+This verifier is fail-closed and cannot sign or mint permits.
 Private keys must live in an independently controlled KMS/HSM process.  The
 application remains globally live-disabled until a Rust authority service,
 registered keys, broker certification and regulatory onboarding exist.

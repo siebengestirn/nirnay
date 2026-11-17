@@ -21,7 +21,7 @@ The dataset builder chooses session date from provider source time, then last-tr
 
 The expected evidence chain is:
 
-1. **Upstox:** original binary Protobuf frame in `raw-frames.jsonl`, with payload SHA-256 and capture metadata. Run the active Rust `upstox-decode-export` tool to produce full decoded message envelopes. Do not use `decoded-observations.jsonl` as a market-data dataset: it is a diagnostic projection and intentionally omits full depth/price fields.
+1. **Upstox:** original binary Protobuf frame in `raw-frames.jsonl`, with payload SHA-256 and capture metadata. Run the active Rust `upstox-decode-export` tool to produce full decoded message envelopes. Do not use `decoded-observations.jsonl` as a market-data dataset: it is a diagnostic projection and omits full depth/price fields.
 2. **FYERS:** SDK callback journal, with local receive sequence, a SHA-256 hash chain and explicit callback-gap records. This is decoded SDK callback JSON, not original WebSocket wire bytes.
 3. **Canonical event:** `MarketEvent` with provider, provider instrument key, canonical instrument ID (when mapped), venue, exact decimal strings, timestamp semantics, raw payload hash, optional source-frame/callback-record hash and quality flags.
 4. **Point-in-time row:** canonical event plus resolved listing revision, bitemporal universe membership (when a universe filter is requested), known corporate-action/revision lineage and exact split factor.
@@ -41,13 +41,13 @@ Provider instrument keys are not canonical instruments. Every provider key must 
 - source ID and source SHA-256;
 - optional `supersedes_listing_id` for a later correction.
 
-Resolution uses the event's observation date and local receive time as knowledge time. Missing and ambiguous mappings fail closed. The active code deliberately does not infer corporate identity from ticker strings or silently map an unknown provider key.
+Resolution uses the event's observation date and local receive time as knowledge time. Missing and ambiguous mappings fail closed. The active code does not infer corporate identity from ticker strings or silently map an unknown provider key.
 
 ## 4. Historical universe / survivorship
 
 For a universe-filtered dataset, supply explicit bitemporal `universe_memberships` rows. A membership has valid dates, recorded-at time, source hash, state and optional supersession. The builder includes a row only when that membership was valid on the observation date and known by that event's receive time.
 
-The manifest records the membership source-hash set but always sets `survivorship_completeness_independently_verified=false`. That is deliberate: Nirnay cannot prove that an upstream universe file includes delisted, suspended, merged or renamed instruments. A surviving-constituent-only source must not be labelled survivorship-free.
+The manifest records the membership source-hash set but always sets `survivorship_completeness_independently_verified=false`. This reflects a source limitation: Nirnay cannot prove that an upstream universe file includes delisted, suspended, merged or renamed instruments. A surviving-constituent-only source must not be labelled survivorship-free.
 
 ## 5. Corporate actions
 

@@ -1,4 +1,4 @@
-"""Deterministic, intentionally simple reference strategies for simulator tests."""
+"""Deterministic reference strategies for simulator tests."""
 from __future__ import annotations
 
 from decimal import Decimal

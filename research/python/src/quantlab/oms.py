@@ -241,7 +241,7 @@ class OrderManagementSystem:
                 return existing
             if self.mode == "live":
                 # No live adapter has been independently certified in this repository.
-                # A valid permit is necessary but is intentionally not sufficient.
+                # A valid permit is necessary but not sufficient.
                 if authorization is None:
                     raise LiveRoutingDisabled("live order requires independent signed authorisation")
                 raise LiveRoutingDisabled("live routing is not implemented/certified; permit cannot enable it")

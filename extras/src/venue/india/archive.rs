@@ -5,7 +5,7 @@
 //! (SHA-256 path), alongside an append-only manifest. Properties:
 //!
 //! * **Write-once / content-addressed.** The file lives at
-//!   `{root}/{sha256}.src`. Storing identical bytes again is a no-op that
+//!   `{root}/{sha256}.src`. Storing identical bytes again returns the existing reference without another write; it
 //!   returns the existing reference — never an overwrite.
 //! * **Atomic publication.** Bytes are written to a process-unique
 //!   temporary file, fsynced, renamed, and the containing directory fsynced
@@ -29,6 +29,7 @@ use std::{fs::OpenOptions, io::Write as _};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+#[cfg(debug_assertions)]
 use super::durable::{CrashPoint, maybe_crash};
 use crate::util::sha256_hex;
 
@@ -303,6 +304,7 @@ impl SourceArchive {
                 std::process::id(),
                 TMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             ));
+            #[cfg(debug_assertions)]
             maybe_crash(CrashPoint::BeforeArchiveObjectWrite);
             {
                 let mut file = OpenOptions::new()
@@ -315,6 +317,7 @@ impl SourceArchive {
             }
             std::fs::rename(&tmp, &path)?;
             std::fs::File::open(&self.root)?.sync_all()?;
+            #[cfg(debug_assertions)]
             maybe_crash(CrashPoint::AfterArchiveObjectRename);
         }
         self.append_manifest_locked(&ArchiveEntry {
@@ -324,6 +327,7 @@ impl SourceArchive {
             retrieved_at,
             bytes: bytes.len() as u64,
         })?;
+        #[cfg(debug_assertions)]
         maybe_crash(CrashPoint::AfterArchiveManifestAppend);
         Ok(ArchivedSource {
             schema_version: ARCHIVE_SCHEMA_VERSION,

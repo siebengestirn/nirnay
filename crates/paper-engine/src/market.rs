@@ -146,7 +146,7 @@ impl MarketState {
 
     /// Debit a fill that has already been validated against the remaining
     /// budget. Callers must apply the sufficiency check first; this helper
-    /// intentionally has no fallible path so the projection mutation phase
+    /// has no fallible path so the projection mutation phase
     /// cannot partially commit.
     pub(super) fn debit_validated_liquidity(
         &mut self,

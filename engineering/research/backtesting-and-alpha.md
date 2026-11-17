@@ -53,7 +53,7 @@ python3 -m pip install -e 'research/python[dev]'
 PYTHONPATH=research/python/src python3 -m quantlab.cli demo
 ```
 
-The output deliberately declares `not_real_market_data=true` and `not_alpha_evidence=true`. The fixture proves the strategy/backtester interface and deterministic replay only.
+The output declares `not_real_market_data=true` and `not_alpha_evidence=true`. The fixture proves the strategy/backtester interface and deterministic replay only.
 
 ## 3. Finite-family alpha search
 

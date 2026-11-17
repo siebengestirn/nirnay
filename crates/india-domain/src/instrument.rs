@@ -3,7 +3,7 @@
 //! Versioned wire contract: `schemas/india/instrument.v2.json` (NSE/BSE cash
 //! equities and ETFs). v1 is frozen. The canonical ingress path is
 //! `InstrumentWire` (untrusted) -> [`Instrument`] (validated); direct
-//! deserialization into domain types is deliberately unsupported. Instrument
+//! deserialization into domain types is unsupported. Instrument
 //! identity is platform-internal and never derived from a venue symbol.
 //! Exchanges (NSE/BSE) are venues; Zerodha/Groww are brokers and never part
 //! of instrument identity. Prices are integer paise, quantities integer lots.

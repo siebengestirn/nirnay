@@ -68,7 +68,7 @@ pub fn backup(store: &mut DurableReferenceStore) -> Result<BackupResult, anyhow:
     std::fs::create_dir_all(tmp.join("source-archive"))?;
 
     // Consistent snapshot via SQLite's online backup path (VACUUM INTO);
-    // a live WAL is never copied byte-for-byte by us.
+    // the implementation never copies a live WAL byte-for-byte.
     let database = tmp.join("reference.sqlite3");
     let database_path = database.to_string_lossy().replace('\'', "''");
     store

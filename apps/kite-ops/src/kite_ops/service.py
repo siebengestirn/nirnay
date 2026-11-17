@@ -355,7 +355,7 @@ class KiteOperations:
         )
 
     def submit_manual(self, plan: OrderPlan, confirmation: str) -> str:
-        """Fail-closed placeholder; config flags and CLI confirmation cannot enable trading."""
+        """Reject every live submission until the execution gate is implemented."""
         del plan, confirmation
         raise RiskRejected(
             "LIVE_ROUTING_HARD_DISABLED: production risk gateway, signed deployment policy, "

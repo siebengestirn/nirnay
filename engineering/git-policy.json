@@ -81,7 +81,7 @@
     "exceptions": [
       {
         "path": "extras/evidence/conformance_report.json",
-        "reason": "Archived predecessor gate report, retained on purpose as evidence that the original conformance gate did not pass. It is not a build output of this repository and is not regenerated; the generator writes to target/evidence/."
+        "reason": "Archived predecessor gate report, retained as evidence that the original conformance gate did not pass. It is not a build output of this repository and is not regenerated; the generator writes to target/evidence/."
       }
     ]
   },

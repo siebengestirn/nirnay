@@ -5,7 +5,7 @@
 //! `model.rs`, `risk.rs`) at source snapshot
 //! `cc3a34c317a86a9984401efe90fa3f43d67a1787`.
 //!
-//! The port deliberately does **not** keep Nirnay's instrument identity,
+//! The port does **not** keep Nirnay's instrument identity,
 //! money, quantity or side types. Those are mapped onto the canonical
 //! `india-domain` instrument model and `market-types` side semantics:
 //!

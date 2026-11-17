@@ -270,7 +270,11 @@ impl Drop for TestRoot {
 fn spawn_child(test_name: &str, envs: &[(&str, String)]) -> std::process::Output {
     let exe = std::env::current_exe().unwrap();
     let mut command = Command::new(exe);
-    command.arg("--exact").arg(test_name).arg("--nocapture");
+    command
+        .arg("--exact")
+        .arg(test_name)
+        .arg("--nocapture")
+        .arg("--ignored");
     for (key, value) in envs {
         command.env(key, value);
     }
@@ -279,14 +283,15 @@ fn spawn_child(test_name: &str, envs: &[(&str, String)]) -> std::process::Output
 }
 
 // ---------------------------------------------------------------------------
-// RSV-08 crash-injection worker. Branches on P1_04_CHILD_*; a no-op otherwise.
+// RSV-08 crash-injection worker. Parent tests invoke this ignored test in a child process.
 // ---------------------------------------------------------------------------
+#[cfg(debug_assertions)]
 #[test]
+#[ignore = "child-process worker; invoked by RSV-08 parent tests"]
 fn rsv_08_crash_worker() {
-    let dir = match std::env::var("P1_04_CHILD_DIR") {
-        Ok(dir) => PathBuf::from(dir),
-        Err(_) => return, // not running as a child; no-op as a normal test
-    };
+    let dir = PathBuf::from(
+        std::env::var("P1_04_CHILD_DIR").expect("P1_04_CHILD_DIR must be set by the parent test"),
+    );
     let action = std::env::var("P1_04_CHILD_ACTION").unwrap();
     let crash_point = std::env::var("P1_04_CHILD_CRASH_POINT").ok();
     if let Some(point) = crash_point {
@@ -400,6 +405,7 @@ fn seed_revision_zero(root: &TestRoot) {
     store.publish(&snap1, None).unwrap();
 }
 
+#[cfg(debug_assertions)]
 #[test]
 fn rsv_08_crash_before_archive_leaves_no_revision() {
     // The archive-stage crash fires inside SourceArchive::store, before the
@@ -432,6 +438,7 @@ fn rsv_08_crash_before_archive_leaves_no_revision() {
     let _ = unindexed_before;
 }
 
+#[cfg(debug_assertions)]
 #[test]
 fn rsv_08_crash_after_object_rename_leaves_unindexed_object() {
     // Crash after the object rename + directory sync, before the manifest
@@ -467,6 +474,7 @@ fn rsv_08_crash_after_object_rename_leaves_unindexed_object() {
     assert_eq!(store.revision_count().unwrap(), 1);
 }
 
+#[cfg(debug_assertions)]
 #[test]
 fn rsv_08_crash_after_manifest_append_keeps_archive_but_no_revision() {
     // Crash after the manifest append + sync: the archive is fully
@@ -515,6 +523,7 @@ fn rsv_08_crash_after_manifest_append_keeps_archive_but_no_revision() {
     assert_eq!(store.revision_count().unwrap(), 2);
 }
 
+#[cfg(debug_assertions)]
 #[test]
 fn rsv_08_crash_in_transaction_rolls_back() {
     let root = TestRoot::new();
@@ -533,6 +542,7 @@ fn rsv_08_crash_in_transaction_rolls_back() {
     assert_eq!(store.revision_count().unwrap(), 1);
 }
 
+#[cfg(debug_assertions)]
 #[test]
 fn rsv_08_crash_after_insert_rolls_back() {
     let root = TestRoot::new();
@@ -554,6 +564,7 @@ fn rsv_08_crash_after_insert_rolls_back() {
     assert_eq!(store.revision_count().unwrap(), 1);
 }
 
+#[cfg(debug_assertions)]
 #[test]
 fn rsv_08_crash_after_commit_keeps_revision_and_retry_replays() {
     let root = TestRoot::new();
@@ -599,11 +610,11 @@ fn rsv_08_crash_after_commit_keeps_revision_and_retry_replays() {
 // RSV-07 concurrency worker.
 // ---------------------------------------------------------------------------
 #[test]
+#[ignore = "child-process worker; invoked by RSV-07 parent test"]
 fn rsv_07_concurrency_worker() {
-    let dir = match std::env::var("P1_04_CHILD_DIR") {
-        Ok(dir) => PathBuf::from(dir),
-        Err(_) => return,
-    };
+    let dir = PathBuf::from(
+        std::env::var("P1_04_CHILD_DIR").expect("P1_04_CHILD_DIR must be set by the parent test"),
+    );
     let name = std::env::var("P1_04_CHILD_NAME").unwrap_or_else(|_| "a".to_string());
     let feb = date(2026, 2, 10);
     // Two children build the *same* snapshot deterministically: one commits
@@ -1092,11 +1103,11 @@ fn rsv_06_missing_source_fails_closed() {
 // RSV-09 disk and filesystem
 // ---------------------------------------------------------------------------
 #[test]
+#[ignore = "child-process worker; invoked by RSV-09 parent tests"]
 fn rsv_09_worker() {
-    let dir = match std::env::var("P1_04_CHILD_DIR") {
-        Ok(dir) => PathBuf::from(dir),
-        Err(_) => return,
-    };
+    let dir = PathBuf::from(
+        std::env::var("P1_04_CHILD_DIR").expect("P1_04_CHILD_DIR must be set by the parent test"),
+    );
     let mode = std::env::var("P1_04_CHILD_MODE").unwrap_or_default();
     let day = date(2026, 1, 10);
     let make_snap = |dir: &Path| {
@@ -1864,7 +1875,7 @@ fn rsv_12_performance_baseline() {
 fn nanosecond_timestamp_round_trips_through_metadata() {
     let root = TestRoot::new();
     let day = date(2026, 1, 10);
-    // A timestamp deliberately NOT aligned to microseconds or milliseconds.
+    // A timestamp NOT aligned to microseconds or milliseconds.
     let recorded = day
         .and_hms_nano_opt(10, 0, 0, 123_456_789u32)
         .unwrap()
@@ -2199,11 +2210,11 @@ fn unknown_nested_tick_assignment_field_is_rejected() {
 // Busy timeout is honoured (finding: configured value was overridden)
 // ---------------------------------------------------------------------------
 #[test]
+#[ignore = "child-process worker; invoked by the busy-timeout parent test"]
 fn rsv_09_worker_tiny_busy_timeout() {
-    let dir = match std::env::var("P1_04_CHILD_DIR") {
-        Ok(dir) => PathBuf::from(dir),
-        Err(_) => return,
-    };
+    let dir = PathBuf::from(
+        std::env::var("P1_04_CHILD_DIR").expect("P1_04_CHILD_DIR must be set by the parent test"),
+    );
     // Hold a write transaction in this process; the child's configured
     // 250 ms busy timeout must surface a busy error at publish time.
     let day = date(2026, 1, 10);

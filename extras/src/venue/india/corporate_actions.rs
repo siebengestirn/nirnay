@@ -2,7 +2,7 @@
 //!
 //! [`india_domain::Instrument`] carries an embedded, ordered corporate-action
 //! *history* — right for displaying what already happened. It cannot answer
-//! "what did we know on date D?", because it has no knowledge time. This
+//! "what information was available on date D?", because it has no knowledge time. This
 //! ledger is the event-level counterpart:
 //!
 //! * every record is bitemporal (`effective_date` + `recorded_at`),

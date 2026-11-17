@@ -31,7 +31,7 @@ def control_files(tmp_path):
     paths = {}
     for name in ("ca.pem", "client.pem", "client.key"):
         path = tmp_path / name
-        path.write_text("test-only placeholder")
+        path.write_text("test-only fixture data")
         paths[name] = str(path)
     return paths
 

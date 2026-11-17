@@ -44,7 +44,7 @@ exact `name==version` pin, or when the generation-command header is absent.
 
 ## Scope
 
-The FYERS and Kite constraint sets stay separate on purpose. `fyers-apiv3 3.2.1`
+The FYERS and Kite constraint sets remain separate because their dependency requirements conflict. `fyers-apiv3 3.2.1`
 pins `requests==2.31.0`, which conflicts with `nirnay-kite-ops`'s
 `requests>=2.32,<3`; see `engineering/provider-environments.md`. The combined
 install is tested as an expected failure by the `provider-boundary` CI job.

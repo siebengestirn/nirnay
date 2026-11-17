@@ -32,7 +32,7 @@ endif()
 set(ORACLE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../verification/cpp-oracle/src")
 
 # Shared sources are compiled without -Wpedantic because __int128 is a
-# deliberately documented language extension. This keeps GCC and Clang on the
+# documented language extension. This keeps GCC and Clang on the
 # same contract instead of relying on a Clang-only warning suppression.
 add_library(eng_oracle STATIC
   "${ORACLE_DIR}/numeric.cpp"

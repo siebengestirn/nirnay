@@ -250,8 +250,8 @@ class MultiInstrumentPortfolioBacktester:
                          0 <= event.received_utc_ns - book_time[instrument] <= self.config.max_book_age_ns)
                 if is_book and order.status in {"working", "partially_filled", "pending_cancel"} and not activated:
                     # L2 cannot tell whether new displayed orders joined ahead
-                    # or behind us. For a conservative market-by-price model,
-                    # every positive increase at our price is assumed ahead.
+                    # or behind the strategy order. For a conservative market-by-price model,
+                    # every positive increase at the strategy limit price is assumed ahead.
                     queue_side = "bid" if order.intent.side == "buy" else "ask"
                     visible_at_price = next((x.quantity for x in (event.bids if queue_side == "bid" else event.asks)
                                              if x.price == order.intent.limit_price), 0)

@@ -282,7 +282,7 @@ impl OrderStatus {
 
     /// Whether `next` is a legal lifecycle transition.
     ///
-    /// `OutcomeUnknown` is deliberately resumable so a broker report can
+    /// `OutcomeUnknown` is resumable so a broker report can
     /// resolve an ambiguous submission; terminal states never move again.
     #[must_use]
     pub const fn permits(self, next: Self) -> bool {

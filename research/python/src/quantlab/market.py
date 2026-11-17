@@ -1,7 +1,7 @@
 """Canonical multi-provider market observations.
 
 Provider identifiers and timestamps retain their original semantics.  This
-module deliberately does not imply that an SDK callback is an exchange tick.
+module does not imply that an SDK callback is an exchange tick.
 """
 from __future__ import annotations
 

@@ -254,7 +254,7 @@ impl ApprovalAttestation {
 ///
 /// Authority boundary: fields are private and construction goes through
 /// [`TrustRegistry::new`], which enforces shape at load time. This type is
-/// deliberately not deserializable: untrusted bytes must never become a
+/// not deserializable: untrusted bytes must never become a
 /// registry. Authorization re-verifies every signature and revocation
 /// check against the registry instance the authority-owning application
 /// supplied, not against strategy-provided state.
@@ -576,7 +576,7 @@ pub fn approver_identity(key_id: &str) -> &str {
 /// without a permit. A carried envelope has zero authority: every
 /// authorization re-derives authority from cryptographic verification.
 ///
-/// Authority boundary: this type is deliberately not deserializable. A
+/// Authority boundary: this type is not deserializable. A
 /// deserialized policy could otherwise set `mode = "live"` from untrusted
 /// bytes; mode is established only through the explicit constructors
 /// below, and Live additionally requires a verified permit on every call.

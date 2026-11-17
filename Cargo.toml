@@ -1,5 +1,5 @@
 # Nirnay: private systematic-trading research and execution workspace.
-# This is a virtual workspace; the separate extras/ reference workspace is intentionally excluded.
+# This is a virtual workspace; the separate extras/ reference workspace is excluded.
 [workspace]
 resolver = "3"
 members = ["crates/*", "apps/cost-cli", "apps/upstox-tools", "xtask"]

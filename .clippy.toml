@@ -9,7 +9,7 @@ avoid-breaking-exported-api = false
 # Project MSRV matches rust-toolchain.toml and Cargo.toml.
 msrv = "1.99"
 
-# Complexity and size limits. Values are deliberately strict but compatible
+# Complexity and size limits. Values are strict but compatible
 # with financial state machines and protocol decoders.
 cognitive-complexity-threshold = 20
 too-many-arguments-threshold = 7
