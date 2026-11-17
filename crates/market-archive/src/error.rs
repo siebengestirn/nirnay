@@ -37,4 +37,10 @@ pub enum ArchiveError {
     DatasetIdMismatch,
     #[error("dataset is not research-grade: {0}")]
     NotResearchGrade(String),
+    #[error("capture journal SHA-256 does not match the session manifest")]
+    JournalHashMismatch,
+    #[error("capture journal has {actual} frames; manifest declares {expected}")]
+    JournalFrameCountMismatch { expected: u64, actual: u64 },
+    #[error("capture session ended with a terminal error: {0}")]
+    TerminalCaptureError(String),
 }

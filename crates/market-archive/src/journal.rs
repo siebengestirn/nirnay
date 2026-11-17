@@ -288,6 +288,13 @@ impl<R: BufRead> JournalReader<R> {
         }
     }
 
+    /// Consume the reader and return the underlying buffered stream.
+    ///
+    /// Callers that need observed byte counts should read them first.
+    pub fn into_inner(self) -> R {
+        self.inner
+    }
+
     /// Number of complete frames returned so far.
     pub fn frame_count(&self) -> u64 {
         self.frame_count
