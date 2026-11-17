@@ -491,7 +491,13 @@ mod tests {
     #[test]
     fn manifest_parsing_is_bounded_and_strict() {
         let oversized = vec![b' '; MAX_MANIFEST_BYTES + 1];
-        assert!(CaptureManifest::from_json(&oversized).is_err());
-        assert!(CaptureManifest::from_json(b"{\"schema_version\":1}").is_err());
+        assert!(
+            CaptureManifest::from_json(&oversized).is_err(),
+            "an oversized manifest is rejected"
+        );
+        assert!(
+            CaptureManifest::from_json(b"{\"schema_version\":1}").is_err(),
+            "a partial manifest is rejected"
+        );
     }
 }
