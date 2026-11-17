@@ -27,45 +27,117 @@ enum WriterState {
     Poisoned,
 }
 
-/// Private test seam: inject a failure at one I/O step without a generic
-/// storage abstraction or an external dependency. Production writers always
-/// use `None`; the variants are only set by tests in this module.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+/// Failure point for the private test I/O seam. It is not part of the public
+/// journal API.
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FailPoint {
-    #[default]
-    None,
     PartialRecordWrite,
     RecordWrite,
     NewlineWrite,
     Sync,
 }
 
+/// Private I/O boundary. Production uses a real `File`; tests use `Failing`,
+/// which performs the real OS call before returning the injected `io::Error`.
+/// The writer therefore observes the same error path as an actual write or
+/// `sync_data` failure without a public generic storage abstraction.
+enum JournalIo {
+    File(File),
+    #[cfg(test)]
+    Failing {
+        file: File,
+        point: Option<FailPoint>,
+    },
+}
+
+impl JournalIo {
+    fn write_all(&mut self, bytes: &[u8]) -> std::io::Result<()> {
+        match self {
+            Self::File(file) => file.write_all(bytes),
+            #[cfg(test)]
+            Self::Failing { file, point } => match point {
+                Some(FailPoint::PartialRecordWrite) => {
+                    let split = bytes.len().saturating_sub(1);
+                    file.write_all(&bytes[..split])?;
+                    *point = None;
+                    Err(std::io::Error::other(
+                        "injected partial record write failure",
+                    ))
+                }
+                Some(FailPoint::RecordWrite) => {
+                    *point = None;
+                    Err(std::io::Error::other("injected record write failure"))
+                }
+                Some(FailPoint::NewlineWrite) if bytes == b"\n" => {
+                    file.write_all(bytes)?;
+                    *point = None;
+                    Err(std::io::Error::other("injected newline write failure"))
+                }
+                _ => file.write_all(bytes),
+            },
+        }
+    }
+
+    fn sync_data(&mut self) -> std::io::Result<()> {
+        match self {
+            Self::File(file) => file.sync_data(),
+            #[cfg(test)]
+            Self::Failing { file, point } => {
+                file.sync_data()?;
+                if matches!(point, Some(FailPoint::Sync)) {
+                    *point = None;
+                    return Err(std::io::Error::other("injected sync_data failure"));
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
 pub struct JournalWriter {
-    file: File,
+    io: JournalIo,
     state: WriterState,
-    fail_point: FailPoint,
 }
 
 fn uncertain_outcome(context: &'static str, source: std::io::Error) -> ArchiveError {
     ArchiveError::CommitOutcomeUnknown { context, source }
 }
 
+fn create_journal_file(path: &Path) -> Result<File, ArchiveError> {
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let file = options.open(path)?;
+    file.try_lock_exclusive()?;
+    if let Some(parent) = path.parent() {
+        File::open(parent)?.sync_all()?;
+    }
+    Ok(file)
+}
+
 impl JournalWriter {
     pub fn create_new(path: impl AsRef<Path>) -> Result<Self, ArchiveError> {
-        let path = path.as_ref();
-        let mut options = OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        options.mode(0o600);
-        let file = options.open(path)?;
-        file.try_lock_exclusive()?;
-        if let Some(parent) = path.parent() {
-            File::open(parent)?.sync_all()?;
-        }
         Ok(Self {
-            file,
+            io: JournalIo::File(create_journal_file(path.as_ref())?),
             state: WriterState::Healthy,
-            fail_point: FailPoint::None,
+        })
+    }
+
+    /// Test-only constructor using the private I/O seam. It performs real OS
+    /// writes and then returns an `io::Error` at the selected point.
+    #[cfg(test)]
+    fn create_new_with_fail_point(
+        path: impl AsRef<Path>,
+        point: FailPoint,
+    ) -> Result<Self, ArchiveError> {
+        Ok(Self {
+            io: JournalIo::Failing {
+                file: create_journal_file(path.as_ref())?,
+                point: Some(point),
+            },
+            state: WriterState::Healthy,
         })
     }
 
@@ -78,9 +150,8 @@ impl JournalWriter {
         // not require loading every historical frame into memory.
         let _ = verify_journal(path)?;
         Ok(Self {
-            file,
+            io: JournalIo::File(file),
             state: WriterState::Healthy,
-            fail_point: FailPoint::None,
         })
     }
 
@@ -96,58 +167,19 @@ impl JournalWriter {
             return Err(ArchiveError::Poisoned);
         }
         let line = frame.to_json_line()?;
-        let bytes = line.as_bytes();
-        if self.fail_point == FailPoint::PartialRecordWrite {
-            let split = bytes.len().saturating_sub(1);
-            if let Err(error) = self.file.write_all(&bytes[..split]) {
-                self.state = WriterState::Poisoned;
-                return Err(uncertain_outcome("record write", error));
-            }
-            self.state = WriterState::Poisoned;
-            return Err(uncertain_outcome(
-                "record write",
-                std::io::Error::other("injected partial record write failure"),
-            ));
-        }
-        if self.fail_point == FailPoint::RecordWrite {
-            self.state = WriterState::Poisoned;
-            return Err(uncertain_outcome(
-                "record write",
-                std::io::Error::other("injected record write failure"),
-            ));
-        }
-        if let Err(error) = self.file.write_all(bytes) {
+        if let Err(error) = self.io.write_all(line.as_bytes()) {
             self.state = WriterState::Poisoned;
             return Err(uncertain_outcome("record write", error));
         }
-        if self.fail_point == FailPoint::NewlineWrite {
-            self.state = WriterState::Poisoned;
-            return Err(uncertain_outcome(
-                "commit marker write",
-                std::io::Error::other("injected newline write failure"),
-            ));
-        }
-        if let Err(error) = self.file.write_all(b"\n") {
+        if let Err(error) = self.io.write_all(b"\n") {
             self.state = WriterState::Poisoned;
             return Err(uncertain_outcome("commit marker write", error));
         }
-        if self.fail_point == FailPoint::Sync {
-            self.state = WriterState::Poisoned;
-            return Err(uncertain_outcome(
-                "sync_data",
-                std::io::Error::other("injected sync_data failure"),
-            ));
-        }
-        if let Err(error) = self.file.sync_data() {
+        if let Err(error) = self.io.sync_data() {
             self.state = WriterState::Poisoned;
             return Err(uncertain_outcome("sync_data", error));
         }
         Ok(())
-    }
-
-    #[cfg(test)]
-    fn inject_fail_point(&mut self, point: FailPoint) {
-        self.fail_point = point;
     }
 }
 
@@ -338,8 +370,9 @@ mod tests {
     fn partial_record_write_is_uncertain_and_poisons_writer() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("raw.jsonl");
-        let mut writer = JournalWriter::create_new(&path).unwrap();
-        writer.inject_fail_point(FailPoint::PartialRecordWrite);
+        let mut writer =
+            JournalWriter::create_new_with_fail_point(&path, FailPoint::PartialRecordWrite)
+                .unwrap();
 
         let error = writer.append(&frame(1)).unwrap_err();
         assert_eq!(
@@ -381,8 +414,8 @@ mod tests {
     fn newline_write_failure_is_uncertain_and_poisons_writer() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("raw.jsonl");
-        let mut writer = JournalWriter::create_new(&path).unwrap();
-        writer.inject_fail_point(FailPoint::NewlineWrite);
+        let mut writer =
+            JournalWriter::create_new_with_fail_point(&path, FailPoint::NewlineWrite).unwrap();
 
         let error = writer.append(&frame(1)).unwrap_err();
         assert_eq!(
@@ -397,8 +430,8 @@ mod tests {
         );
         let bytes = std::fs::read(&path).unwrap();
         assert!(
-            !bytes.ends_with(b"\n"),
-            "failed newline must not be present"
+            bytes.ends_with(b"\n"),
+            "a failed newline write may still leave bytes on disk"
         );
         assert!(
             matches!(writer.append(&frame(2)), Err(ArchiveError::Poisoned)),
@@ -410,8 +443,7 @@ mod tests {
     fn sync_data_failure_is_uncertain_and_poisons_writer() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("raw.jsonl");
-        let mut writer = JournalWriter::create_new(&path).unwrap();
-        writer.inject_fail_point(FailPoint::Sync);
+        let mut writer = JournalWriter::create_new_with_fail_point(&path, FailPoint::Sync).unwrap();
 
         let error = writer.append(&frame(1)).unwrap_err();
         assert_eq!(unknown_context(&error), "sync_data", "sync failure context");
@@ -435,8 +467,8 @@ mod tests {
     fn append_after_poisoning_refuses_before_mutating_the_file() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("raw.jsonl");
-        let mut writer = JournalWriter::create_new(&path).unwrap();
-        writer.inject_fail_point(FailPoint::RecordWrite);
+        let mut writer =
+            JournalWriter::create_new_with_fail_point(&path, FailPoint::RecordWrite).unwrap();
         assert!(
             matches!(
                 writer.append(&frame(1)),
