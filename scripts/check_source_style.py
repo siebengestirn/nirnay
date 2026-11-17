@@ -23,6 +23,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -37,15 +38,16 @@ JSONL_EXTS = frozenset({".jsonl"})
 MD_EXTS = frozenset({".md"})
 
 FILE_HEADER = re.compile(r"^\+\+\+ b/")
-HUNK_HEADER = re.compile(r"^@@.*\+(\d+)")
+HUNK_HEADER = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 HEADING_NEEDS_SPACE = re.compile(r"^\s*#{1,6}[^#\s]")
 BARE_EXCEPT = re.compile(r"^\s*except\s*:")
 WILDCARD_IMPORT = re.compile(r"^\s*from\s+\S+\s+import\s+\*")
 BACKSLASH_CONTINUATION = re.compile(r"\\\s*$")
-MUTABLE_DEFAULT = re.compile(r"\bdef\s+\w+\s*\([^)]*=\s*(\[\]|\{\})")
+MUTABLE_DEFAULT = re.compile(r"\bdef\s+\w+\s*\([^)]*=\s*(\[|\{|(?:list|dict|set)\s*\()")
 NULL_LITERAL = re.compile(r"\bNULL\b")
 USING_NAMESPACE_STD = re.compile(r"^\s*using\s+namespace\s+std\s*;")
 TARGET_LINE = re.compile(r"^[^#\t][^:=]*:(?:=|\+|\?|;|\s|$)")
+FENCE_MARKER = re.compile(r"^\s*(```+|~~~+)")
 
 
 def extension_of(path: str) -> str:
@@ -69,13 +71,24 @@ def is_supported(path: str) -> bool:
 
 
 def parse_added_lines(diff_text: str) -> dict[str, list[tuple[int, str]]]:
-    """Parse `git diff --unified=0` into added lines keyed by path."""
+    """Parse `git diff --unified=0` into added lines keyed by path.
+
+    Split only on `\\n` so a CRLF survives in the captured content; using
+    `splitlines()` would make the CRLF rule impossible to enforce.
+    """
     by_file: dict[str, list[tuple[int, str]]] = {}
     current = ""
     number = 0
-    for line in diff_text.splitlines():
-        if line.startswith("+++ "):
-            current = line[6:] if FILE_HEADER.match(line) else ""
+    for line in diff_text.split("\n"):
+        # Only a real `+++ b/...` header resets the path. An added source line
+        # whose content begins with `++ ` also renders as `+++ ...` and must be
+        # treated as content, not as a header.
+        if FILE_HEADER.match(line):
+            current = line[6:].rstrip("\r")
+            number = 0
+            continue
+        if line.rstrip("\r") == "+++ /dev/null":
+            current = ""
             number = 0
             continue
         if line.startswith("@@"):
@@ -103,39 +116,100 @@ def trailing_whitespace(line: str) -> bool:
     return line.rstrip() != line
 
 
-def check_python_line(line: str) -> list[str]:
+def strip_literals(line: str, comment_marker: str) -> str:
+    """Blank out quoted strings and truncate comments so rules see code only."""
+    output: list[str] = []
+    quote = ""
+    escaped = False
+    index = 0
+    while index < len(line):
+        char = line[index]
+        if quote:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = ""
+            output.append(" ")
+            index += 1
+            continue
+        if char in "\"'":
+            quote = char
+            output.append(" ")
+            index += 1
+            continue
+        if line.startswith(comment_marker, index):
+            break
+        output.append(char)
+        index += 1
+    return "".join(output)
+
+
+def python_docstring_lines(text: str) -> set[int]:
+    """Line numbers inside triple-quoted strings, where prose may use punctuation."""
+    inside = False
+    result: set[int] = set()
+    for number, line in enumerate(text.splitlines(), start=1):
+        markers = line.count('"""') + line.count("'''")
+        if markers:
+            result.add(number)
+            if markers % 2:
+                inside = not inside
+            continue
+        if inside:
+            result.add(number)
+    return result
+
+
+def check_python_line(line: str, *, in_docstring: bool = False) -> list[str]:
     errors: list[str] = []
+    code = strip_literals(line, "#")
     if trailing_whitespace(line):
         errors.append("trailing whitespace")
     if re.match(r"^\s*\t", line):
         errors.append("tab indentation; use four spaces")
     if len(line) > MAX_PY_COLUMNS and "http://" not in line and "https://" not in line:
         errors.append(f"line exceeds {MAX_PY_COLUMNS} columns")
-    if ";" in line and re.search(r";\s*$", line) and not line.lstrip().startswith("#"):
-        errors.append("do not terminate a statement with a semicolon")
+    if not in_docstring and ";" in code:
+        errors.append("do not put a statement semicolon in Python source")
     if BARE_EXCEPT.match(line):
         errors.append("bare `except:` is forbidden; catch a specific exception")
     if WILDCARD_IMPORT.match(line):
         errors.append("wildcard import is forbidden")
     if BACKSLASH_CONTINUATION.search(line):
         errors.append("explicit backslash continuation; use implicit joining")
-    if MUTABLE_DEFAULT.search(line):
+    if MUTABLE_DEFAULT.search(code):
         errors.append("mutable default argument; use None")
     return errors
 
 
 def check_cpp_line(line: str, *, header: bool, cpp: bool) -> list[str]:
     errors: list[str] = []
+    code = strip_literals(line, "//")
     if trailing_whitespace(line):
         errors.append("trailing whitespace")
     if "\t" in line:
         errors.append("tab character; .clang-format uses spaces")
     if len(line) > MAX_CPP_COLUMNS:
         errors.append(f"line exceeds {MAX_CPP_COLUMNS} columns")
-    if cpp and NULL_LITERAL.search(line):
+    if cpp and NULL_LITERAL.search(code):
         errors.append("use nullptr instead of NULL")
     if header and USING_NAMESPACE_STD.match(line):
         errors.append("using-directive is forbidden in a header")
+    return errors
+
+
+def check_json_line(line: str) -> list[str]:
+    errors: list[str] = []
+    if trailing_whitespace(line):
+        errors.append("trailing whitespace")
+    leading = re.match(r"^[\t ]*", line)
+    indent = leading.group(0) if leading else ""
+    if "\t" in indent:
+        errors.append("tab indentation; JSON uses two spaces")
+    elif len(indent) % 2:
+        errors.append("indentation must be a multiple of two spaces")
     return errors
 
 
@@ -166,15 +240,15 @@ def makefile_recipe_violations(text: str) -> set[int]:
     return violations
 
 
-def markdown_fence_lines(text: str) -> tuple[set[int], set[int], set[int]]:
+def markdown_fence_lines(text: str) -> tuple[set[int], set[int]]:
     """Return (fence markers opening without a language, fenced-content lines)."""
     bare_openings: set[int] = set()
     content: set[int] = set()
     inside = False
     for number, line in enumerate(text.splitlines(), start=1):
-        stripped = line.strip()
-        if stripped.startswith("```"):
-            if not inside and len(stripped) == 3:
+        match = FENCE_MARKER.match(line)
+        if match:
+            if not inside and line[match.end() :].strip() == "":
                 bare_openings.add(number)
             inside = not inside
             continue
@@ -200,9 +274,10 @@ def check_markdown_line(
     if HEADING_NEEDS_SPACE.match(line):
         errors.append("ATX heading needs a space after `#`")
     is_heading = bool(re.match(r"^#{1,6}\s", line))
-    is_table = "|" in line
+    is_table = line.count("|") >= 2
+    is_indented_code = line.startswith("    ")
     has_link = "](" in line or "http://" in line or "https://" in line
-    if len(line) > MAX_MD_COLUMNS and not (is_heading or is_table or has_link):
+    if len(line) > MAX_MD_COLUMNS and not (is_heading or is_table or is_indented_code or has_link):
         errors.append(f"prose line exceeds {MAX_MD_COLUMNS} columns")
     return errors
 
@@ -215,14 +290,18 @@ def check_changed_file(path: str, added: list[tuple[int, str]]) -> dict[int, lis
     added_numbers = {number for number, _ in added}
 
     if ext == ".py":
+        try:
+            docstring_lines = python_docstring_lines(Path(path).read_text())
+        except OSError:
+            docstring_lines = set()
         for number, line in added:
-            for message in check_python_line(line):
+            for message in check_python_line(line, in_docstring=number in docstring_lines):
                 add(number, message)
 
     elif ext in CPP_EXTS:
         for number, line in added:
             for message in check_cpp_line(
-                line, header=ext in HEADER_EXTS, cpp=ext not in {".c"}
+                line, header=ext in HEADER_EXTS, cpp=ext in {".cc", ".cpp", ".cxx"}
             ):
                 add(number, message)
 
@@ -247,19 +326,15 @@ def check_changed_file(path: str, added: list[tuple[int, str]]) -> dict[int, lis
         except json.JSONDecodeError as error:
             add(error.lineno, f"invalid JSON: {error.msg}")
         lines = text.splitlines()
-        if text and not text.endswith("\n"):
+        # Only flag a missing final newline when the final line was itself
+        # added; legacy files that predate the rule are not churned.
+        if text and not text.endswith("\n") and len(lines) in added_numbers:
             add(len(lines), "missing final newline")
         for number, line in added:
             if number > len(lines):
                 continue
-            current = lines[number - 1]
-            if trailing_whitespace(current):
-                add(number, "trailing whitespace")
-            indent = len(current) - len(current.lstrip(" "))
-            if "\t" in current[:indent]:
-                add(number, "tab indentation; JSON uses two spaces")
-            elif indent % 2:
-                add(number, "indentation must be a multiple of two spaces")
+            for message in check_json_line(lines[number - 1]):
+                add(number, message)
 
     elif ext in JSONL_EXTS:
         try:
@@ -275,8 +350,9 @@ def check_changed_file(path: str, added: list[tuple[int, str]]) -> dict[int, lis
                 json.loads(line)
             except json.JSONDecodeError as error:
                 add(number, f"invalid JSON record: {error.msg}")
-        if text and not text.endswith("\n"):
-            add(len(text.splitlines()), "missing final newline")
+        last = len(text.splitlines())
+        if text and not text.endswith("\n") and last in added_numbers:
+            add(last, "missing final newline")
 
     elif ext in MD_EXTS:
         try:
@@ -293,14 +369,12 @@ def check_changed_file(path: str, added: list[tuple[int, str]]) -> dict[int, lis
                 line,
                 in_fence=number in content,
                 bare_fence_opening=number in bare_openings,
-                is_fence_marker=bool(line.strip().startswith("```")),
+                is_fence_marker=bool(FENCE_MARKER.match(line)),
             ):
                 add(number, message)
         if fully_added:
             headings = [
-                number
-                for number, line in enumerate(lines, start=1)
-                if line.startswith("# ")
+                number for number, line in enumerate(lines, start=1) if line.startswith("# ")
             ]
             if len(headings) > 1:
                 for number in headings[1:]:
@@ -334,13 +408,11 @@ class StyleCheckerTests(unittest.TestCase):
         self.assertEqual(check_python_line("x = 1"), [])
         self.assertIn("trailing whitespace", check_python_line("x = 1 "))
         self.assertIn("tab indentation; use four spaces", check_python_line("\tx = 1"))
-        self.assertIn("do not terminate a statement with a semicolon", check_python_line("x = 1;"))
+        self.assertTrue(any("semicolon" in m for m in check_python_line("x = 1;")))
         self.assertTrue(any("bare" in m for m in check_python_line("except:")))
         self.assertTrue(any("wildcard" in m for m in check_python_line("from x import *")))
         self.assertTrue(any("backslash" in m for m in check_python_line("x = 1 + \\")))
-        self.assertTrue(
-            any("mutable" in m for m in check_python_line("def f(x=" + "[]" + "):"))
-        )
+        self.assertTrue(any("mutable" in m for m in check_python_line("def f(x=" + "[]" + "):")))
 
     def test_python_allows_urls_and_string_semicolons(self) -> None:
         long_url = "x = 'https://example.com/" + "a" * 120 + "'"
@@ -359,9 +431,7 @@ class StyleCheckerTests(unittest.TestCase):
             )
         )
         self.assertEqual(check_cpp_line("using namespace std;", header=False, cpp=True), [])
-        self.assertTrue(
-            any("tab" in m for m in check_cpp_line("\tint x;", header=False, cpp=True))
-        )
+        self.assertTrue(any("tab" in m for m in check_cpp_line("\tint x;", header=False, cpp=True)))
 
     def test_makefile_recipe_detection(self) -> None:
         text = "all: build\n\tmake build\nbuild:\n  echo wrong\n"
@@ -393,6 +463,69 @@ class StyleCheckerTests(unittest.TestCase):
         self.assertEqual(json.loads('{"a": 1}'), {"a": 1})
         with self.assertRaises(json.JSONDecodeError):
             json.loads("{ // comment\n}")
+
+    def test_crlf_survives_diff_parsing(self) -> None:
+        diff = "+++ b/Makefile\r\n@@ -0,0 +1,1 @@\r\n+\techo hi\r\n"
+        parsed = parse_added_lines(diff)
+        self.assertEqual(parsed, {"Makefile": [(1, "\techo hi\r")]})
+        self.assertTrue(any("CRLF" in m for m in check_makefile_line("\techo hi\r")))
+
+    def test_added_line_beginning_with_double_plus_is_content(self) -> None:
+        diff = "+++ b/a.cpp\n@@ -0,0 +1,2 @@\n+++ i;\n+NULL;\n"
+        self.assertEqual(
+            parse_added_lines(diff),
+            {"a.cpp": [(1, "++ i;"), (2, "NULL;")]},
+        )
+
+    def test_hunk_header_with_function_context(self) -> None:
+        diff = "+++ b/a.cpp\n@@ -1,0 +2 @@ int foo() { return x+1; }\n+int y;\n"
+        self.assertEqual(parse_added_lines(diff), {"a.cpp": [(2, "int y;")]})
+
+    def test_json_indent_rules(self) -> None:
+        self.assertEqual(check_json_line('  "a": 1'), [])
+        self.assertTrue(any("tab" in m for m in check_json_line('\t"a": 1')))
+        self.assertTrue(any("multiple" in m for m in check_json_line('   "a": 1')))
+        self.assertEqual(check_json_line('    "a": 1'), [])
+
+    def test_final_newline_is_only_checked_on_added_last_line(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "legacy.json"
+            path.write_text('{\n  "a": 1\n}')
+            mid_edit = check_changed_file(str(path), [(2, '  "a": 2')])
+            self.assertNotIn(3, mid_edit)
+            last_edit = check_changed_file(str(path), [(3, "}")])
+            self.assertTrue(any("final newline" in m for m in last_edit.get(3, [])))
+
+    def test_null_rule_ignores_comments_strings_and_headers(self) -> None:
+        self.assertEqual(check_cpp_line("// NULL is legacy", header=False, cpp=True), [])
+        self.assertEqual(check_cpp_line('auto s = "NULL";', header=False, cpp=True), [])
+        self.assertEqual(check_cpp_line("#define X NULL", header=True, cpp=False), [])
+        self.assertTrue(
+            any("nullptr" in m for m in check_cpp_line("int *p = NULL;", header=False, cpp=True))
+        )
+
+    def test_python_rules_resist_evasion(self) -> None:
+        self.assertTrue(any("semicolon" in m for m in check_python_line("x = 1; y = 2")))
+        for text in ("def f(a=[1]):", "def f(a=set()):", "def f(a=dict()):"):
+            self.assertTrue(any("mutable" in m for m in check_python_line(text)), text)
+
+    def test_markdown_tilde_fences_and_table_shape(self) -> None:
+        text = "# T\n\n~~~\ncode\n~~~\n"
+        bare, content = markdown_fence_lines(text)
+        self.assertEqual(bare, {3})
+        self.assertEqual(content, {4})
+        long_table = "| " + "x" * 120 + " |\n"
+        self.assertTrue(
+            all(
+                "exceeds" not in m
+                for m in check_markdown_line(
+                    long_table.rstrip("\n"),
+                    in_fence=False,
+                    bare_fence_opening=False,
+                    is_fence_marker=False,
+                )
+            )
+        )
 
     def test_supported_extensions(self) -> None:
         self.assertTrue(is_supported("a.py"))

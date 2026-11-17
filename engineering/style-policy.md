@@ -59,10 +59,11 @@ python3 scripts/check_source_style.py
 ```
 
 `ruff` is configured in `.ruff.toml` and available via `make python-format-check`,
-but is **not binding** yet: 59 existing files predate it and would be
-reformatted. A dedicated PR must reformat the corpus before whole-tree ruff
-checks can join `make check`. Until then the dependency-free added-lines gate
-is the authoritative Python style check.
+but is **not binding** yet: roughly 59 existing files predate it and would be
+reformatted (measured with ruff 0.16.5; the exact count is version-dependent).
+A dedicated PR must reformat the corpus before whole-tree ruff checks can join
+`make check`. Until then the dependency-free added-lines gate is the
+authoritative Python style check. The new checker itself is ruff-formatted.
 
 ## Adding a rule
 
