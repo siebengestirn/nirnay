@@ -53,11 +53,12 @@ USING_NAMESPACE_STD = re.compile(r"^\s*using\s+namespace\s+std\s*;")
 TARGET_LINE = re.compile(r"^[^#\t][^:=]*:(?:=|\+|\?|;|\s|$)")
 FENCE_MARKER = re.compile(r"^\s*(```+|~~~+)")
 SHELL_BACKTICK = re.compile(r"`[^`]+`")
-SHELL_LEGACY_ARITH = re.compile(r"(?:^|[\s;])(?:let|expr)\s|\$\[")
-SHELL_BRACKET_TEST = re.compile(r"\b(?:if|while|until)\s+\[\s")
-SHELL_LOCAL_SUBSHELL = re.compile(r"\blocal\s+\w+=[\"']?\$\(")
-SHELL_ALIAS = re.compile(r"(?:^|[\s;])alias\s")
-SHELL_HEREDOC = re.compile(r"<<-?\s*['\"]?(\w+)")
+SHELL_LEGACY_ARITH = re.compile(r"(?:^|[\s;(])(?:let|expr)(?:\s|$)|\$\[")
+SHELL_BRACKET_TEST = re.compile(r"(?:^|[\s;&|()!])\[\s+|(?:^|[\s;&|()!])test\s+|/usr/bin/\[")
+SHELL_LOCAL_SUBSHELL = re.compile(r"\b(?:local|declare)\s+\w+=[\"']?\$\(")
+SHELL_ALIAS = re.compile(r"(?:^|[\s;(])alias(?:\s|;|\)|$)")
+SHELL_EVAL = re.compile(r"(?:^|[\s;(])eval(?:\s|;|\)|$)")
+SHELL_HEREDOC = re.compile(r"<<-?\s*['\"]?([A-Za-z0-9_][\w.-]*)['\"]?")
 
 
 def extension_of(path: str) -> str:
@@ -75,7 +76,17 @@ def has_shell_shebang(path: str) -> bool:
             first = handle.readline(128)
     except OSError:
         return False
-    return first.startswith(b"#!") and any(marker in first for marker in (b"bash", b"/sh", b"zsh"))
+    if not first.startswith(b"#!"):
+        return False
+    tokens = re.findall(rb"[\w./-]+", first)
+    shell_tokens = {b"sh", b"bash", b"zsh", b"/bin/sh", b"/bin/bash", b"/bin/zsh"}
+    return any(
+        token in shell_tokens
+        or token.endswith(b"/sh")
+        or token.endswith(b"/bash")
+        or token.endswith(b"/zsh")
+        for token in tokens
+    )
 
 
 def is_supported(path: str) -> bool:
@@ -152,8 +163,8 @@ def trailing_whitespace(line: str) -> bool:
     return line.rstrip() != line
 
 
-def strip_literals(line: str, comment_marker: str) -> str:
-    """Blank out quoted strings and truncate comments so rules see code only."""
+def strip_literals(line: str, comment_marker: str, *, blank_strings: bool = True) -> str:
+    """Truncate comments and optionally blank quoted strings."""
     output: list[str] = []
     quote = ""
     escaped = False
@@ -167,12 +178,12 @@ def strip_literals(line: str, comment_marker: str) -> str:
                 escaped = True
             elif char == quote:
                 quote = ""
-            output.append(" ")
+            output.append(" " if blank_strings else char)
             index += 1
             continue
         if char in "\"'":
             quote = char
-            output.append(" ")
+            output.append(" " if blank_strings else char)
             index += 1
             continue
         if line.startswith(comment_marker, index):
@@ -253,19 +264,34 @@ def check_json_line(line: str) -> list[str]:
 
 
 def shell_heredoc_lines(text: str) -> set[int]:
-    """Lines inside here-documents, where literal content is not shell code."""
+    """Lines inside terminated here-documents, where content is literal data.
+
+    An unterminated here-document is never exempted: exempting the remainder of
+    the file would let a single malformed delimiter hide every shell rule.
+    """
+    lines = text.splitlines()
     result: set[int] = set()
-    delimiter: str | None = None
-    for number, line in enumerate(text.splitlines(), start=1):
-        if delimiter is not None:
-            result.add(number)
-            if line.strip() == delimiter:
-                delimiter = None
-            continue
-        match = SHELL_HEREDOC.search(line)
+    index = 0
+    while index < len(lines):
+        match = SHELL_HEREDOC.search(lines[index])
         if match:
             delimiter = match.group(1)
-            result.add(number)
+            closing = next(
+                (
+                    offset
+                    for offset in range(index + 1, len(lines))
+                    if lines[offset].strip() == delimiter
+                ),
+                None,
+            )
+            if closing is None:
+                index += 1
+                continue
+            for offset in range(index, closing + 1):
+                result.add(offset + 1)
+            index = closing + 1
+            continue
+        index += 1
     return result
 
 
@@ -275,26 +301,30 @@ def check_shell_line(line: str, *, in_heredoc: bool = False) -> list[str]:
         errors.append("trailing whitespace")
     if in_heredoc:
         return errors
+    code = strip_literals(line, "#")
+    unquoted = strip_literals(line, "#", blank_strings=False)
     if "\t" in line:
         errors.append("tab indentation; use two spaces")
-    words = line.split()
+    words = code.split()
     if len(line) > MAX_SHELL_COLUMNS and not (
-        "http://" in line or "https://" in line or (words and len(words[0]) > MAX_SHELL_COLUMNS)
+        "http://" in line
+        or "https://" in line
+        or any(len(word) > MAX_SHELL_COLUMNS for word in words)
     ):
         errors.append(f"line exceeds {MAX_SHELL_COLUMNS} columns")
-    if SHELL_BACKTICK.search(line):
+    if SHELL_BACKTICK.search(code):
         errors.append("use $(command) instead of backticks")
-    if re.search(r"(?:^|[\s;])eval\s", line):
+    if SHELL_EVAL.search(code):
         errors.append("eval is forbidden")
-    if SHELL_LEGACY_ARITH.search(line):
+    if SHELL_LEGACY_ARITH.search(code):
         errors.append("use ((...)) or $((...)) instead of let/expr/$[...]")
-    if SHELL_BRACKET_TEST.search(line):
-        errors.append("use [[ ... ]] instead of [ ... ]")
-    if SHELL_LOCAL_SUBSHELL.search(line):
+    if SHELL_BRACKET_TEST.search(code):
+        errors.append("use [[ ... ]] instead of [ ... ], test or /usr/bin/[")
+    if SHELL_LOCAL_SUBSHELL.search(unquoted):
         errors.append("declare local variables separately from command substitution")
-    if SHELL_ALIAS.search(line):
+    if SHELL_ALIAS.search(code):
         errors.append("aliases are forbidden in scripts; use a function")
-    if "$*" in line:
+    if "$*" in unquoted:
         errors.append('use "$@" instead of $*')
     return errors
 
@@ -668,7 +698,15 @@ class StyleCheckerTests(unittest.TestCase):
             ("let x=1", "((...))"),
             ("i=$[2 * 3]", "((...))"),
             ("if [ -f file ]; then", "[[ ... ]]"),
+            ("[ -f file ] && echo yes", "[[ ... ]]"),
+            ("test -f file", "[[ ... ]]"),
+            ("! [ -f file ]", "[[ ... ]]"),
+            ("x=$([ -f file ] && echo y)", "[[ ... ]]"),
             ('local x="$(cmd)"', "separately"),
+            ('declare x="$(cmd)"', "separately"),
+            ("eval", "eval"),
+            ("eval;", "eval"),
+            ("alias", "aliases"),
             ("alias ll='ls -l'", "aliases"),
             ('echo "$*"', "$@"),
             ("\techo hi", "two spaces"),
@@ -677,12 +715,39 @@ class StyleCheckerTests(unittest.TestCase):
             self.assertTrue(any(expected in m for m in check_shell_line(snippet)), snippet)
 
     def test_shell_line_length_and_heredoc(self) -> None:
-        long_line = "echo " + "x" * 90
+        long_line = "echo " + "word " * 20
         self.assertTrue(any("exceeds" in m for m in check_shell_line(long_line)))
         self.assertEqual(check_shell_line("weird `content` here", in_heredoc=True), [])
         text = "#!/bin/bash\ncat <<EOF\n`literal`\nEOF\n"
         self.assertTrue(2 in shell_heredoc_lines(text))
         self.assertTrue(3 in shell_heredoc_lines(text))
+
+    def test_hyphenated_heredoc_and_unterminated_fail_closed(self) -> None:
+        terminated = "#!/bin/bash\ncat <<'SQL-DUMP'\n`literal`\nSQL-DUMP\necho `date`\n"
+        exempt = shell_heredoc_lines(terminated)
+        self.assertEqual(exempt, {2, 3, 4})
+        self.assertNotIn(5, exempt)
+        self.assertTrue(any("backticks" in m for m in check_shell_line("echo `date`")))
+        unterminated = "#!/bin/bash\ncat <<'EOF-X'\necho `date`\n"
+        self.assertNotIn(3, shell_heredoc_lines(unterminated))
+        self.assertTrue(any("backticks" in m for m in check_shell_line("echo `date`")))
+
+    def test_shell_false_positive_guards(self) -> None:
+        self.assertEqual(check_shell_line("# use `cmd` for this"), [])
+        self.assertEqual(check_shell_line("echo 'literal `tick` here'"), [])
+        self.assertEqual(check_shell_line("a[0]=1"), [])
+        self.assertEqual(check_shell_line("ls [abc]"), [])
+        self.assertEqual(check_shell_line("echo " + "a" * 90), [])
+
+    def test_env_sh_shebang_is_detected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "runner"
+            path.write_text("#!/usr/bin/env sh\necho hi\n")
+            self.assertTrue(has_shell_shebang(str(path)))
+            self.assertTrue(is_supported(str(path)))
+            python = Path(directory) / "script"
+            python.write_text("#!/usr/bin/env python3\nprint('hi')\n")
+            self.assertFalse(has_shell_shebang(str(python)))
 
     def test_extensionless_shell_script_is_covered(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

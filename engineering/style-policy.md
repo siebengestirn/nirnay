@@ -23,8 +23,11 @@ and `scripts/check_source_style.py` for every other language, and is wired into
 - **Shell**: Google Shell Style Guide. Executable scripts start with
   `#!/bin/bash`, use two-space indentation, stay within 80 columns, prefer
   `[[ ... ]]`, `$(...)`, `((...))` and `"$@"`, and avoid `eval`, backticks,
-  `let`, `expr`, aliases and unquoted `$*`. Extensionless scripts are detected
-  by their shebang so they cannot bypass the gate.
+  `let`, `expr`, `test`, `/usr/bin/[`, aliases and unquoted `$*`. Shell keeps
+  Google's 80-column limit while Python, C/C++ and Markdown retain the
+  repository's 100-column convention. Extensionless scripts with a shell
+  shebang are detected; a file with no shebang and no recognised extension is
+  not classified as shell.
 - **Makefile**: GNU Make semantics plus the repository's tab-indented recipe
   rule in `.editorconfig`.
 - **JSON/JSONL**: Google JSON Style Guide constraints that are mechanical:
@@ -79,14 +82,19 @@ authoritative Python style check. The new checkers themselves are ruff-formatted
 - `make check` still invokes `style`, and `style` still invokes both style
   checkers and the integrity checker;
 - the CI `source-style` job still runs both checkers with full history;
-- all seven language check functions still exist in `check_source_style.py`;
+- all six language check functions still exist in `check_source_style.py`
+  (Rust is checked by `check_rust_style.py`);
 - the adversarial self-test inventory has not shrunk below its declared
-  minimum (13 Rust, 23 source-style tests).
+  minimum (13 Rust, 26 source-style, 6 integrity tests);
+- the integrity checker is invoked twice in CI and once in the Makefile;
+- canonical bad lines still produce violations, so a rule whose body is
+  replaced with `return []` fails the gate even if its name and tests remain.
 
-It runs from `make style`, from the CI `source-style` job and independently
-from the CI `python-research` job. Removing or weakening a rule, a checker, a
-self-test or the wiring therefore fails the build. Adding a language or rule
-requires updating its expectations in the same PR.
+The behavioural self-tests also run explicitly in the CI `source-style` job.
+The integrity checker runs from `make style`, from that CI job and
+independently from the CI `python-research` job. Removing or weakening a rule,
+a checker, a self-test or the wiring therefore fails the build. Adding a
+language or rule requires updating its expectations in the same PR.
 
 ## Adding a rule
 

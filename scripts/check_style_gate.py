@@ -67,9 +67,49 @@ EXPECTED_LANGUAGE_FUNCTIONS: tuple[str, ...] = (
 
 MIN_TESTS: dict[str, int] = {
     "scripts/check_rust_style.py": 13,
-    "scripts/check_source_style.py": 23,
-    "scripts/check_style_gate.py": 4,
+    "scripts/check_source_style.py": 26,
+    "scripts/check_style_gate.py": 6,
 }
+
+
+def behavioural_checks(root: Path = ROOT) -> list[str]:
+    """Run canonical bad lines so a gutted rule fails every wiring path."""
+    if root != ROOT:
+        # Synthetic trees in self-tests contain placeholder text, not modules.
+        return []
+    scripts = str(root / "scripts")
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    try:
+        import check_rust_style as rust
+        import check_source_style as source
+    except ImportError as error:
+        return [f"cannot import style checker: {error}"]
+
+    failures: list[str] = []
+
+    def expect(function: object, text: str, needle: str, **kwargs: object) -> None:
+        messages = function(text, **kwargs)  # type: ignore[operator]
+        if not any(needle in message for message in messages):  # type: ignore[union-attr]
+            failures.append(f"rule behaviour lost: {needle!r} for {text!r}")
+
+    expect(source.check_python_line, "x = 1;", "semicolon")
+    expect(source.check_cpp_line, "int *p = NULL;", "nullptr", header=False, cpp=True)
+    expect(source.check_shell_line, "echo `date`", "backticks")
+    expect(source.check_shell_line, "eval", "eval")
+    expect(source.check_makefile_line, "all: ", "trailing whitespace")
+    expect(source.check_json_line, '\t"a": 1', "tab")
+    expect(
+        source.check_markdown_line,
+        "##Bad",
+        "space",
+        in_fence=False,
+        bare_fence_opening=False,
+        is_fence_marker=False,
+    )
+    if not rust.assertion_context_errors("assert!(x);"):
+        failures.append("rule behaviour lost: Rust assertion context")
+    return failures
 
 
 def validate(root: Path = ROOT) -> list[str]:
@@ -88,9 +128,18 @@ def validate(root: Path = ROOT) -> list[str]:
         path = root / relative
         if not path.is_file():
             continue
-        tests = len(re.findall(r"^\s+def test_", path.read_text(), re.M))
+        tests = len(re.findall(r"^[ \t]+def test_", path.read_text(), re.M))
         if tests < minimum:
             errors.append(f"{relative}: {tests} self-tests, expected at least {minimum}")
+    ci = root / ".github/workflows/ci.yml"
+    if ci.is_file():
+        count = ci.read_text().count("python3 scripts/check_style_gate.py")
+        if count < 2:
+            errors.append(f"ci.yml: style gate invoked {count} times, expected at least 2")
+    makefile = root / "Makefile"
+    if makefile.is_file() and "python3 scripts/check_style_gate.py" not in makefile.read_text():
+        errors.append("Makefile: style gate invocation missing")
+    errors.extend(behavioural_checks(root))
     return errors
 
 
@@ -105,7 +154,12 @@ class GateIntegrityTests(unittest.TestCase):
                 + "\n"
                 + "    def test_example() -> None:\n        pass\n" * MIN_TESTS.get(relative, 1)
             )
+            if relative == ".github/workflows/ci.yml":
+                path.write_text(path.read_text() + "python3 scripts/check_style_gate.py\n" * 2)
         return root
+
+    def test_behavioural_checks_pass(self) -> None:
+        self.assertEqual(behavioural_checks(), [])
 
     def test_language_coverage_cannot_be_removed(self) -> None:
         required = REQUIRED_TEXT["scripts/check_source_style.py"]

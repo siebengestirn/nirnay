@@ -96,6 +96,11 @@ jobs:
         run: python3 scripts/check_rust_style.py
       - name: Python/C++/Shell/Makefile/JSON/Markdown style on added lines
         run: python3 scripts/check_source_style.py
+      - name: Style gate self-tests
+        run: |
+          python3 scripts/check_rust_style.py --self-test
+          python3 scripts/check_source_style.py --self-test
+          python3 scripts/check_style_gate.py --self-test
       - name: Style gate integrity
         run: python3 scripts/check_style_gate.py
   python-research:
