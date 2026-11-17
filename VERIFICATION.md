@@ -205,7 +205,7 @@ A clean-extraction run initially found that `make cpp-test` reused a fixed `/tmp
 **Revision verified:** `f8327892c373931e097b52893f4f2395bdc5fb57` (PR #7 sweep remediation, squash merge).
 **Hosted CI:** run `44019753876` on `main` — 10/10 jobs SUCCESS (`rust`, `extras-rust`, `cpp`, `macos`, `python-research`, `python-provider (fyers)`, `python-provider (kite)`, `packaging`, `provider-boundary`, `supply-chain`).
 **Local rerun (macOS arm64, pinned Rust 1.99.1):** `make check` exit 0; root Rust 278 tests; extras Rust 92 passed, 0 failed, 4 ignored; Python 156 passed, 2 subtests; schemas, C++ builds/tests/format, supply-chain pins/constraints/SBOM/pip-audit, clean wheel builds/installs, bundle verification with negative self-test, Swift keychain typecheck/compile, and Git policy all PASSED.
-**Extras count semantics:** the earlier `96 tests` figure is the pre-sweep 2026-11-13 total. The current invocation reports **92 passed, 0 failed, 4 ignored**; the four ignored items are child-process-only workers invoked explicitly by parent tests with `--ignored`. Historical totals above remain records of their dated runs and are not current results.
+**Extras count semantics:** the earlier `96 tests` figure is the pre-sweep 2026-11-13 total. At this `f832789` snapshot the invocation reported **92 passed, 0 failed, 4 ignored**; the four ignored items are child-process-only workers invoked explicitly by parent tests with `--ignored`. At current `main` `0b0a912`, after the Jiff migration, the result is **97 passed, 0 failed, 4 ignored**. Historical totals above remain records of their dated runs and are not current results.
 **Scope of this evidence:** engineering verification for the named commit only. It is not platform-readiness certification, M1 exit-gate approval, M2 implementation authorization, broker/KMS/provider/Keychain runtime verification, or live-trading authorization.
 
 ## 2026-11-17 current-main verification (authoritative for `0b0a912`)
@@ -213,7 +213,7 @@ A clean-extraction run initially found that `make cpp-test` reused a fixed `/tmp
 **Revision verified:** `0b0a9128522396dbe7a566bba9543a896ad57f63` (`main`, identical locally and on `origin/main`).
 **Hosted CI:** run `44094127311` — **10/10 jobs SUCCESS** (`rust`, `extras-rust`, `cpp`, `macos`, `python-research`, `python-provider (fyers)`, `python-provider (kite)`, `packaging`, `provider-boundary`, `supply-chain`).
 **Local pinned-toolchain rerun:** `make check` exit 0; 381 Rust tests (284 root + 97 extras) and 156 Python tests with 2 subtests; `cargo deny check` advisories/bans/licenses/sources ok with no Chrono advisory.
-**Supply chain:** 43 SHA-pinned workflow actions, 3 constraint files / 79 pins, 337-component CycloneDX SBOM (sha256 `c48a56cdb50696b8c4652003fb74f472b94f3669b901e16ee6b2202bd529f1fb`).
+**Supply chain:** 43 SHA-pinned workflow action references, 3 constraint files / 79 pins, 337-component CycloneDX SBOM (sha256 `c48a56cdb50696b8c4652003fb74f472b94f3669b901e16ee6b2202bd529f1fb`).
 
 ### F3 — GitHub Release draft state (direct evidence)
 
