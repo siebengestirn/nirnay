@@ -8,7 +8,8 @@
 
 | Capability | Active implementation | Boundary / non-claim |
 |---|---|---|
-| Raw Upstox V3 capture and Protobuf decode | `crates/upstox-feed-proto`, `apps/upstox-tools`, `schemas/upstox/v3/` | New `upstox-decode-export` verifies raw-frame hashes and exports full decoded message envelopes. The Rust workspace gates pass on pinned Rust 1.99.1 (278 tests); live provider capture remains unverified. |
+| Durable raw journal | `crates/market-archive` | A single-writer, newline-delimited journal with `sync_data()` per append, poisoned-writer behaviour after an uncertain commit, and a bounded incremental scanner. Serialized records are capped at 1 MiB (512 KiB decoded payload); oversized, torn or corrupt records fail closed. |
+| Raw Upstox V3 capture and Protobuf decode | `crates/upstox-feed-proto`, `apps/upstox-tools`, `schemas/upstox/v3/` | `upstox-decode-export` verifies raw-frame hashes and exports full decoded message envelopes. It now reads the journal through the shared bounded `JournalReader`, so record limits, torn-tail detection and EOF semantics match the archive; a failure after several records publishes no output. The current local gate passes 410 Rust test cases on pinned Rust 1.99.1; live provider capture remains unverified. |
 | FYERS Data Socket capture | `apps/fyers-recorder` | Captures decoded SDK callback JSON, not original wire packets. Local sequence/gap detection does not establish exchange sequence continuity. |
 | Canonical Upstox/FYERS market events | `research/python/src/quantlab/market.py`, `providers.py` | Preserves provider IDs, timestamp semantics, local sequence, source payload and capture-frame hashes. LTP changes are observations, not invented trade prints or aggressor-side labels. |
 | Cross-feed reconciliation | `quantlab/reconcile.py` | Compares fresh, comparable provider state for one canonical instrument. It never merges/sums duplicate liquidity or constructs an authoritative consolidated tape. |
@@ -29,11 +30,21 @@ python3 -m pip install -e 'apps/fyers-recorder[test]'
 python3 -m pip install -e 'apps/kite-ops[test]'
 ```
 
+Run the complete local gate (formatting, style checks, Rust and Python tests,
+Clippy, dependency policy and contract validation):
+
+```bash
+make check
+```
+
 Run the local verification suite (Python tests, compile/policy gates, active JSON/TOML and schema validation, and the isolated C++ oracle):
 
 ```bash
 make verify-local
 ```
+
+Style is enforced on added lines for Rust, Python, C/C++, Shell, Makefile,
+JSON/JSONL and Markdown; see `engineering/style-policy.md`.
 
 The root `pytest.ini` collects only the active test suites and excludes `extras/`, `target/`, virtual environments and generated caches. The Parquet round-trip runs when PyArrow is installed from the `research` extra; CI installs it and fails if the test is skipped.
 
@@ -59,7 +70,13 @@ mkdir -p /tmp/unpacked && cd /tmp/unpacked && unzip -q /path/to/bundle.zip
 python3 /path/to/repo/scripts/verify_bundle.py --bundle . --zip /path/to/bundle.zip
 ```
 
-`scripts/make_bundle.py` writes the manifest and the archive from one file list, so a manifest path and an archive member name cannot diverge; both are compared as exact strings, because a case-insensitive filesystem cannot tell `sbom.cdx.json` from `SBOM.cdx.json`.
+`scripts/make_bundle.py` writes the manifest and the archive from one file
+list, so a manifest path and an archive member name cannot diverge; both are
+compared as exact strings, because a case-insensitive filesystem cannot tell
+`sbom.cdx.json` from `SBOM.cdx.json`. The bundle job stages compiled output
+under `$RUNNER_TEMP/release`, outside the checkout, and the bundler rejects an
+artifacts directory inside the source tree so wheels and binaries cannot be
+packed twice.
 
 Run the deterministic synthetic strategy/backtest smoke test:
 
@@ -73,7 +90,14 @@ The demo reports `not_real_market_data=true` and `not_alpha_evidence=true`. It i
 
 ### 1. Capture and preserve provider data
 
-Upstox V3 captures original binary Protobuf payloads in `raw-frames.jsonl`. The companion diagnostic projection is useful for inspection but is not treated as complete depth/quote data. Decode the raw frame journal before normalization:
+Upstox V3 captures original binary Protobuf payloads in `raw-frames.jsonl`. The
+companion diagnostic projection is useful for inspection but is not treated as
+complete depth/quote data. The decoder uses the bounded `JournalReader` from
+`market-archive`; a record without a final newline is a torn tail and a failure
+anywhere in the journal prevents publication of decoded output. Capture-manifest
+verification against the decoded journal is not yet implemented, so this path
+establishes file-to-record integrity but not that the archive matches a
+completed capture session. Decode the raw frame journal before normalization:
 
 ```bash
 cargo run --release -p upstox-tools --bin upstox-decode-export -- \
@@ -221,15 +245,46 @@ cmake --build /tmp/nirnay-cpp-oracle --parallel
 ctest --test-dir /tmp/nirnay-cpp-oracle --output-on-failure
 ```
 
-The oracle is not wired into production Rust. On 2026-11-13 the pinned Rust 1.99.1 gates were rerun on this tree: 278 root tests, 96 `extras/` tests, Clippy `-D warnings` for both workspaces, `cargo xtask check`, and both C++ targets under AppleClang 21 and GCC 16 (1/1 each). CI covers the root and extras Rust workspaces, both C++ targets under GCC, schema validation and the required Parquet round-trip. PyArrow 26.0.1 is installed, so the Parquet test executes rather than skips. Live Upstox/FYERS/Kite accounts were not accessed; provider tests use deterministic fixtures and fake clients/SDK objects. See `BUILD-RESULTS.md`, `VERIFICATION.md` and `engineering/provider-environments.md`.
+The oracle is not wired into production Rust. On 2026-11-18 the pinned Rust
+1.99.1 gates were rerun on `main` at `c91ad3f`: local `make check` passed with
+410 Rust test cases across the workspace and extras targets, 156 Python tests
+and 2 subtests, plus formatting, style, Clippy `-D warnings` for both
+workspaces, `cargo deny check`, `cargo xtask check` and contract validation.
+Hosted CI run `44199935228` passed 11/11 jobs. CI also builds both C++ targets
+under GCC and runs schema validation and the required Parquet round-trip. The
+Parquet test executes rather than skips. Live Upstox/FYERS/Kite accounts were
+not accessed; provider tests use deterministic fixtures and fake clients/SDK
+objects. Earlier 2026-11-13 counts (278 root tests, 96 extras tests) are
+historical. See `BUILD-RESULTS.md`, `VERIFICATION.md` and
+`engineering/provider-environments.md`.
 
 ## Extras policy
 
-`extras/**` is the promoted reference workspace (`nirnay-extras`) and is excluded from all active build/runtime dependencies. On 2026-11-13 the useful subset was trimmed from 325 to 61 files and promoted from `legacy/` to `extras/`: the India ingestion/durable-store crate and tests, the C++ SBE/conformance probes, synthetic fixtures and challenge/internal schemas. The old monolith, prediction-market sessions, q experiments, archived measurements, historical registries, duplicate active-crate copies, old locks and old deploy workflows were moved to the external snapshot `../legacy-snapshot-2026-11-13/legacy-full-backup-2026-11-13.tar.gz` (SHA-256 `a49e864308a7e58d667a86049dd80e8ff2c631cd762e50a74aff60007464f9b1`). The predecessor's useful Upstox decoder and protocol schema are active; selected C++ numeric/book code is promoted as an isolated oracle; corporate-action and provenance concepts are reimplemented behind current bitemporal contracts. `cargo test --manifest-path extras/Cargo.toml` passed 96 tests on 2026-11-13 (historical count) and the extras C++ probes pass 1/1; the current 2026-11-17 result is 92 passed with 4 child-only workers ignored and invoked by parents (see the 2026-11-17 verification note above). See `engineering/extras-promotion-audit.md`, `engineering/legacy-audit-2026-11-13.md` and `engineering/migration-map.csv`. Promotion of the retained India code into the active workspace still requires a new crate, ADR, owner and tests.
+`extras/**` is the promoted reference workspace (`nirnay-extras`) and is
+excluded from all active build/runtime dependencies. On 2026-11-13 the useful
+subset was trimmed from 325 to 61 files and promoted from `legacy/` to
+`extras/`: the India ingestion/durable-store crate and tests, the C++
+SBE/conformance probes, synthetic fixtures and challenge/internal schemas. The
+old monolith, prediction-market sessions, q experiments, archived measurements,
+historical registries, duplicate active-crate copies, old locks and old deploy
+workflows were moved to the external snapshot
+`../legacy-snapshot-2026-11-13/legacy-full-backup-2026-11-13.tar.gz` (SHA-256
+`a49e864308a7e58d667a86049dd80e8ff2c631cd762e50a74aff60007464f9b1`). The
+predecessor's useful Upstox decoder and protocol schema are active; selected
+C++ numeric/book code is promoted as an isolated oracle; corporate-action and
+provenance concepts are reimplemented behind current bitemporal contracts.
+`cargo test --manifest-path extras/Cargo.toml` and the extras C++ probes are
+part of the active gates. Historical counts from 2026-11-13 and 2026-11-17 are
+retained in the dated verification documents; the current result is the
+2026-11-18 gate run recorded above. See `engineering/extras-promotion-audit.md`,
+`engineering/legacy-audit-2026-11-13.md` and `engineering/migration-map.csv`.
+Promotion of the retained India code into the active workspace still requires a
+new crate, ADR, owner and tests.
 
 ## Engineering standards and evidence
 
 - `AGENTS.md`, `CONTRIBUTING.md`, `SECURITY.md`
+- `engineering/style-policy.md` (binding style gates for every source language)
 - `engineering/anti-patterns.md`
 - `engineering/research/point-in-time-data.md`
 - `engineering/research/provider-normalization.md`
@@ -244,6 +299,14 @@ The oracle is not wired into production Rust. On 2026-11-13 the pinned Rust 1.99
 
 **Governing principle:** a capability is admitted by contract, executable tests and external evidence—not by a successful demo, strategy backtest, architecture diagram or a green check from a different commit.
 
-### 2026-11-17 post-merge verification note
+### 2026-11-18 current-state note
 
-The authoritative verification for the current `main` commit `f832789` is in `VERIFICATION.md` ("2026-11-17 post-merge verification"): hosted CI run `44019753876` passed 10/10 jobs, and the pinned-toolchain local rerun passed all project gates. The extras Rust suite now reports 92 passed with 4 child-only workers ignored and invoked by parent tests; older `96 tests` figures in dated documents are historical. These results verify the named commit only and do not grant M1 exit approval, M2 authorization, platform readiness or live trading.
+The verification for the current `main` commit `c91ad3f` is recorded in this
+note and in hosted CI run `44199935228`, which passed 11/11 jobs; the
+pinned-toolchain local `make check` passed all project gates (410 Rust test
+cases, 156 Python tests, 2 subtests). `VERIFICATION.md` still contains the
+older dated 2026-11-17 record; older counts and commit hashes in dated
+documents are historical. These results verify the named commit only and do
+not grant M1 exit approval, M2 authorization, platform readiness or live
+trading. Capture-session verification and the raw-to-paper vertical slice are
+still outstanding.
