@@ -85,7 +85,7 @@ authoritative Python style check. The new checkers themselves are ruff-formatted
 - all six language check functions still exist in `check_source_style.py`
   (Rust is checked by `check_rust_style.py`);
 - the adversarial self-test inventory has not shrunk below its declared
-  minimum (13 Rust, 26 source-style, 6 integrity tests);
+  minimum (13 Rust, 26 source-style, 7 integrity tests);
 - the integrity checker is invoked twice in CI and once in the Makefile;
 - canonical bad lines still produce violations, so a rule whose body is
   replaced with `return []` fails the gate even if its name and tests remain.

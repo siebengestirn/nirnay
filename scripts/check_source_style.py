@@ -54,7 +54,12 @@ TARGET_LINE = re.compile(r"^[^#\t][^:=]*:(?:=|\+|\?|;|\s|$)")
 FENCE_MARKER = re.compile(r"^\s*(```+|~~~+)")
 SHELL_BACKTICK = re.compile(r"`[^`]+`")
 SHELL_LEGACY_ARITH = re.compile(r"(?:^|[\s;(])(?:let|expr)(?:\s|$)|\$\[")
-SHELL_BRACKET_TEST = re.compile(r"(?:^|[\s;&|()!])\[\s+|(?:^|[\s;&|()!])test\s+|/usr/bin/\[")
+SHELL_BRACKET_TEST = re.compile(
+    r"(?:^|[\s;&|()!])\[\s+"
+    r"|(?:^|[;&|()!])\s*test\s+"
+    r"|\b(?:if|while|until)\s+test\s+"
+    r"|/usr/bin/\["
+)
 SHELL_LOCAL_SUBSHELL = re.compile(r"\b(?:local|declare)\s+\w+=[\"']?\$\(")
 SHELL_ALIAS = re.compile(r"(?:^|[\s;(])alias(?:\s|;|\)|$)")
 SHELL_EVAL = re.compile(r"(?:^|[\s;(])eval(?:\s|;|\)|$)")
@@ -295,14 +300,44 @@ def shell_heredoc_lines(text: str) -> set[int]:
     return result
 
 
+def shell_code_view(line: str) -> str:
+    """Drop comments and single-quoted literals, keep double-quoted content.
+
+    In bash, backticks and `$(...)` inside double quotes are real command
+    substitutions, so they must remain visible to the rules. Single-quoted
+    content is literal and comments are not code.
+    """
+    output: list[str] = []
+    single = False
+    double = False
+    escaped = False
+    for char in line:
+        if escaped:
+            output.append(char if double else " ")
+            escaped = False
+        elif char == "\\" and (single or double):
+            escaped = True
+            output.append(char if double else " ")
+        elif char == "'" and not double:
+            single = not single
+            output.append(" ")
+        elif char == '"' and not single:
+            double = not double
+            output.append('"')
+        elif char == "#" and not single and not double:
+            break
+        else:
+            output.append(" " if single else char)
+    return "".join(output)
+
+
 def check_shell_line(line: str, *, in_heredoc: bool = False) -> list[str]:
     errors: list[str] = []
     if trailing_whitespace(line):
         errors.append("trailing whitespace")
     if in_heredoc:
         return errors
-    code = strip_literals(line, "#")
-    unquoted = strip_literals(line, "#", blank_strings=False)
+    code = shell_code_view(line)
     if "\t" in line:
         errors.append("tab indentation; use two spaces")
     words = code.split()
@@ -320,11 +355,11 @@ def check_shell_line(line: str, *, in_heredoc: bool = False) -> list[str]:
         errors.append("use ((...)) or $((...)) instead of let/expr/$[...]")
     if SHELL_BRACKET_TEST.search(code):
         errors.append("use [[ ... ]] instead of [ ... ], test or /usr/bin/[")
-    if SHELL_LOCAL_SUBSHELL.search(unquoted):
+    if SHELL_LOCAL_SUBSHELL.search(code):
         errors.append("declare local variables separately from command substitution")
     if SHELL_ALIAS.search(code):
         errors.append("aliases are forbidden in scripts; use a function")
-    if "$*" in unquoted:
+    if "$*" in code:
         errors.append('use "$@" instead of $*')
     return errors
 
@@ -694,6 +729,10 @@ class StyleCheckerTests(unittest.TestCase):
         self.assertEqual(check_shell_line('echo "${value}"'), [])
         for snippet, expected in [
             ("value=`date`", "backticks"),
+            ('echo "`date`"', "backticks"),
+            ('var="`command arg`"', "backticks"),
+            ('x="$( expr 4 + 4 )"', "((...))"),
+            ('echo "$( [ -f file ] )"', "[[ ... ]]"),
             ('eval "${cmd}"', "eval"),
             ("let x=1", "((...))"),
             ("i=$[2 * 3]", "((...))"),
@@ -737,6 +776,7 @@ class StyleCheckerTests(unittest.TestCase):
         self.assertEqual(check_shell_line("echo 'literal `tick` here'"), [])
         self.assertEqual(check_shell_line("a[0]=1"), [])
         self.assertEqual(check_shell_line("ls [abc]"), [])
+        self.assertEqual(check_shell_line("grep test file"), [])
         self.assertEqual(check_shell_line("echo " + "a" * 90), [])
 
     def test_env_sh_shebang_is_detected(self) -> None:

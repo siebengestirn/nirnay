@@ -68,7 +68,7 @@ EXPECTED_LANGUAGE_FUNCTIONS: tuple[str, ...] = (
 MIN_TESTS: dict[str, int] = {
     "scripts/check_rust_style.py": 13,
     "scripts/check_source_style.py": 26,
-    "scripts/check_style_gate.py": 6,
+    "scripts/check_style_gate.py": 7,
 }
 
 
@@ -133,12 +133,24 @@ def validate(root: Path = ROOT) -> list[str]:
             errors.append(f"{relative}: {tests} self-tests, expected at least {minimum}")
     ci = root / ".github/workflows/ci.yml"
     if ci.is_file():
-        count = ci.read_text().count("python3 scripts/check_style_gate.py")
+        # Count dedicated `run:` steps, not the --self-test line inside a
+        # multi-line block, so deleting either integrity step is detected.
+        count = sum(
+            1
+            for line in ci.read_text().splitlines()
+            if line.strip() == "run: python3 scripts/check_style_gate.py"
+        )
         if count < 2:
-            errors.append(f"ci.yml: style gate invoked {count} times, expected at least 2")
+            errors.append(f"ci.yml: {count} dedicated integrity steps, expected at least 2")
     makefile = root / "Makefile"
-    if makefile.is_file() and "python3 scripts/check_style_gate.py" not in makefile.read_text():
-        errors.append("Makefile: style gate invocation missing")
+    if makefile.is_file():
+        count = sum(
+            1
+            for line in makefile.read_text().splitlines()
+            if line.strip() == "python3 scripts/check_style_gate.py"
+        )
+        if count < 1:
+            errors.append("Makefile: dedicated style gate invocation missing")
     errors.extend(behavioural_checks(root))
     return errors
 
@@ -155,7 +167,13 @@ class GateIntegrityTests(unittest.TestCase):
                 + "    def test_example() -> None:\n        pass\n" * MIN_TESTS.get(relative, 1)
             )
             if relative == ".github/workflows/ci.yml":
-                path.write_text(path.read_text() + "python3 scripts/check_style_gate.py\n" * 2)
+                path.write_text(
+                    path.read_text()
+                    + "      - name: Integrity one\n"
+                    + "        run: python3 scripts/check_style_gate.py\n"
+                    + "      - name: Integrity two\n"
+                    + "        run: python3 scripts/check_style_gate.py\n"
+                )
         return root
 
     def test_behavioural_checks_pass(self) -> None:
@@ -177,6 +195,17 @@ class GateIntegrityTests(unittest.TestCase):
             path = root / "Makefile"
             path.write_text(path.read_text().replace("$(MAKE) style", ""))
             self.assertTrue(any("Makefile" in e for e in validate(root)))
+
+    def test_removed_ci_integrity_step_is_detected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.fake_root(directory)
+            path = root / ".github/workflows/ci.yml"
+            path.write_text(
+                path.read_text().replace(
+                    "run: python3 scripts/check_style_gate.py", "run: echo skip", 1
+                )
+            )
+            self.assertTrue(any("dedicated integrity steps" in e for e in validate(root)))
 
     def test_removed_language_rule_is_detected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
