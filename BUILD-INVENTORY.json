@@ -2,7 +2,7 @@
   "repository": "nirnay-quant",
   "release_label": "Nirnay Quant research-to-paper upgrade (candidate; live execution disabled)",
   "generated_on": "2026-11-13",
-  "source_tree_file_count_excluding_generated_caches": 303,
+  "source_tree_file_count_excluding_generated_caches": 302,
   "source_archives": [
     {
       "file": "nirnay-quant-first-commit.zip",
@@ -70,7 +70,7 @@
       "post_fix_result": "All root and extras Rust gates, Python suite (156 passed, 0 skipped, 2 subtests), Parquet round-trip, repository gate with Cargo, schema validation (41 JSON, 26 TOML, 17 schemas), root and extras C++ (1/1 each on AppleClang and GCC), clang-format, deterministic demo, PIT CLI and 25-candidate synthetic alpha screen passed",
       "remaining_external_gates": "No live Upstox/FYERS/Kite session, broker order, entitlement verification, HSM/KMS deployment, real archived provider-session replay or real-data Parquet scale test was performed"
     },
-    "extras_rust": "PASS: cargo test --manifest-path extras/Cargo.toml --locked, 96 tests, 0 failed; Clippy -D warnings and rustfmt clean",
+    "extras_rust": "PASS: cargo test --manifest-path extras/Cargo.toml --locked, 96 tests, 0 failed (historical 2026-11-13 count; current 92 passed plus 4 ignored child-only workers invoked by parents — see VERIFICATION.md 2026-11-17 section); Clippy -D warnings and rustfmt clean",
     "extras_cpp": "PASS: extras/cpp CMake build + CTest 1/1 under AppleClang 21 and GCC 16.2.0",
     "clang_format": "PASS: clang-format 21.1.8 --dry-run --Werror over all 10 C/C++ files; enforced in CI",
     "ci_coverage": [
@@ -139,6 +139,6 @@
     ]
   },
   "extras_file_count": 61,
-  "source_tree_count_note": "242 active source files plus 61 retained extras reference files (303 total excluding generated caches/build directories). The full 325-file predecessor snapshot is external at ../legacy-snapshot-2026-11-13/legacy-full-backup-2026-11-13.tar.gz (SHA-256 a49e864308a7e58d667a86049dd80e8ff2c631cd762e50a74aff60007464f9b1); the exact removed-file list is ../legacy-snapshot-2026-11-13/legacy-removed-manifest-2026-11-13.txt. The expanded tree contains an exact duplicate engineering/engineering-anti-patterns.md (byte-identical to engineering/anti-patterns.md) that was absent from the original ZIP; it is retained and included rather than silently deleted.",
+  "source_tree_count_note": "241 active source files plus 61 retained extras reference files (302 total excluding generated caches/build directories). The full 325-file predecessor snapshot is external at ../legacy-snapshot-2026-11-13/legacy-full-backup-2026-11-13.tar.gz (SHA-256 a49e864308a7e58d667a86049dd80e8ff2c631cd762e50a74aff60007464f9b1); the exact removed-file list is ../legacy-snapshot-2026-11-13/legacy-removed-manifest-2026-11-13.txt. The former exact duplicate engineering/engineering-anti-patterns.md was removed in the 2026-11-17 documentation-only change; engineering/anti-patterns.md is the canonical anti-pattern standard.",
   "updated_on": "2026-11-13"
 }

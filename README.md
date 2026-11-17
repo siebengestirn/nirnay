@@ -243,3 +243,7 @@ The oracle is not wired into production Rust. On 2026-11-13 the pinned Rust 1.99
 - `VERIFICATION.md` (executed checks, including the owner completion rerun)
 
 **Governing principle:** a capability is admitted by contract, executable tests and external evidence—not by a successful demo, strategy backtest, architecture diagram or a green check from a different commit.
+
+### 2026-11-17 post-merge verification note
+
+The authoritative verification for the current `main` commit `f832789` is in `VERIFICATION.md` ("2026-11-17 post-merge verification"): hosted CI run `44019753876` passed 10/10 jobs, and the pinned-toolchain local rerun passed all project gates. The extras Rust suite now reports 92 passed with 4 child-only workers ignored and invoked by parent tests; older `96 tests` figures in dated documents are historical. These results verify the named commit only and do not grant M1 exit approval, M2 authorization, platform readiness or live trading.

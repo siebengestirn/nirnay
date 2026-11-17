@@ -199,3 +199,11 @@ These are local synthetic/structural checks. The 2026-11-13 rerun installed PyAr
 ### Relocatable package verification correction — 2026-11-12
 
 A clean-extraction run initially found that `make cpp-test` reused a fixed `/tmp/nirnay-cpp-oracle` CMake cache created from the original source path. The Makefile now derives `CPP_BUILD_DIR` from the current absolute repository path, so independent worktrees and freshly extracted archives cannot accidentally reuse another source tree's CMake cache. The `make verify-local` result above was rerun after this fix. The final archive is also verified by extracting it into a new directory and rerunning `make verify-local` there.
+
+## 2026-11-17 post-merge verification (authoritative for `f832789`)
+
+**Revision verified:** `f8327892c373931e097b52893f4f2395bdc5fb57` (PR #7 sweep remediation, squash merge).
+**Hosted CI:** run `44019753876` on `main` — 10/10 jobs SUCCESS (`rust`, `extras-rust`, `cpp`, `macos`, `python-research`, `python-provider (fyers)`, `python-provider (kite)`, `packaging`, `provider-boundary`, `supply-chain`).
+**Local rerun (macOS arm64, pinned Rust 1.99.1):** `make check` exit 0; root Rust 278 tests; extras Rust 92 passed, 0 failed, 4 ignored; Python 156 passed, 2 subtests; schemas, C++ builds/tests/format, supply-chain pins/constraints/SBOM/pip-audit, clean wheel builds/installs, bundle verification with negative self-test, Swift keychain typecheck/compile, and Git policy all PASSED.
+**Extras count semantics:** the earlier `96 tests` figure is the pre-sweep 2026-11-13 total. The current invocation reports **92 passed, 0 failed, 4 ignored**; the four ignored items are child-process-only workers invoked explicitly by parent tests with `--ignored`. Historical totals above remain records of their dated runs and are not current results.
+**Scope of this evidence:** engineering verification for the named commit only. It is not platform-readiness certification, M1 exit-gate approval, M2 implementation authorization, broker/KMS/provider/Keychain runtime verification, or live-trading authorization.

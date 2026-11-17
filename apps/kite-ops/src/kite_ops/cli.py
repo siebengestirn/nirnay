@@ -19,7 +19,7 @@ def _operations(config_path: Path, data_dir: Path) -> KiteOperations:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Nirnay read-only Kite operations and guarded manual order tool")
+    parser = argparse.ArgumentParser(description="Nirnay read-only Kite operations (live order submission hard-blocked)")
     parser.add_argument("--config", type=Path, default=Path("data/zerodha-live.json"))
     parser.add_argument("--data-dir", type=Path, default=Path("data"))
     commands = parser.add_subparsers(dest="command", required=True)
