@@ -13,7 +13,8 @@ use trading_core::{
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 fn date() -> Result<TradeDate, DomainError> {
-    TradeDate::from_ymd_opt(2026, 10, 28)
+    TradeDate::new(2026, 10, 28)
+        .ok()
         .ok_or_else(|| DomainError::InvalidEventTime("invalid date".to_owned()))
 }
 
@@ -37,10 +38,12 @@ fn instrument() -> Result<Instrument, DomainError> {
             segment: Segment::Cash,
             venue_symbol: "SYNIDX".to_owned(),
             token: None,
-            effective_from: TradeDate::from_ymd_opt(2026, 1, 1)
+            effective_from: TradeDate::new(2026, 1, 1)
+                .ok()
                 .ok_or_else(|| DomainError::InvalidEventTime("invalid date".to_owned()))?,
             effective_to: Some(
-                TradeDate::from_ymd_opt(2026, 12, 31)
+                TradeDate::new(2026, 12, 31)
+                    .ok()
                     .ok_or_else(|| DomainError::InvalidEventTime("invalid date".to_owned()))?,
             ),
             status: ListingStatus::Active,
@@ -48,10 +51,12 @@ fn instrument() -> Result<Instrument, DomainError> {
             z_category: false,
             settlement_group: None,
             terms: vec![ListingTerms {
-                effective_from: TradeDate::from_ymd_opt(2026, 1, 1)
+                effective_from: TradeDate::new(2026, 1, 1)
+                    .ok()
                     .ok_or_else(|| DomainError::InvalidEventTime("invalid date".to_owned()))?,
                 effective_to: Some(
-                    TradeDate::from_ymd_opt(2026, 12, 31)
+                    TradeDate::new(2026, 12, 31)
+                        .ok()
                         .ok_or_else(|| DomainError::InvalidEventTime("invalid date".to_owned()))?,
                 ),
                 tick_assignment: TickAssignment {

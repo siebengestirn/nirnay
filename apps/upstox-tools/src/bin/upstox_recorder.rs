@@ -13,9 +13,9 @@ use std::{
 };
 
 use anyhow::{Context, bail, ensure};
-use chrono::{SecondsFormat, Utc};
 use clap::{Parser, ValueEnum};
 use futures_util::{SinkExt, StreamExt};
+use jiff::Timestamp;
 use market_archive::{JournalWriter, RawFrame, verify_journal};
 use reqwest::{Client, redirect};
 use serde::{Deserialize, Serialize};
@@ -168,8 +168,8 @@ struct Session {
 
 impl Session {
     fn create(args: &Args, instrument_keys: Vec<String>) -> anyhow::Result<Self> {
-        let started = Utc::now();
-        let stamp = started.format("%Y%m%dT%H%M%S%.fZ");
+        let started = Timestamp::now();
+        let stamp = started.strftime("%Y%m%dT%H%M%S%.fZ");
         let run_dir = args.output_root.join(format!("upstox-{stamp}"));
         fs::create_dir_all(&args.output_root)
             .with_context(|| format!("creating output root {}", args.output_root.display()))?;
@@ -192,7 +192,7 @@ impl Session {
             journal,
             observations,
             lifecycle,
-            started_utc: started.to_rfc3339_opts(SecondsFormat::Nanos, true),
+            started_utc: started.strftime("%Y-%m-%dT%H:%M:%S%.9fZ").to_string(),
             started_instant: Instant::now(),
             instrument_keys,
             mode: args.mode,
@@ -209,7 +209,9 @@ impl Session {
             "schema_version": 1,
             "event": event,
             "attempt": attempt,
-            "at_utc": Utc::now().to_rfc3339_opts(SecondsFormat::Nanos, true),
+            "at_utc": Timestamp::now()
+                .strftime("%Y-%m-%dT%H:%M:%S%.9fZ")
+                .to_string(),
             "detail": detail,
         });
         serde_json::to_writer(&mut self.lifecycle, &row)?;
@@ -323,7 +325,9 @@ impl Session {
             instrument_keys: self.instrument_keys,
             entitlement_ref: self.entitlement_ref,
             started_at_utc: self.started_utc,
-            ended_at_utc: Utc::now().to_rfc3339_opts(SecondsFormat::Nanos, true),
+            ended_at_utc: Timestamp::now()
+                .strftime("%Y-%m-%dT%H:%M:%S%.9fZ")
+                .to_string(),
             duration_ns: self.started_instant.elapsed().as_nanos(),
             connection_count: self.connection_count,
             frame_count: self.frame_count,
@@ -449,7 +453,7 @@ async fn run_connection(
         .await
         .map_err(|_| anyhow::anyhow!("connecting to Upstox Market Data Feed V3 failed"))?;
     let subscription = json!({
-        "guid": format!("nirnay-{}-{attempt}", Utc::now().timestamp_millis()),
+        "guid": format!("nirnay-{}-{attempt}", Timestamp::now().as_millisecond()),
         "method": "sub",
         "data": {
             "mode": session.mode.as_str(),
@@ -478,7 +482,9 @@ async fn run_connection(
             message = socket.next() => {
                 match message {
                     Some(Ok(Message::Binary(payload))) => {
-                        let utc_ns = Utc::now().timestamp_nanos_opt().context("UTC timestamp outside nanosecond range")?;
+                        let utc_ns = i64::try_from(Timestamp::now().as_nanosecond())
+                            .ok()
+                            .context("UTC timestamp outside nanosecond range")?;
                         let mono_ns = u64::try_from(session.started_instant.elapsed().as_nanos()).context("monotonic duration overflow")?;
                         session.frame(&payload, utc_ns, mono_ns)?;
                     }

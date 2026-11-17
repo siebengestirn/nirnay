@@ -3,7 +3,7 @@
 //! Vendor symbols/tokens are not canonical instrument identities. This
 //! history answers a mapping query on both valid time and system knowledge time.
 
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::{Timestamp, civil::Date};
 use serde::{Deserialize, Serialize};
 
 use crate::{InstrumentId, Segment, SourceProvenance, Venue};
@@ -18,9 +18,9 @@ pub struct ProviderListingMapping {
     pub venue: Venue,
     pub segment: Segment,
     pub venue_symbol: String,
-    pub valid_from: NaiveDate,
-    pub valid_to: Option<NaiveDate>,
-    pub recorded_at: DateTime<Utc>,
+    pub valid_from: Date,
+    pub valid_to: Option<Date>,
+    pub recorded_at: Timestamp,
     pub provenance: SourceProvenance,
 }
 
@@ -97,8 +97,8 @@ impl ProviderListingHistory {
         provider: &str,
         provider_instrument_id: &str,
         venue: Venue,
-        valid_on: NaiveDate,
-        known_at: DateTime<Utc>,
+        valid_on: Date,
+        known_at: Timestamp,
     ) -> Result<&ProviderListingMapping, anyhow::Error> {
         let mut candidates = self.mappings.iter().filter(|mapping| {
             mapping.provider == provider

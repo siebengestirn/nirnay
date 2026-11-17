@@ -49,7 +49,8 @@ fn account_opened(stream: &str, event_id: EventId) -> Result<StoredBody, DomainE
         payload: EventPayload::AccountOpened {
             account_id: AccountId::new(1)?,
             starting_cash: Paise(1_000_000),
-            trade_date: TradeDate::from_ymd_opt(2026, 10, 28)
+            trade_date: TradeDate::new(2026, 10, 28)
+                .ok()
                 .ok_or_else(|| DomainError::InvalidEventTime("invalid date".to_owned()))?,
         },
     })
@@ -300,7 +301,8 @@ fn stream_mismatch_and_invalid_bodies_are_rejected_before_write() -> TestResult 
     invalid.payload = EventPayload::AccountOpened {
         account_id: AccountId::new(1)?,
         starting_cash: Paise(0),
-        trade_date: TradeDate::from_ymd_opt(2026, 10, 28)
+        trade_date: TradeDate::new(2026, 10, 28)
+            .ok()
             .ok_or_else(|| DomainError::InvalidEventTime("invalid date".to_owned()))?,
     };
     assert!(matches!(

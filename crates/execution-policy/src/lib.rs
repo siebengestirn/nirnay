@@ -41,8 +41,8 @@
 //!   reconciliation belong to the independent risk authority, which does
 //!   not exist yet. Do not describe this crate as an independent RMS.
 
-use chrono::{DateTime, Utc};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -89,7 +89,7 @@ pub struct PermitBody {
     pub max_order_notional: i64,
     pub max_open_exposure: i64,
     pub operator: String,
-    pub expires_at_utc: DateTime<Utc>,
+    pub expires_at_utc: Timestamp,
     pub issuer_key_id: String,
 }
 
@@ -126,7 +126,7 @@ pub enum PolicyError {
     #[error("live execution requires a permit; none is present")]
     NoPermit,
     #[error("permit expired at {0}")]
-    Expired(DateTime<Utc>),
+    Expired(Timestamp),
     #[error("permit was issued for commit {issued}, current commit is {current}")]
     CommitMismatch { issued: String, current: String },
     #[error("permit does not cover broker {broker}")]
@@ -193,9 +193,9 @@ fn push_u64(payload: &mut Vec<u8>, value: u64) {
 /// saturated value. Representation matches the historically signed bytes
 /// for every in-range timestamp; only prior garbage-producing timestamps
 /// now fail closed.
-fn expiry_nanos(expiry: DateTime<Utc>) -> Result<u64, PolicyError> {
-    expiry
-        .timestamp_nanos_opt()
+fn expiry_nanos(expiry: Timestamp) -> Result<u64, PolicyError> {
+    i64::try_from(expiry.as_nanosecond())
+        .ok()
         .map(|nanos| nanos as u64)
         .ok_or_else(|| PolicyError::InvalidTimestamp {
             detail: format!("expiry {expiry} is outside the nanosecond range"),
@@ -595,14 +595,14 @@ pub struct TrustedRuntime {
     /// Exact commit of the running binary, from the build/release system.
     commit_sha: String,
     /// Trusted current time (RTC or time authority).
-    now_utc: DateTime<Utc>,
+    now_utc: Timestamp,
 }
 
 impl TrustedRuntime {
     /// Build trusted runtime facts from authority-owned sources only
     /// (build/release system for the commit, time authority for the clock).
     #[must_use]
-    pub fn new(commit_sha: String, now_utc: DateTime<Utc>) -> Self {
+    pub fn new(commit_sha: String, now_utc: Timestamp) -> Self {
         Self {
             commit_sha,
             now_utc,

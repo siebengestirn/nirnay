@@ -11,7 +11,7 @@ license = "MIT"
 
 [dependencies]
 anyhow = "1"
-chrono = { version = "0.4", features = ["serde"] }
+jiff = { version = "=1.0.0", features = ["serde"] }
 india-domain = { version = "0.1.0", path = "../crates/india-domain" }
 rusqlite = { version = "0.41", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }

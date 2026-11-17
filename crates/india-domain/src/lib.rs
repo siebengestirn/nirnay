@@ -36,7 +36,7 @@ pub enum SessionDay {
 #[serde(deny_unknown_fields)]
 pub struct CalendarDay {
     pub venue: Venue,
-    pub date: chrono::NaiveDate,
+    pub date: jiff::civil::Date,
     pub session: SessionDay,
     /// Optional description (holiday name, special-session purpose).
     pub note: Option<String>,
@@ -52,7 +52,7 @@ pub struct TradingCalendar {
 
 impl TradingCalendar {
     #[must_use]
-    pub fn is_trading_day(&self, date: chrono::NaiveDate) -> bool {
+    pub fn is_trading_day(&self, date: jiff::civil::Date) -> bool {
         self.days
             .iter()
             .any(|day| day.date == date && day.session != SessionDay::Closed)
@@ -62,7 +62,7 @@ impl TradingCalendar {
     /// known entries. Returns None when the calendar has no later known
     /// session; callers must fetch more calendar data rather than guess.
     #[must_use]
-    pub fn next_trading_day(&self, date: chrono::NaiveDate) -> Option<chrono::NaiveDate> {
+    pub fn next_trading_day(&self, date: jiff::civil::Date) -> Option<jiff::civil::Date> {
         self.days
             .iter()
             .filter(|day| day.date > date && day.session != SessionDay::Closed)
@@ -79,15 +79,13 @@ impl TradingCalendar {
     /// proof: a sparse calendar can otherwise make an early session look
     /// like the last one.
     #[must_use]
-    pub fn covers_month(&self, month_start: chrono::NaiveDate) -> bool {
-        use chrono::Datelike;
-
+    pub fn covers_month(&self, month_start: jiff::civil::Date) -> bool {
         let mut expected = month_start;
         loop {
             if !self.days.iter().any(|day| day.date == expected) {
                 return false;
             }
-            let Some(next) = expected.succ_opt() else {
+            let Some(next) = expected.checked_add(jiff::Span::new().days(1)).ok() else {
                 return true;
             };
             if next.month() != month_start.month() || next.year() != month_start.year() {
@@ -100,8 +98,8 @@ impl TradingCalendar {
     /// Validate: unique dates per venue, consistent venue, chronologically
     /// ordered entries. Rejects malformed calendars at construction/ingest.
     pub fn validate(&self) -> Result<(), anyhow::Error> {
-        let mut previous: Option<chrono::NaiveDate> = None;
-        let mut seen: std::collections::BTreeSet<chrono::NaiveDate> =
+        let mut previous: Option<jiff::civil::Date> = None;
+        let mut seen: std::collections::BTreeSet<jiff::civil::Date> =
             std::collections::BTreeSet::new();
         for day in &self.days {
             anyhow::ensure!(

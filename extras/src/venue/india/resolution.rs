@@ -31,11 +31,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use chrono::{DateTime, NaiveDate, Utc};
 use india_domain::{
     Instrument, InstrumentId, InstrumentType, Isin, Listing, ListingStatus, ListingTerms, Segment,
     SettlementRegime, TickAssignment, Venue,
 };
+use jiff::{Timestamp, civil::Date};
 
 use super::archive::SourceArchive;
 use super::provenance::SourceProvenance;
@@ -65,7 +65,7 @@ pub struct NormalizedListing {
     pub tick_assignment: TickAssignment,
     pub market_lot: i64,
     /// Valid-time observation date (the master's `as_of`).
-    pub as_of: NaiveDate,
+    pub as_of: Date,
 }
 
 /// An immutable bitemporal listing-state observation: during
@@ -91,9 +91,9 @@ pub struct ListingStateRecord {
     pub market_lot: i64,
     /// Assigned tick (with its source lineage) in force for this state.
     pub tick_assignment: TickAssignment,
-    pub valid_from: NaiveDate,
-    pub valid_to: Option<NaiveDate>,
-    pub recorded_at: DateTime<Utc>,
+    pub valid_from: Date,
+    pub valid_to: Option<Date>,
+    pub recorded_at: Timestamp,
     pub provenance: SourceProvenance,
 }
 
@@ -145,10 +145,10 @@ fn bootstrap_id(isin: &Isin) -> Result<InstrumentId, anyhow::Error> {
         .map_err(|err| anyhow::anyhow!("cannot allocate id for {isin}: {err}"))
 }
 
-fn previous_day(as_of: NaiveDate) -> Result<NaiveDate, anyhow::Error> {
+fn previous_day(as_of: Date) -> Result<Date, anyhow::Error> {
     as_of
-        .pred_opt()
-        .ok_or_else(|| anyhow::anyhow!("as_of {as_of} has no previous day"))
+        .checked_add(jiff::Span::new().days(-1))
+        .map_err(|_| anyhow::anyhow!("as_of {as_of} has no previous day"))
 }
 
 /// Quantity step for cash-equity listings (post-reform unit step).
@@ -163,7 +163,7 @@ pub const QUANTITY_INCREMENT: i64 = 1;
 /// hash and revision; a bare calendar is rejected.
 pub fn nse_carry(
     row: &NseCashRow,
-    as_of: NaiveDate,
+    as_of: Date,
     reference: &ReferenceClose,
     book: &TickScheduleBook,
     archive: &SourceArchive,
@@ -206,7 +206,7 @@ pub fn nse_carry(
 #[must_use]
 pub fn bse_carry(
     row: &BseCashRow,
-    as_of: NaiveDate,
+    as_of: Date,
     provenance: &SourceProvenance,
 ) -> NormalizedListing {
     NormalizedListing {
@@ -247,7 +247,7 @@ pub fn bse_carry(
 fn state_record(
     instrument_id: &InstrumentId,
     listing: &Listing,
-    recorded_at: DateTime<Utc>,
+    recorded_at: Timestamp,
     provenance: &SourceProvenance,
 ) -> Result<ListingStateRecord, anyhow::Error> {
     // Record the trading terms that were actually in force at the end of the
@@ -281,12 +281,7 @@ fn state_record(
 
 /// Whether two effective intervals [from, to] (open-ended when None)
 /// intersect (inclusive both ends).
-fn intervals_overlap(
-    a_from: NaiveDate,
-    a_to: Option<NaiveDate>,
-    b_from: NaiveDate,
-    b_to: Option<NaiveDate>,
-) -> bool {
+fn intervals_overlap(a_from: Date, a_to: Option<Date>, b_from: Date, b_to: Option<Date>) -> bool {
     let a_starts_before_b_ends = b_to.is_none_or(|b_end| a_from <= b_end);
     let b_starts_before_a_ends = a_to.is_none_or(|a_end| b_from <= a_end);
     a_starts_before_b_ends && b_starts_before_a_ends
@@ -306,9 +301,9 @@ fn intervals_overlap(
 pub fn reconcile(
     existing: &[Instrument],
     incoming: Vec<NormalizedListing>,
-    as_of: NaiveDate,
+    as_of: Date,
     full_snapshot: bool,
-    recorded_at: DateTime<Utc>,
+    recorded_at: Timestamp,
     provenance: &SourceProvenance,
 ) -> Result<ReconciledUniverse, anyhow::Error> {
     provenance.validate()?;
@@ -542,8 +537,8 @@ fn same_state(existing: &Listing, row: &NormalizedListing) -> bool {
 fn close_open_listings(
     instrument: &mut Instrument,
     venue: Venue,
-    as_of: NaiveDate,
-    recorded_at: DateTime<Utc>,
+    as_of: Date,
+    recorded_at: Timestamp,
     provenance: &SourceProvenance,
     states: &mut Vec<ListingStateRecord>,
 ) -> Result<Option<String>, anyhow::Error> {
@@ -578,7 +573,7 @@ fn close_open_listings(
 fn merge_listing(
     instrument: &mut Instrument,
     row: &NormalizedListing,
-    recorded_at: DateTime<Utc>,
+    recorded_at: Timestamp,
     provenance: &SourceProvenance,
     states: &mut Vec<ListingStateRecord>,
 ) -> Result<ListingMerge, anyhow::Error> {

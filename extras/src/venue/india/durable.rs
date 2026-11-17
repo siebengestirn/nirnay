@@ -25,7 +25,7 @@
 
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::{Timestamp, civil::Date};
 use rusqlite::{Connection, OptionalExtension, Transaction};
 
 use crate::util::sha256_hex;
@@ -167,8 +167,8 @@ pub struct StoredRevision {
     pub revision_id: u64,
     pub parent_revision_id: Option<u64>,
     pub payload_schema_version: u32,
-    pub valid_at: NaiveDate,
-    pub recorded_at: DateTime<Utc>,
+    pub valid_at: Date,
+    pub recorded_at: Timestamp,
     pub snapshot_hash: String,
     pub payload_sha256: String,
     pub publication_key: String,
@@ -411,7 +411,7 @@ impl DurableReferenceStore {
                 next_id,
                 parent,
                 PAYLOAD_SCHEMA_VERSION as i64,
-                snapshot.valid_at.format("%Y-%m-%d").to_string(),
+                snapshot.valid_at.to_string(),
                 format_rfc3339(snapshot.recorded_at),
                 snapshot_hash,
                 payload_sha256_hex,
@@ -513,8 +513,8 @@ impl DurableReferenceStore {
     /// `Reference(t_valid, t_recorded)` over the head snapshot.
     pub fn reference(
         &mut self,
-        t_valid: NaiveDate,
-        t_recorded: DateTime<Utc>,
+        t_valid: Date,
+        t_recorded: Timestamp,
     ) -> Result<Vec<ListingStateRecord>, anyhow::Error> {
         let head_snapshot = self.head_snapshot()?;
         match head_snapshot {
@@ -755,7 +755,7 @@ fn decode_row(row: StoredRevisionRow) -> Result<StoredRevision, anyhow::Error> {
         row.revision_id
     );
     let decoded_valid_at = snapshot.valid_at;
-    let stored_valid_at = NaiveDate::parse_from_str(&row.valid_at, "%Y-%m-%d")?;
+    let stored_valid_at = Date::strptime("%Y-%m-%d", &row.valid_at)?;
     anyhow::ensure!(
         decoded_valid_at == stored_valid_at,
         "revision {} valid_at metadata does not match payload",
@@ -855,15 +855,15 @@ fn is_known_rollback(err: &anyhow::Error) -> bool {
 }
 
 /// Canonical UTC RFC 3339 for stored metadata.
-fn format_rfc3339(recorded_at: DateTime<Utc>) -> String {
-    // AutoSi matches chrono's default DateTime serde output (0/3/6/9
-    // fractional digits), so the stored metadata and the payload timestamp
-    // round-trip at full nanosecond precision.
-    recorded_at.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true)
+fn format_rfc3339(recorded_at: Timestamp) -> String {
+    // Jiff's canonical timestamp display matches chrono's AutoSi output
+    // (0/3/6/9 fractional digits), so the stored metadata and the payload
+    // timestamp round-trip at full nanosecond precision.
+    recorded_at.to_string()
 }
 
-fn parse_rfc3339(value: &str) -> Result<DateTime<Utc>, anyhow::Error> {
-    Ok(DateTime::parse_from_rfc3339(value)?.with_timezone(&Utc))
+fn parse_rfc3339(value: &str) -> Result<Timestamp, anyhow::Error> {
+    Ok(value.parse::<Timestamp>()?)
 }
 
 /// Read the SQLite `user_version` with a bounded header read: open the file,

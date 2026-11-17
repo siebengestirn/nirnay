@@ -1,17 +1,17 @@
 //! Event and trading time.
 //!
 //! Nirnay encoded trade dates as `YYYYMMDD` integers. The canonical platform
-//! date is `chrono::NaiveDate`; the port keeps Nirnay's separation of source,
+//! date is `jiff::civil::Date`; the port keeps Nirnay's separation of source,
 //! receive, availability and record clocks.
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
 
 use crate::DomainError;
 
-/// Calendar trading date. This is the canonical `chrono::NaiveDate`; the
+/// Calendar trading date. This is the canonical `jiff::civil::Date`; the
 /// exchange calendar decides whether it is a session.
-pub type TradeDate = NaiveDate;
+pub type TradeDate = Date;
 
 /// UTC wall-clock instant in nanoseconds. This is a timestamp, not a date.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -87,7 +87,7 @@ mod tests {
 
     #[test]
     fn trade_date_is_a_calendar_date() {
-        let date: TradeDate = chrono::NaiveDate::from_ymd_opt(2026, 10, 28).unwrap_or_default();
+        let date: TradeDate = TradeDate::new(2026, 10, 28).unwrap_or_default();
         assert_eq!(date.to_string(), "2026-10-28");
     }
 }

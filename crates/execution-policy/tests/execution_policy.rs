@@ -1,17 +1,17 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-use chrono::{DateTime, Duration, TimeZone, Utc};
 use ed25519_dalek::{Signer, SigningKey};
 use execution_policy::{
     ApprovalAttestation, ExecutionMode, ExecutionPolicy, OrderRequest, PermitBody, PermitEnvelope,
     PolicyError, TrustRegistry, TrustedKey, TrustedRuntime,
 };
+use jiff::{SignedDuration, Timestamp};
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-fn fixed_now() -> chrono::DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, 11, 8, 0, 0, 0).unwrap()
+fn fixed_now() -> Timestamp {
+    "2026-11-08T00:00:00Z".parse::<Timestamp>().unwrap()
 }
 
 fn runtime(commit: &str) -> TrustedRuntime {
@@ -61,7 +61,7 @@ fn body(commit: &str) -> PermitBody {
         max_order_notional: 100_000,
         max_open_exposure: 500_000,
         operator: "op".to_owned(),
-        expires_at_utc: fixed_now() + Duration::days(7),
+        expires_at_utc: fixed_now() + SignedDuration::from_secs(7 * 86_400),
         issuer_key_id: "release-key-1".to_owned(),
     }
 }
@@ -451,7 +451,7 @@ fn expiry_and_commit_binding_fail_closed() {
     let signing = issuer_key();
     let commit = "abc123";
     let mut expired_body = body(commit);
-    expired_body.expires_at_utc = fixed_now() - Duration::seconds(1);
+    expired_body.expires_at_utc = fixed_now() - SignedDuration::from_secs(1);
     let envelope = PermitEnvelope {
         issuer_signature: sign_issuer(&signing, &expired_body).unwrap(),
         approvals: vec![
@@ -738,13 +738,15 @@ fn expiry_boundary_denies_at_the_expiry_instant() {
         policy.authorize_order(&request(), &at_expiry, &registry(1).unwrap(), 0),
         Err(PolicyError::Expired(_))
     ));
-    let one_second_before = TrustedRuntime::new(commit.to_owned(), expiry - Duration::seconds(1));
+    let one_second_before =
+        TrustedRuntime::new(commit.to_owned(), expiry - SignedDuration::from_secs(1));
     assert!(
         policy
             .authorize_order(&request(), &one_second_before, &registry(1).unwrap(), 0)
             .is_ok()
     );
-    let one_second_after = TrustedRuntime::new(commit.to_owned(), expiry + Duration::seconds(1));
+    let one_second_after =
+        TrustedRuntime::new(commit.to_owned(), expiry + SignedDuration::from_secs(1));
     assert!(matches!(
         policy.authorize_order(&request(), &one_second_after, &registry(1).unwrap(), 0),
         Err(PolicyError::Expired(_))
@@ -755,7 +757,7 @@ fn expiry_boundary_denies_at_the_expiry_instant() {
 fn unrepresentable_expiry_timestamp_fails_closed() {
     let commit = "abc123";
     let mut unrepresentable = body(commit);
-    unrepresentable.expires_at_utc = DateTime::<Utc>::MAX_UTC;
+    unrepresentable.expires_at_utc = Timestamp::MAX;
     let envelope = PermitEnvelope {
         issuer_signature: hex(&[0u8; 64]),
         approvals: vec![],

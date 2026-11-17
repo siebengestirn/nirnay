@@ -45,7 +45,9 @@ fn envelope() -> EventEnvelope {
 }
 
 fn date(year: i32, month: u32, day: u32) -> Result<TradeDate, Box<dyn std::error::Error>> {
-    TradeDate::from_ymd_opt(year, month, day).ok_or_else(|| "invalid calendar date".into())
+    TradeDate::new(year as i16, month as i8, day as i8)
+        .ok()
+        .ok_or_else(|| "invalid calendar date".into())
 }
 
 fn identity(value: &str) -> Result<InstrumentId, Box<dyn std::error::Error>> {

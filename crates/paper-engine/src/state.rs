@@ -1038,7 +1038,7 @@ mod tests {
                 payload: EventPayload::AccountOpened {
                     account_id: AccountId::new(1).unwrap(),
                     starting_cash: Paise(1_000_000),
-                    trade_date: TradeDate::from_ymd_opt(2026, 10, 28).unwrap(),
+                    trade_date: TradeDate::new(2026, 10, 28).unwrap(),
                 },
             },
         }
@@ -1049,7 +1049,7 @@ mod tests {
         for product in [Product::Delivery, Product::Intraday] {
             for side in [Side::Buy, Side::Sell] {
                 rates.push(ChargeRate {
-                    effective_from: TradeDate::from_ymd_opt(2026, 1, 1).unwrap(),
+                    effective_from: TradeDate::new(2026, 1, 1).unwrap(),
                     product,
                     side,
                     brokerage_ppb,
