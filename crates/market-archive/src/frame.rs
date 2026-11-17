@@ -4,6 +4,29 @@ use sha2::{Digest, Sha256};
 
 use crate::ArchiveError;
 
+/// Maximum serialized journal record size in bytes, excluding the newline.
+///
+/// This is an application-level contract for the v1 line-oriented journal, not
+/// a claim about any provider's maximum message size. Larger payloads require
+/// a chunked/object-payload path. The recorder's current 4 MiB WebSocket frame
+/// cap is not reconciled here; frames above this limit fail closed until that
+/// separate change is made.
+pub const MAX_RAW_RECORD_BYTES: usize = 1024 * 1024;
+
+/// Maximum decoded payload bytes. Base64 expands this to at most
+/// `MAX_PAYLOAD_BYTES.div_ceil(3) * 4` bytes before serialization.
+pub const MAX_PAYLOAD_BYTES: usize = 512 * 1024;
+
+/// Maximum length of each textual metadata field. Derived from the record
+/// bound minus the encoded payload and a fixed allowance for numeric fields,
+/// schema overhead and JSON escaping.
+pub const MAX_FIELD_BYTES: usize =
+    MAX_RAW_RECORD_BYTES - (MAX_PAYLOAD_BYTES.div_ceil(3) * 4) - 1024;
+
+const fn encoded_payload_limit() -> usize {
+    MAX_PAYLOAD_BYTES.div_ceil(3) * 4
+}
+
 /// An original provider frame, before normalization.
 ///
 /// `entitlement_ref` is a non-secret reference to an internal entitlement
@@ -37,10 +60,16 @@ fn sha256_hex(bytes: &[u8]) -> String {
 
 fn nonempty(value: &str, field: &'static str) -> Result<(), ArchiveError> {
     if value.trim().is_empty() {
-        Err(ArchiveError::EmptyField(field))
-    } else {
-        Ok(())
+        return Err(ArchiveError::EmptyField(field));
     }
+    if value.len() > MAX_FIELD_BYTES {
+        return Err(ArchiveError::FieldTooLarge {
+            field,
+            size: value.len(),
+            limit: MAX_FIELD_BYTES,
+        });
+    }
+    Ok(())
 }
 
 impl RawFrame {
@@ -58,6 +87,12 @@ impl RawFrame {
         nonempty(source, "source")?;
         nonempty(provider_instrument_id, "provider_instrument_id")?;
         nonempty(entitlement_ref, "entitlement_ref")?;
+        if payload.len() > MAX_PAYLOAD_BYTES {
+            return Err(ArchiveError::RecordTooLarge {
+                size: payload.len(),
+                limit: MAX_PAYLOAD_BYTES,
+            });
+        }
         Ok(Self {
             schema_version: 1,
             source: source.to_owned(),
@@ -73,6 +108,12 @@ impl RawFrame {
     }
 
     pub fn payload(&self) -> Result<Vec<u8>, ArchiveError> {
+        if self.payload_base64.len() > encoded_payload_limit() {
+            return Err(ArchiveError::RecordTooLarge {
+                size: self.payload_base64.len(),
+                limit: encoded_payload_limit(),
+            });
+        }
         let bytes = STANDARD
             .decode(&self.payload_base64)
             .map_err(|_| ArchiveError::PayloadEncoding)?;
@@ -98,11 +139,24 @@ impl RawFrame {
 
     pub fn to_json_line(&self) -> Result<String, ArchiveError> {
         self.validate()?;
-        serde_json::to_string(self)
-            .map_err(|error| ArchiveError::MalformedRecord(error.to_string()))
+        let line = serde_json::to_string(self)
+            .map_err(|error| ArchiveError::MalformedRecord(error.to_string()))?;
+        if line.len() > MAX_RAW_RECORD_BYTES {
+            return Err(ArchiveError::RecordTooLarge {
+                size: line.len(),
+                limit: MAX_RAW_RECORD_BYTES,
+            });
+        }
+        Ok(line)
     }
 
     pub fn from_json_line(line: &str) -> Result<Self, ArchiveError> {
+        if line.len() > MAX_RAW_RECORD_BYTES {
+            return Err(ArchiveError::RecordTooLarge {
+                size: line.len(),
+                limit: MAX_RAW_RECORD_BYTES,
+            });
+        }
         let frame: Self = serde_json::from_str(line)
             .map_err(|error| ArchiveError::MalformedRecord(error.to_string()))?;
         frame.validate()?;

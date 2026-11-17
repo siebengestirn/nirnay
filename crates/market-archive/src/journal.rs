@@ -13,6 +13,7 @@ use fs2::FileExt;
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 
+use crate::frame::MAX_RAW_RECORD_BYTES;
 use crate::{ArchiveError, RawFrame};
 
 /// Current health of the journal writer.
@@ -201,46 +202,76 @@ pub struct JournalSummary {
 
 /// Visit and validate each journal record using record-by-record streaming.
 /// The callback determines whether callers retain frames or only count them.
-fn visit_journal(
-    path: impl AsRef<Path>,
+/// Stream a journal through a bounded record buffer.
+///
+/// `fill_buf`/`consume` are used instead of `read_until` so a malformed record
+/// cannot grow a buffer beyond [`MAX_RAW_RECORD_BYTES`]. The same buffer is
+/// reused for every record; only the current record is ever resident here.
+fn visit_reader<R: BufRead>(
+    reader: &mut R,
     mut visit: impl FnMut(RawFrame) -> Result<(), ArchiveError>,
 ) -> Result<JournalSummary, ArchiveError> {
-    let file = File::open(path)?;
-    let mut reader = BufReader::new(file);
-    let mut line = Vec::new();
+    let mut record = Vec::new();
     let mut bytes_scanned = 0_u64;
     let mut frame_count = 0_u64;
     let mut line_number = 0_u64;
 
     loop {
-        line.clear();
-        let read = reader.read_until(b'\n', &mut line)?;
-        if read == 0 {
+        let available = reader.fill_buf()?;
+        if available.is_empty() {
+            if !record.is_empty() {
+                return Err(ArchiveError::TornTail);
+            }
             break;
         }
-        line_number = line_number.saturating_add(1);
-        bytes_scanned = bytes_scanned.saturating_add(read as u64);
-        if !line.ends_with(b"\n") {
-            return Err(ArchiveError::TornTail);
+        let newline = available.iter().position(|byte| *byte == b'\n');
+        let take = newline.map_or(available.len(), |index| index + 1);
+        // The limit applies to record bytes, excluding the newline delimiter.
+        let content_len = newline.map_or(record.len().saturating_add(take), |index| {
+            record.len().saturating_add(index)
+        });
+        if content_len > MAX_RAW_RECORD_BYTES {
+            return Err(ArchiveError::RecordTooLarge {
+                size: content_len,
+                limit: MAX_RAW_RECORD_BYTES,
+            });
         }
-        line.pop();
+        record.extend_from_slice(&available[..take]);
+        reader.consume(take);
+        bytes_scanned = bytes_scanned.saturating_add(take as u64);
+        if newline.is_none() {
+            continue;
+        }
+
+        line_number = line_number.saturating_add(1);
+        let line = &record[..record.len() - 1];
         if line.is_empty() {
             return Err(ArchiveError::MalformedRecord(format!(
                 "line {line_number} is empty"
             )));
         }
-        let text = std::str::from_utf8(&line).map_err(|error| {
+        let text = std::str::from_utf8(line).map_err(|error| {
             ArchiveError::MalformedRecord(format!("line {line_number} is not UTF-8: {error}"))
         })?;
         let frame = RawFrame::from_json_line(text)?;
         visit(frame)?;
         frame_count = frame_count.saturating_add(1);
+        record.clear();
     }
 
     Ok(JournalSummary {
         frame_count,
         bytes_scanned,
     })
+}
+
+fn visit_journal(
+    path: impl AsRef<Path>,
+    visit: impl FnMut(RawFrame) -> Result<(), ArchiveError>,
+) -> Result<JournalSummary, ArchiveError> {
+    let file = File::open(path)?;
+    let mut reader = BufReader::new(file);
+    visit_reader(&mut reader, visit)
 }
 
 /// Validate the entire journal without retaining decoded frames in memory.
@@ -266,6 +297,10 @@ pub fn scan_journal(path: impl AsRef<Path>) -> Result<JournalScan, ArchiveError>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::frame::{
+        MAX_FIELD_BYTES, //
+        MAX_PAYLOAD_BYTES,
+    };
 
     fn frame(sequence: u64) -> RawFrame {
         let payload = format!("payload-{sequence}");
@@ -310,8 +345,15 @@ mod tests {
         std::fs::write(&path, b"{\"partial\":").unwrap();
 
         assert!(matches!(scan_journal(&path), Err(ArchiveError::TornTail)));
-        assert!(matches!(verify_journal(&path), Err(ArchiveError::TornTail)));
-        assert_eq!(std::fs::read(&path).unwrap(), b"{\"partial\":");
+        assert!(
+            matches!(verify_journal(&path), Err(ArchiveError::TornTail)),
+            "unterminated record remains a torn tail"
+        );
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            b"{\"partial\":",
+            "torn tail is not repaired"
+        );
     }
 
     #[test]
@@ -549,6 +591,215 @@ mod tests {
             summary.bytes_scanned as usize,
             bytes.len(),
             "scan covers every written byte"
+        );
+    }
+
+    fn frame_with_serialized_size(target: usize) -> (RawFrame, String) {
+        let payload = vec![0_u8; MAX_PAYLOAD_BYTES];
+        let mut frame = RawFrame::new(
+            "source",
+            "instrument",
+            1,
+            1,
+            None,
+            Some(1),
+            "entitlement",
+            &payload,
+        )
+        .unwrap();
+        let base = frame.to_json_line().unwrap().len();
+        assert!(target >= base, "target {target} below base {base}");
+        let mut remaining = target - base;
+        for field in [
+            &mut frame.entitlement_ref,
+            &mut frame.source,
+            &mut frame.provider_instrument_id,
+        ] {
+            let pad = remaining.min(MAX_FIELD_BYTES - field.len());
+            field.push_str(&"x".repeat(pad));
+            remaining -= pad;
+        }
+        assert_eq!(remaining, 0, "padding capacity exhausted");
+        let line = frame.to_json_line().unwrap();
+        assert_eq!(line.len(), target, "padding must hit the exact target");
+        (frame, line)
+    }
+
+    #[test]
+    fn record_exactly_at_limit_is_accepted() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("exact.jsonl");
+        let (frame, line) = frame_with_serialized_size(MAX_RAW_RECORD_BYTES);
+        std::fs::write(&path, format!("{line}\n")).unwrap();
+        let scan = scan_journal(&path).unwrap();
+        assert_eq!(scan.frames, vec![frame], "exact-size record must decode");
+        assert_eq!(
+            verify_journal(&path).unwrap().frame_count,
+            1,
+            "one record verifies"
+        );
+    }
+
+    #[test]
+    fn record_one_byte_over_limit_is_rejected() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("over.jsonl");
+        let (_, mut line) = frame_with_serialized_size(MAX_RAW_RECORD_BYTES);
+        line.insert(line.len() - 1, ' '); // valid JSON whitespace, one byte longer
+        assert_eq!(
+            line.len(),
+            MAX_RAW_RECORD_BYTES + 1,
+            "test line is one byte over"
+        );
+        std::fs::write(&path, format!("{line}\n")).unwrap();
+        assert!(
+            matches!(
+                scan_journal(&path),
+                Err(ArchiveError::RecordTooLarge { .. })
+            ),
+            "oversized record must fail closed"
+        );
+    }
+
+    #[test]
+    fn oversized_record_without_newline_is_rejected() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("unterminated-over.jsonl");
+        std::fs::write(&path, vec![b'x'; MAX_RAW_RECORD_BYTES + 1]).unwrap();
+        assert!(
+            matches!(
+                verify_journal(&path),
+                Err(ArchiveError::RecordTooLarge { .. })
+            ),
+            "oversized unterminated record must be rejected as oversized"
+        );
+    }
+
+    #[test]
+    fn multiple_records_at_limit_are_accepted() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("many.jsonl");
+        let (frame, line) = frame_with_serialized_size(MAX_RAW_RECORD_BYTES);
+        std::fs::write(&path, format!("{line}\n{line}\n")).unwrap();
+        let scan = scan_journal(&path).unwrap();
+        assert_eq!(
+            scan.frames,
+            vec![frame.clone(), frame],
+            "two exact-size records decode"
+        );
+        assert_eq!(
+            verify_journal(&path).unwrap().frame_count,
+            2,
+            "two records verify"
+        );
+    }
+
+    #[test]
+    fn empty_journal_is_valid() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("empty.jsonl");
+        std::fs::write(&path, b"").unwrap();
+        assert_eq!(
+            verify_journal(&path).unwrap().frame_count,
+            0,
+            "empty journal has no frames"
+        );
+    }
+
+    #[test]
+    fn torn_tail_behavior_is_preserved() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("torn.jsonl");
+        std::fs::write(&path, b"{\"partial\":").unwrap();
+        assert!(
+            matches!(verify_journal(&path), Err(ArchiveError::TornTail)),
+            "unterminated record remains a torn tail"
+        );
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            b"{\"partial\":",
+            "torn tail is not repaired"
+        );
+    }
+
+    struct FailingReader {
+        bytes: Vec<u8>,
+        offset: usize,
+        fail_at: usize,
+    }
+
+    impl std::io::Read for FailingReader {
+        fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
+            if self.offset >= self.fail_at {
+                return Err(std::io::Error::other("injected scan read failure"));
+            }
+            let remaining = (self.fail_at - self.offset).min(output.len());
+            output[..remaining].copy_from_slice(&self.bytes[self.offset..self.offset + remaining]);
+            self.offset += remaining;
+            Ok(remaining)
+        }
+    }
+
+    #[test]
+    fn io_error_during_scan_is_propagated() {
+        let line = frame(1).to_json_line().unwrap();
+        let mut bytes = line.into_bytes();
+        bytes.push(b'\n');
+        bytes.extend_from_slice(b"partial");
+        let reader = FailingReader {
+            bytes,
+            offset: 0,
+            fail_at: 24,
+        };
+        let mut buffered = BufReader::new(reader);
+        let result = visit_reader(&mut buffered, |_| Ok(()));
+        assert!(
+            matches!(result, Err(ArchiveError::Io(_))),
+            "I/O failure must propagate"
+        );
+    }
+
+    #[test]
+    fn large_journal_verifies_without_collecting_frames() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("large.jsonl");
+        let line = frame(1).to_json_line().unwrap();
+        let mut contents = String::new();
+        for _ in 0..2_000 {
+            contents.push_str(&line);
+            contents.push('\n');
+        }
+        std::fs::write(&path, &contents).unwrap();
+        let summary = verify_journal(&path).unwrap();
+        assert_eq!(
+            summary.frame_count, 2_000,
+            "all large-journal frames verified"
+        );
+        assert_eq!(
+            summary.bytes_scanned as usize,
+            contents.len(),
+            "every byte scanned"
+        );
+        assert!(line.len() <= MAX_RAW_RECORD_BYTES, "record within bound");
+    }
+
+    #[test]
+    fn oversized_text_field_is_rejected_at_construction() {
+        let mut frame = RawFrame::new(
+            "source",
+            "instrument",
+            1,
+            1,
+            None,
+            Some(1),
+            "entitlement",
+            b"payload",
+        )
+        .unwrap();
+        frame.source = "x".repeat(MAX_FIELD_BYTES + 1);
+        assert!(
+            matches!(frame.validate(), Err(ArchiveError::FieldTooLarge { .. })),
+            "oversized metadata field is rejected"
         );
     }
 }

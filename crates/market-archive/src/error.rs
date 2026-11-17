@@ -13,6 +13,14 @@ pub enum ArchiveError {
     MalformedRecord(String),
     #[error("journal has an incomplete final record (torn tail)")]
     TornTail,
+    #[error("record of {size} bytes exceeds the {limit}-byte limit")]
+    RecordTooLarge { size: usize, limit: usize },
+    #[error("field `{field}` of {size} bytes exceeds the {limit}-byte limit")]
+    FieldTooLarge {
+        field: &'static str,
+        size: usize,
+        limit: usize,
+    },
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
     #[error("commit outcome unknown after {context}; the record may or may not be durable")]
