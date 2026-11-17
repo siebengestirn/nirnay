@@ -1,6 +1,7 @@
 use thiserror::Error;
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum ArchiveError {
     #[error("required field `{0}` is empty")]
     EmptyField(&'static str),

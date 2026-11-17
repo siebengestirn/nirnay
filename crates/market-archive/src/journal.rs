@@ -1,5 +1,12 @@
-use std::fs::{File, OpenOptions};
-use std::io::{BufRead, BufReader, Write};
+use std::fs::{
+    File, //
+    OpenOptions,
+};
+use std::io::{
+    BufRead, //
+    BufReader,
+    Write,
+};
 use std::path::Path;
 
 use fs2::FileExt;
@@ -335,21 +342,36 @@ mod tests {
         writer.inject_fail_point(FailPoint::PartialRecordWrite);
 
         let error = writer.append(&frame(1)).unwrap_err();
-        assert_eq!(unknown_context(&error), "record write");
+        assert_eq!(
+            unknown_context(&error),
+            "record write",
+            "partial write context"
+        );
         assert!(matches!(
             &error,
             ArchiveError::CommitOutcomeUnknown { source, .. }
                 if source.to_string().contains("partial record write")
         ));
-        assert_eq!(writer.state, WriterState::Poisoned);
+        assert_eq!(
+            writer.state,
+            WriterState::Poisoned,
+            "partial write poisons writer"
+        );
         let bytes_after_failure = std::fs::read(&path).unwrap();
-        assert!(!bytes_after_failure.is_empty());
+        assert!(
+            !bytes_after_failure.is_empty(),
+            "partial record bytes must remain on disk"
+        );
 
         assert!(matches!(
             writer.append(&frame(2)),
             Err(ArchiveError::Poisoned)
         ));
-        assert_eq!(std::fs::read(&path).unwrap(), bytes_after_failure);
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            bytes_after_failure,
+            "poisoned writer must not mutate file"
+        );
     }
 
     #[test]
@@ -360,10 +382,21 @@ mod tests {
         writer.inject_fail_point(FailPoint::NewlineWrite);
 
         let error = writer.append(&frame(1)).unwrap_err();
-        assert_eq!(unknown_context(&error), "commit marker write");
-        assert_eq!(writer.state, WriterState::Poisoned);
+        assert_eq!(
+            unknown_context(&error),
+            "commit marker write",
+            "newline failure context"
+        );
+        assert_eq!(
+            writer.state,
+            WriterState::Poisoned,
+            "newline failure poisons writer"
+        );
         let bytes = std::fs::read(&path).unwrap();
-        assert!(!bytes.ends_with(b"\n"));
+        assert!(
+            !bytes.ends_with(b"\n"),
+            "failed newline must not be present"
+        );
         assert!(matches!(
             writer.append(&frame(2)),
             Err(ArchiveError::Poisoned)
@@ -378,10 +411,17 @@ mod tests {
         writer.inject_fail_point(FailPoint::Sync);
 
         let error = writer.append(&frame(1)).unwrap_err();
-        assert_eq!(unknown_context(&error), "sync_data");
-        assert_eq!(writer.state, WriterState::Poisoned);
+        assert_eq!(unknown_context(&error), "sync_data", "sync failure context");
+        assert_eq!(
+            writer.state,
+            WriterState::Poisoned,
+            "sync failure poisons writer"
+        );
         let bytes = std::fs::read(&path).unwrap();
-        assert!(bytes.ends_with(b"\n"));
+        assert!(
+            bytes.ends_with(b"\n"),
+            "bytes written before failed sync remain"
+        );
         assert!(matches!(
             writer.append(&frame(2)),
             Err(ArchiveError::Poisoned)
@@ -419,10 +459,22 @@ mod tests {
             writer.append(&invalid),
             Err(ArchiveError::PayloadHashMismatch)
         ));
-        assert_eq!(writer.state, WriterState::Healthy);
-        assert_eq!(std::fs::read(&path).unwrap(), b"");
+        assert_eq!(
+            writer.state,
+            WriterState::Healthy,
+            "invalid frame must not poison writer"
+        );
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            b"",
+            "invalid frame performs no I/O"
+        );
         writer.append(&frame(1)).unwrap();
-        assert_eq!(verify_journal(&path).unwrap().frame_count, 1);
+        assert_eq!(
+            verify_journal(&path).unwrap().frame_count,
+            1,
+            "valid frame after invalid one appends"
+        );
     }
 
     #[test]
@@ -433,10 +485,21 @@ mod tests {
         writer.append(&frame(7)).unwrap();
 
         let bytes = std::fs::read(&path).unwrap();
-        assert!(bytes.ends_with(b"\n"));
-        assert_eq!(writer.state, WriterState::Healthy);
+        assert!(
+            bytes.ends_with(b"\n"),
+            "successful append writes commit marker"
+        );
+        assert_eq!(
+            writer.state,
+            WriterState::Healthy,
+            "successful append keeps writer healthy"
+        );
         let summary = verify_journal(&path).unwrap();
-        assert_eq!(summary.frame_count, 1);
-        assert_eq!(summary.bytes_scanned as usize, bytes.len());
+        assert_eq!(summary.frame_count, 1, "one complete committed record");
+        assert_eq!(
+            summary.bytes_scanned as usize,
+            bytes.len(),
+            "scan covers every written byte"
+        );
     }
 }
