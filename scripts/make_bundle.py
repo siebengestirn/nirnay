@@ -174,6 +174,30 @@ def main(argv: list[str] | None = None) -> int:
     if not source.is_dir():
         return fail([f"{source} is not a directory"])
 
+    # A directory of compiled outputs that lives inside the source tree is
+    # packed twice: once as artifacts/** and once as <source>/artifacts/**, so
+    # the released bundle ships wheels and binaries inside the source tree it
+    # claims to describe. That is how v0.1.2 shipped; refuse it instead.
+    if args.artifacts is not None:
+        artifacts = args.artifacts.resolve()
+        if artifacts == source:
+            return fail(
+                [
+                    f"--artifacts points at the source tree {source} itself; pass the"
+                    " directory that holds the compiled output, outside the checkout."
+                ]
+            )
+        if source in artifacts.parents:
+            return fail(
+                [
+                    f"{artifacts} is inside the source tree {source}: it would be packed as"
+                    " build output inside the sources as well as at artifacts/. Build it"
+                    " outside the checkout."
+                ]
+            )
+        if not artifacts.is_dir():
+            return fail([f"{artifacts} is not a directory"])
+
     holder = None
     if args.stage:
         staging = args.stage.resolve()
