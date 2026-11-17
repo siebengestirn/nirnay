@@ -94,8 +94,10 @@ jobs:
           python-version: "3.12"
       - name: Rust style guidance on added lines
         run: python3 scripts/check_rust_style.py
-      - name: Python/C++/Makefile/JSON/Markdown style on added lines
+      - name: Python/C++/Shell/Makefile/JSON/Markdown style on added lines
         run: python3 scripts/check_source_style.py
+      - name: Style gate integrity
+        run: python3 scripts/check_style_gate.py
   python-research:
     runs-on: ubuntu-latest
     steps:
@@ -123,6 +125,8 @@ jobs:
         run: python -m compileall -q research/python scripts ops
       - name: Repository policy
         run: python scripts/check_repo.py check
+      - name: Style gate integrity
+        run: python3 scripts/check_style_gate.py
       - name: Schema and contract validation
         run: python scripts/validate_contracts.py
   python-provider:

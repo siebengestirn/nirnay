@@ -1,4 +1,4 @@
-.PHONY: check style rust-style source-style python-format-check rust-test extras-test python-test python-check cpp-test cpp-format-check schema-check verify-local fmt constraints sbom supply-chain wheels packaging-test bundle bundle-verify git-policy
+.PHONY: check style rust-style source-style style-gate python-format-check rust-test extras-test python-test python-check cpp-test cpp-format-check schema-check verify-local fmt constraints sbom supply-chain wheels packaging-test bundle bundle-verify git-policy
 check:
 	$(MAKE) fmt
 	cargo xtask check
@@ -8,13 +8,16 @@ check:
 	$(MAKE) extras-test
 	$(MAKE) schema-check
 	$(MAKE) python-test
-style: rust-style source-style
+style: rust-style source-style style-gate
 rust-style:
 	python3 scripts/check_rust_style.py --self-test
 	python3 scripts/check_rust_style.py
 source-style:
 	python3 scripts/check_source_style.py --self-test
 	python3 scripts/check_source_style.py
+style-gate:
+	python3 scripts/check_style_gate.py --self-test
+	python3 scripts/check_style_gate.py
 # Advisory until the existing Python corpus is reformatted in a dedicated PR.
 python-format-check:
 	ruff check .

@@ -5,7 +5,7 @@ linters run on all files; style guidance is enforced on lines added relative to
 `main`**. That keeps existing code from being churned while making every new
 line comply. The rule is implemented by `scripts/check_rust_style.py` for Rust
 and `scripts/check_source_style.py` for every other language, and is wired into
-both `make check` and the `source-style` CI job.
+`make check` and CI.
 
 ## Sources and conflict resolution
 
@@ -20,6 +20,11 @@ both `make check` and the `source-style` CI job.
   (LLVM base, two-space indent, 100 columns, `nullptr`, regioned includes).
   The Linux kernel C style (eight-space tabs) is deliberately **not** used for
   application C++; it is a kernel constraint, not a repository convention.
+- **Shell**: Google Shell Style Guide. Executable scripts start with
+  `#!/bin/bash`, use two-space indentation, stay within 80 columns, prefer
+  `[[ ... ]]`, `$(...)`, `((...))` and `"$@"`, and avoid `eval`, backticks,
+  `let`, `expr`, aliases and unquoted `$*`. Extensionless scripts are detected
+  by their shebang so they cannot bypass the gate.
 - **Makefile**: GNU Make semantics plus the repository's tab-indented recipe
   rule in `.editorconfig`.
 - **JSON/JSONL**: Google JSON Style Guide constraints that are mechanical:
@@ -46,6 +51,7 @@ enforced by code and tests, not by a formatter.
 | Rust | `cargo fmt`, Clippy `-D warnings` | `check_rust_style.py` | `make check`, CI |
 | Python | `ruff` (advisory, see below) | `check_source_style.py` | `make check`, CI |
 | C/C++ | pinned `clang-format==21.1.8` | `check_source_style.py` | `make check`, CI |
+| Shell | none available | `check_source_style.py` | `make check`, CI |
 | Makefile | none available | `check_source_style.py` | `make check`, CI |
 | JSON/JSONL | none needed | `check_source_style.py` | `make check`, CI |
 | Markdown | none available | `check_source_style.py` | `make check`, CI |
@@ -54,8 +60,9 @@ Run the gates directly:
 
 ```sh
 make style
+python3 scripts/check_rust_style.py --self-test
 python3 scripts/check_source_style.py --self-test
-python3 scripts/check_source_style.py
+python3 scripts/check_style_gate.py --self-test
 ```
 
 `ruff` is configured in `.ruff.toml` and available via `make python-format-check`,
@@ -63,10 +70,27 @@ but is **not binding** yet: roughly 59 existing files predate it and would be
 reformatted (measured with ruff 0.16.5; the exact count is version-dependent).
 A dedicated PR must reformat the corpus before whole-tree ruff checks can join
 `make check`. Until then the dependency-free added-lines gate is the
-authoritative Python style check. The new checker itself is ruff-formatted.
+authoritative Python style check. The new checkers themselves are ruff-formatted.
+
+## Hardening the gate itself
+
+`scripts/check_style_gate.py` is a binding integrity check that verifies:
+
+- `make check` still invokes `style`, and `style` still invokes both style
+  checkers and the integrity checker;
+- the CI `source-style` job still runs both checkers with full history;
+- all seven language check functions still exist in `check_source_style.py`;
+- the adversarial self-test inventory has not shrunk below its declared
+  minimum (13 Rust, 23 source-style tests).
+
+It runs from `make style`, from the CI `source-style` job and independently
+from the CI `python-research` job. Removing or weakening a rule, a checker, a
+self-test or the wiring therefore fails the build. Adding a language or rule
+requires updating its expectations in the same PR.
 
 ## Adding a rule
 
 Add the rule and an adversarial self-test to the relevant checker, document the
-policy source here, then run `make check`. A rule that cannot be expressed on
-added lines without churning existing code does not belong in the binding gate.
+policy source here, raise the minimum in `check_style_gate.py` when applicable,
+then run `make check`. A rule that cannot be expressed on added lines without
+churning existing code does not belong in the binding gate.

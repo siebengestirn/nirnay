@@ -32,7 +32,9 @@ from pathlib import Path
 MAX_PY_COLUMNS = 100
 MAX_CPP_COLUMNS = 100
 MAX_MD_COLUMNS = 100
+MAX_SHELL_COLUMNS = 80
 
+SHELL_EXTS = frozenset({".sh", ".bash", ".zsh"})
 CPP_EXTS = frozenset({".c", ".cc", ".cpp", ".cxx", ".h", ".hpp", ".hxx"})
 HEADER_EXTS = frozenset({".h", ".hpp", ".hxx"})
 JSON_EXTS = frozenset({".json"})
@@ -50,6 +52,12 @@ NULL_LITERAL = re.compile(r"\bNULL\b")
 USING_NAMESPACE_STD = re.compile(r"^\s*using\s+namespace\s+std\s*;")
 TARGET_LINE = re.compile(r"^[^#\t][^:=]*:(?:=|\+|\?|;|\s|$)")
 FENCE_MARKER = re.compile(r"^\s*(```+|~~~+)")
+SHELL_BACKTICK = re.compile(r"`[^`]+`")
+SHELL_LEGACY_ARITH = re.compile(r"(?:^|[\s;])(?:let|expr)\s|\$\[")
+SHELL_BRACKET_TEST = re.compile(r"\b(?:if|while|until)\s+\[\s")
+SHELL_LOCAL_SUBSHELL = re.compile(r"\blocal\s+\w+=[\"']?\$\(")
+SHELL_ALIAS = re.compile(r"(?:^|[\s;])alias\s")
+SHELL_HEREDOC = re.compile(r"<<-?\s*['\"]?(\w+)")
 
 
 def extension_of(path: str) -> str:
@@ -60,15 +68,27 @@ def is_makefile(path: str) -> bool:
     return Path(path).name == "Makefile" or Path(path).name.endswith(".mk")
 
 
+def has_shell_shebang(path: str) -> bool:
+    """Catch extensionless shell scripts, which the style guide permits."""
+    try:
+        with open(path, "rb") as handle:
+            first = handle.readline(128)
+    except OSError:
+        return False
+    return first.startswith(b"#!") and any(marker in first for marker in (b"bash", b"/sh", b"zsh"))
+
+
 def is_supported(path: str) -> bool:
     ext = extension_of(path)
     return (
         ext == ".py"
         or ext in CPP_EXTS
+        or ext in SHELL_EXTS
         or ext in JSON_EXTS
         or ext in JSONL_EXTS
         or ext in MD_EXTS
         or is_makefile(path)
+        or has_shell_shebang(path)
     )
 
 
@@ -232,6 +252,53 @@ def check_json_line(line: str) -> list[str]:
     return errors
 
 
+def shell_heredoc_lines(text: str) -> set[int]:
+    """Lines inside here-documents, where literal content is not shell code."""
+    result: set[int] = set()
+    delimiter: str | None = None
+    for number, line in enumerate(text.splitlines(), start=1):
+        if delimiter is not None:
+            result.add(number)
+            if line.strip() == delimiter:
+                delimiter = None
+            continue
+        match = SHELL_HEREDOC.search(line)
+        if match:
+            delimiter = match.group(1)
+            result.add(number)
+    return result
+
+
+def check_shell_line(line: str, *, in_heredoc: bool = False) -> list[str]:
+    errors: list[str] = []
+    if trailing_whitespace(line):
+        errors.append("trailing whitespace")
+    if in_heredoc:
+        return errors
+    if "\t" in line:
+        errors.append("tab indentation; use two spaces")
+    words = line.split()
+    if len(line) > MAX_SHELL_COLUMNS and not (
+        "http://" in line or "https://" in line or (words and len(words[0]) > MAX_SHELL_COLUMNS)
+    ):
+        errors.append(f"line exceeds {MAX_SHELL_COLUMNS} columns")
+    if SHELL_BACKTICK.search(line):
+        errors.append("use $(command) instead of backticks")
+    if re.search(r"(?:^|[\s;])eval\s", line):
+        errors.append("eval is forbidden")
+    if SHELL_LEGACY_ARITH.search(line):
+        errors.append("use ((...)) or $((...)) instead of let/expr/$[...]")
+    if SHELL_BRACKET_TEST.search(line):
+        errors.append("use [[ ... ]] instead of [ ... ]")
+    if SHELL_LOCAL_SUBSHELL.search(line):
+        errors.append("declare local variables separately from command substitution")
+    if SHELL_ALIAS.search(line):
+        errors.append("aliases are forbidden in scripts; use a function")
+    if "$*" in line:
+        errors.append('use "$@" instead of $*')
+    return errors
+
+
 def check_makefile_line(line: str) -> list[str]:
     errors: list[str] = []
     if trailing_whitespace(line):
@@ -334,6 +401,20 @@ def check_changed_file(path: str, added: list[tuple[int, str]]) -> dict[int, lis
             return errors
         for number in makefile_recipe_violations(text) & added_numbers:
             add(number, "recipe command must start with a tab")
+
+    elif ext in SHELL_EXTS or has_shell_shebang(path):
+        try:
+            text = Path(path).read_text()
+        except OSError:
+            text = ""
+        heredocs = shell_heredoc_lines(text)
+        lines = text.splitlines()
+        fully_added = bool(lines) and len(added_numbers) >= len(lines)
+        if fully_added and lines and lines[0].strip() != "#!/bin/bash":
+            add(1, "executable shell files must start with #!/bin/bash")
+        for number, line in added:
+            for message in check_shell_line(line, in_heredoc=number in heredocs):
+                add(number, message)
 
     elif ext in JSON_EXTS:
         try:
@@ -578,6 +659,39 @@ class StyleCheckerTests(unittest.TestCase):
 
     def test_null_rule_ignores_block_comments(self) -> None:
         self.assertEqual(check_cpp_line("/* NULL */", header=False, cpp=True), [])
+
+    def test_shell_rules(self) -> None:
+        self.assertEqual(check_shell_line('echo "${value}"'), [])
+        for snippet, expected in [
+            ("value=`date`", "backticks"),
+            ('eval "${cmd}"', "eval"),
+            ("let x=1", "((...))"),
+            ("i=$[2 * 3]", "((...))"),
+            ("if [ -f file ]; then", "[[ ... ]]"),
+            ('local x="$(cmd)"', "separately"),
+            ("alias ll='ls -l'", "aliases"),
+            ('echo "$*"', "$@"),
+            ("\techo hi", "two spaces"),
+            ("echo hi ", "trailing whitespace"),
+        ]:
+            self.assertTrue(any(expected in m for m in check_shell_line(snippet)), snippet)
+
+    def test_shell_line_length_and_heredoc(self) -> None:
+        long_line = "echo " + "x" * 90
+        self.assertTrue(any("exceeds" in m for m in check_shell_line(long_line)))
+        self.assertEqual(check_shell_line("weird `content` here", in_heredoc=True), [])
+        text = "#!/bin/bash\ncat <<EOF\n`literal`\nEOF\n"
+        self.assertTrue(2 in shell_heredoc_lines(text))
+        self.assertTrue(3 in shell_heredoc_lines(text))
+
+    def test_extensionless_shell_script_is_covered(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "runner"
+            path.write_text("#!/bin/bash\necho hi\n")
+            self.assertTrue(has_shell_shebang(str(path)))
+            self.assertTrue(is_supported(str(path)))
+            violations = check_changed_file(str(path), [(1, "#!/bin/bash"), (2, "echo `date`")])
+            self.assertTrue(any("backticks" in m for m in violations.get(2, [])))
 
     def test_supported_extensions(self) -> None:
         self.assertTrue(is_supported("a.py"))
