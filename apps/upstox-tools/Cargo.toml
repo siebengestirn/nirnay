@@ -18,6 +18,10 @@ path = "src/bin/upstox_recorder.rs"
 name = "upstox-decode-export"
 path = "src/bin/upstox_decode_export.rs"
 
+[[bin]]
+name = "upstox-verify-session"
+path = "src/bin/upstox_verify_session.rs"
+
 [dependencies]
 anyhow.workspace = true
 base64.workspace = true

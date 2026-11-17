@@ -5,12 +5,14 @@
 //! Provider adapters must pass original payload bytes and a reference to the
 //! account's applicable entitlement. A raw frame is not a normalized event.
 
+mod capture;
 mod continuity;
 mod error;
 mod frame;
 mod journal;
 mod manifest;
 
+pub use capture::{CaptureManifest, SessionVerification, verify_capture_session};
 pub use continuity::{ContinuityTracker, Observation, StreamQuality};
 pub use error::ArchiveError;
 pub use frame::RawFrame;
