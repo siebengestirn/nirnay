@@ -16,7 +16,12 @@ use anyhow::{Context, bail, ensure};
 use clap::{Parser, ValueEnum};
 use futures_util::{SinkExt, StreamExt};
 use jiff::Timestamp;
-use market_archive::{JournalWriter, RawFrame, verify_journal};
+use market_archive::{
+    JournalWriter, //
+    MAX_PAYLOAD_BYTES,
+    RawFrame,
+    verify_journal,
+};
 use reqwest::{Client, redirect};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -29,7 +34,50 @@ use upstox_feed_proto::decode::decode_feed_response_diagnostic;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
 const AUTHORIZE_URL: &str = "https://api.upstox.com/v3/feed/market-data-feed/authorize";
-const MAX_FRAME_BYTES: usize = 4 * 1024 * 1024;
+
+/// A payload the archive cannot accept. This is a terminal capture outcome, not
+/// a network failure: retrying the connection cannot make it valid.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct OversizedFrame {
+    size: usize,
+    limit: usize,
+}
+
+impl std::fmt::Display for OversizedFrame {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "Upstox frame of {} bytes exceeds the archive payload limit of {} bytes",
+            self.size, self.limit
+        )
+    }
+}
+
+impl std::error::Error for OversizedFrame {}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ConnectionFailure {
+    OversizedFrame,
+    Retryable,
+}
+
+fn classify_failure(error: &anyhow::Error) -> ConnectionFailure {
+    if error.downcast_ref::<OversizedFrame>().is_some() {
+        ConnectionFailure::OversizedFrame
+    } else {
+        ConnectionFailure::Retryable
+    }
+}
+
+fn validate_frame_size(size: usize) -> Result<(), OversizedFrame> {
+    if size > MAX_PAYLOAD_BYTES {
+        return Err(OversizedFrame {
+            size,
+            limit: MAX_PAYLOAD_BYTES,
+        });
+    }
+    Ok(())
+}
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum FeedMode {
@@ -226,11 +274,7 @@ impl Session {
         received_utc_ns: i64,
         received_monotonic_ns: u64,
     ) -> anyhow::Result<()> {
-        ensure!(
-            payload.len() <= MAX_FRAME_BYTES,
-            "Upstox frame exceeds {} bytes",
-            MAX_FRAME_BYTES
-        );
+        validate_frame_size(payload.len())?;
         let capture_sequence = self
             .frame_count
             .checked_add(1)
@@ -554,21 +598,32 @@ async fn main() -> anyhow::Result<()> {
                     Some("reconnect budget exhausted after server closed the stream".to_owned());
                 session.lifecycle("reconnect_budget_exhausted", u64::from(attempt), None)?;
             }
-            Err(_error) if attempt < args.max_reconnects => {
-                session.lifecycle(
-                    "reconnect_after_error",
-                    u64::from(attempt),
-                    Some("network_or_protocol_error; diagnostic details omitted"),
-                )?;
-            }
-            Err(_error) => {
-                session.terminal_error =
-                    Some("reconnect budget exhausted after network or protocol error".to_owned());
-                session.lifecycle(
-                    "reconnect_budget_exhausted_after_error",
-                    u64::from(attempt),
-                    Some("network_or_protocol_error; diagnostic details omitted"),
-                )?;
+            Err(error) => {
+                if classify_failure(&error) == ConnectionFailure::OversizedFrame {
+                    session.terminal_error = Some(format!("terminal capture failure: {error}"));
+                    session.lifecycle(
+                        "oversized_frame_fatal",
+                        u64::from(attempt),
+                        Some(&error.to_string()),
+                    )?;
+                    break;
+                }
+                if attempt < args.max_reconnects {
+                    session.lifecycle(
+                        "reconnect_after_error",
+                        u64::from(attempt),
+                        Some("network_or_protocol_error; diagnostic details omitted"),
+                    )?;
+                } else {
+                    session.terminal_error = Some(
+                        "reconnect budget exhausted after network or protocol error".to_owned(),
+                    );
+                    session.lifecycle(
+                        "reconnect_budget_exhausted_after_error",
+                        u64::from(attempt),
+                        Some("network_or_protocol_error; diagnostic details omitted"),
+                    )?;
+                }
             }
         }
     }
@@ -577,9 +632,58 @@ async fn main() -> anyhow::Result<()> {
     writeln!(io::stdout().lock(), "{}", path.display())?;
     if terminal_error.is_some() {
         bail!(
-            "Upstox capture did not retain a live stream after the reconnect budget; inspect the session events at {}",
+            "Upstox capture ended with a terminal error; inspect the session events at {}",
             path.display()
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        ConnectionFailure, //
+        OversizedFrame,
+        classify_failure,
+        validate_frame_size,
+    };
+    use market_archive::MAX_PAYLOAD_BYTES;
+
+    #[test]
+    fn payload_limit_is_the_shared_archive_limit() {
+        assert_eq!(MAX_PAYLOAD_BYTES, 512 * 1024, "one authoritative limit");
+        assert!(
+            validate_frame_size(MAX_PAYLOAD_BYTES).is_ok(),
+            "a frame at the limit is accepted"
+        );
+        assert_eq!(
+            validate_frame_size(MAX_PAYLOAD_BYTES + 1),
+            Err(OversizedFrame {
+                size: MAX_PAYLOAD_BYTES + 1,
+                limit: MAX_PAYLOAD_BYTES,
+            }),
+            "one byte over the limit is rejected"
+        );
+    }
+
+    #[test]
+    fn oversized_frame_is_not_retryable() {
+        let oversized: anyhow::Error = OversizedFrame { size: 9, limit: 8 }.into();
+        assert!(
+            classify_failure(&oversized) == ConnectionFailure::OversizedFrame,
+            "an oversized frame is terminal"
+        );
+        let network = anyhow::anyhow!("connection reset by peer");
+        assert!(
+            classify_failure(&network) == ConnectionFailure::Retryable,
+            "network errors remain retryable"
+        );
+    }
+
+    #[test]
+    fn oversized_frame_error_names_both_sizes() {
+        let message = OversizedFrame { size: 9, limit: 8 }.to_string();
+        assert!(message.contains('9'), "reported size is present");
+        assert!(message.contains('8'), "archive limit is present");
+    }
 }
