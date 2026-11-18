@@ -84,11 +84,21 @@ impl SourceArchive {
     }
 
     /// Open an existing archive. A torn tail is refused, not repaired.
+    /// The manifest is scanned in bounded chunks without buffering the file.
     pub fn open(root: impl Into<PathBuf>) -> Result<Self, ArchiveError> {
         let root = root.into();
         let path = root.join("manifest.jsonl");
-        let bytes = std::fs::read(&path)?;
-        if !bytes.is_empty() && !bytes.ends_with(b"\n") {
+        let mut file = File::open(path)?;
+        let mut buffer = [0_u8; COPY_BUFFER];
+        let mut last_byte = 0_u8;
+        loop {
+            let read = file.read(&mut buffer)?;
+            if read == 0 {
+                break;
+            }
+            last_byte = buffer[read - 1];
+        }
+        if last_byte != b'\n' {
             return Err(ArchiveError::TornManifest);
         }
         Ok(Self { root })
@@ -202,42 +212,79 @@ fn verify_object(path: &Path, record: &SourceRecord) -> Result<(), ArchiveError>
 
 /// Explicit recovery of a torn manifest. Quarantines the damaged tail and
 /// keeps every complete record. Never silently truncates.
+fn manifest_boundary(path: &Path) -> Result<(u64, u64, usize), ArchiveError> {
+    let mut file = File::open(path)?;
+    let mut buffer = [0_u8; COPY_BUFFER];
+    let mut offset = 0_u64;
+    let mut last_newline = None;
+    let mut records = 0_usize;
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        for (index, byte) in buffer[..read].iter().enumerate() {
+            if *byte == b'\n' {
+                last_newline = Some(offset + index as u64 + 1);
+                records += 1;
+            }
+        }
+        offset += read as u64;
+    }
+    Ok((last_newline.unwrap_or(0), offset, records))
+}
+
+/// Explicit recovery of a torn manifest. Quarantines the damaged tail and
+/// keeps every complete record. Never silently truncates.
 pub fn recover(root: impl AsRef<Path>) -> Result<RecoveryReport, ArchiveError> {
     let root = root.as_ref();
     let path = root.join("manifest.jsonl");
-    let bytes = std::fs::read(&path)?;
-    let last_newline = bytes.iter().rposition(|byte| *byte == b'\n');
-    let (complete, damaged) = match last_newline {
-        Some(index) => (&bytes[..index + 1], &bytes[index + 1..]),
-        None => (&[][..], &bytes[..]),
-    };
-    let quarantine = root.join(format!(".manifest-damaged-{:x}", Sha256::digest(damaged)));
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&quarantine)?;
-    file.write_all(damaged)?;
-    file.sync_all()?;
+    let (complete_len, total, complete_records) = manifest_boundary(&path)?;
+    let damaged_len = total.saturating_sub(complete_len);
+    let mut digest = Sha256::new();
+    {
+        let mut source = File::open(&path)?;
+        std::io::Seek::seek(&mut source, std::io::SeekFrom::Start(complete_len))?;
+        let mut buffer = [0_u8; COPY_BUFFER];
+        let mut remaining = damaged_len;
+        while remaining > 0 {
+            let wanted = remaining.min(buffer.len() as u64) as usize;
+            let read = source.read(&mut buffer[..wanted])?;
+            if read == 0 {
+                break;
+            }
+            digest.update(&buffer[..read]);
+            remaining -= read as u64;
+        }
+    }
+    let quarantine = root.join(format!(".manifest-damaged-{:x}", digest.finalize()));
+    {
+        let mut source = File::open(&path)?;
+        let mut destination = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&quarantine)?;
+        std::io::Seek::seek(&mut source, std::io::SeekFrom::Start(complete_len))?;
+        std::io::copy(&mut source, &mut destination)?;
+        destination.sync_all()?;
+    }
     let staged = root.join(".manifest.recovered.staging");
     {
+        let source = File::open(&path)?;
         let file = OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(&staged)?;
         let mut writer = std::io::BufWriter::new(file);
-        writer.write_all(complete)?;
+        std::io::copy(&mut source.take(complete_len), &mut writer)?;
         writer.flush()?;
         writer.get_ref().sync_all()?;
     }
     std::fs::rename(&staged, &path)?;
     let directory = File::open(root)?;
     directory.sync_all()?;
-    let complete_records = complete
-        .split(|byte| *byte == b'\n')
-        .filter(|line| !line.is_empty())
-        .count();
     Ok(RecoveryReport {
-        damaged_bytes: u64::try_from(damaged.len()).unwrap_or(u64::MAX),
+        damaged_bytes: damaged_len,
         complete_records,
         quarantine: quarantine.to_string_lossy().into_owned(),
     })

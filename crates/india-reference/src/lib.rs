@@ -19,4 +19,10 @@ pub use identity::{IdentityError, IdentityRegistry};
 pub use observation::{Exclusion, Rejection, RowOutcome, SnapshotScope, SourceBatch};
 #[cfg(debug_assertions)]
 pub use store::set_fail_point;
-pub use store::{Publication, ReferenceStore, StoreError};
+pub use store::{
+    Publication, //
+    ReferenceStore,
+    RestoreOutcome,
+    StoreError,
+    restore_verified,
+};
