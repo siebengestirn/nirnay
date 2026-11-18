@@ -792,6 +792,15 @@ fn validation_rejects_noncanonical_and_unknown_fields() {
         "duplicate observation keys are refused"
     );
 
+    let mut conflicting = contract_snapshot("alpha");
+    let mut conflict = conflicting.listing_states[0].clone();
+    conflict.symbol = "other-symbol".to_owned();
+    conflicting.listing_states.insert(1, conflict);
+    assert!(
+        conflicting.validate().is_err(),
+        "a conflicting observation with the same four-part key is refused"
+    );
+
     let mut noncanonical = contract_snapshot("alpha");
     noncanonical.listing_states.reverse();
     assert!(

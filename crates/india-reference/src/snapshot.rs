@@ -151,6 +151,7 @@ impl ReferenceSnapshot {
         }
 
         let mut previous_state: Option<ListingStateOrderKey<'_>> = None;
+        let mut observations: BTreeSet<(&InstrumentId, Venue, Date, Timestamp)> = BTreeSet::new();
         for state in &self.listing_states {
             state
                 .provenance
@@ -168,6 +169,20 @@ impl ReferenceSnapshot {
                 return Err(invalid("listing state tick size must be positive"));
             }
             validate_tick_lineage(&state.tick_assignment)?;
+            // Separate duplicate rule: two states with the same observation
+            // key are rejected whether equal or conflicting, independently
+            // of the canonical-order tie-breakers below.
+            let observation = (
+                &state.instrument_id,
+                state.venue,
+                state.valid_from,
+                state.recorded_at,
+            );
+            if !observations.insert(observation) {
+                return Err(invalid(
+                    "duplicate listing-state observation (instrument, venue, valid_from, recorded_at)",
+                ));
+            }
             // Frozen contract canonical order: (recorded_at, instrument_id,
             // venue discriminant, symbol, valid_from, valid_to), with a null
             // valid_to sorting before a present date. The vector must already
