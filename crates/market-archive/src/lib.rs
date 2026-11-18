@@ -20,7 +20,10 @@ pub use capture::{
 };
 pub use continuity::{ContinuityTracker, Observation, StreamQuality};
 pub use error::ArchiveError;
-pub use frame::RawFrame;
+pub use frame::{
+    MAX_PAYLOAD_BYTES, //
+    RawFrame,
+};
 pub use journal::{
     JournalReader, //
     JournalScan,
