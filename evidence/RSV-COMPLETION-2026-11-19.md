@@ -1,4 +1,4 @@
-# RSV completion record — PR3 (2026-11-19)
+# RSV completion record — PR3 and PR4 (2026-11-19)
 
 **Scope:** third promotion step for GAP-1. Active crate `india-reference`,
 base `0c05641`. The frozen P1-04 source contract is

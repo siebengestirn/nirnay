@@ -1086,7 +1086,7 @@ fn fresh_stamp() -> u128 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
-        .as_millis()
+        .as_nanos()
 }
 
 /// Back up a fully verified store into `<root>/backups/<id>`.
@@ -1221,14 +1221,27 @@ pub fn restore_verified_store(
         std::fs::remove_dir_all(&staging)?;
     }
     copy_tree(backup_dir, &staging)?;
-    let store = DurableReferenceStore::open(&staging)?;
-    let report = store.verify_full()?;
-    if report.head_revision_id != manifest.head_revision_id {
-        return Err(StoreError::Corruption(
-            "restored head does not match the backup manifest".to_owned(),
-        ));
-    }
-    drop(store);
+    let verified = (|| -> Result<RestoreVerification, StoreError> {
+        let store = DurableReferenceStore::open(&staging)?;
+        let report = store.verify_full()?;
+        if report.head_revision_id != manifest.head_revision_id {
+            return Err(StoreError::Corruption(
+                "restored head does not match the backup manifest".to_owned(),
+            ));
+        }
+        Ok(RestoreVerification {
+            revision_count: report.revision_count,
+            head_revision_id: report.head_revision_id,
+        })
+    })();
+    let verification = match verified {
+        Ok(value) => value,
+        Err(error) => {
+            // A failed verification leaves no staging residue behind.
+            let _ = std::fs::remove_dir_all(&staging);
+            return Err(error);
+        }
+    };
 
     let previous = parent.join(format!(
         ".restore-previous-{}-{}",
@@ -1248,8 +1261,5 @@ pub fn restore_verified_store(
     if had_previous {
         std::fs::remove_dir_all(&previous)?;
     }
-    Ok(RestoreVerification {
-        revision_count: report.revision_count,
-        head_revision_id: report.head_revision_id,
-    })
+    Ok(verification)
 }
