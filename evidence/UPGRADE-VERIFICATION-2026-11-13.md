@@ -167,7 +167,17 @@ The C++ oracle was built and tested using CMake/CTest. The Python suite and poli
 
 ## Not run / not established
 
-1. **Rust compilation, formatting, Clippy or Rust tests:** Cargo/Rust were not available in the original preparation runtime. In the owner completion rerun (macOS arm64, pinned Rust 1.99.1), the package as first built failed: a stale `Cargo.lock`, a missing `Deserialize` derive and malformed test JSON in `cost-cli`, an undeclared `base16` test import plus a literal NUL byte in `execution-policy`, a duplicated Clippy allow attribute in `paper-engine`, and rustfmt drift. All were corrected; `cargo fmt`, `cargo check`, `cargo clippy -D warnings`, `cargo test` (278 tests), the release `upstox-tools` build, `cargo deny check` and `cargo xtask check` now pass. See `VERIFICATION.md`.
+1. **Rust compilation, formatting, Clippy or Rust tests:** Cargo/Rust were not
+   available in the original preparation runtime. In the owner completion rerun
+   (macOS arm64, pinned Rust 1.99.1), the package as first built failed: a stale
+   `Cargo.lock`, a missing `Deserialize` derive and malformed test JSON in
+   `cost-cli`, an undeclared `base16` test import plus a literal NUL byte in
+   `execution-policy`, a duplicated Clippy allow attribute in `paper-engine`,
+   and rustfmt drift. All were corrected; `cargo fmt`, `cargo check`,
+   `cargo clippy -D warnings`, `cargo test` (278 tests), the release
+   `upstox-tools` build, `cargo deny check` and `cargo xtask check` now pass.
+   See `evidence/VERIFICATION-2026-11-17.md`.
+`evidence/VERIFICATION-2026-11-17.md`.
 2. **Live provider connectivity:** No Upstox/FYERS credentials, paid-plan entitlements, live sockets or production exchange sessions were used.
 3. **Broker execution:** No broker order was submitted. No production Upstox/FYERS/Kite adapter is provided by the new broker-neutral OMS protocol.
 4. **Parquet:** resolved on 2026-11-13. PyArrow 26.0.1 is installed; the semantic round-trip and tamper-rejection test pass. Real-data schema evolution, partitioning, row-group sizing and long-run compatibility remain external.
@@ -246,7 +256,12 @@ The `make verify-local` target covers Python tests, compile/policy checks, schem
 6. **Resolved in repository on 2026-11-13:** PyArrow 26.0.1 is installed and the semantic Parquet round-trip plus tamper-rejection test pass locally and in the `python-research` CI job. Remaining external work: schema evolution, compression alternatives, row-group sizing and large-file tests against real licensed data on the deployment platform.
 7. Run the final Rust format/check/Clippy/test/release gates on the exact extracted ZIP with pinned Rust 1.99.1; the follow-up changes in this delivery do not alter Rust sources, but a previous archive passing is not a substitute for checking the final artifact.
 
-**Release conclusion:** the repository is ready for rigorous local research, deterministic paper simulation, and continued integration engineering. It is not certified for live order routing or institutional production claims. Live order submission remains hard-disabled.
+`evidence/VERIFICATION-2026-11-17.md` under "2026-11-17 post-merge
+verification". Hosted CI run `44019753876` passed all 10 jobs on that commit.
+Extras tests currently report 92 passed plus 4 explicitly invoked child-only
+workers marked ignored; earlier `96 tests` statements in this report are
+historical 2026-11-13 figures. No M1 exit approval, M2 authorization,
+platform-readiness claim or live-trading change follows from this note.
 
 ### Relocatable clean-extraction gate — 2026-11-12
 
@@ -254,4 +269,10 @@ The `cpp-test` Make target now uses a repository-path-specific temporary build d
 
 ### 2026-11-17 evidence note
 
-The post-merge verification for commit `f832789` is recorded in `VERIFICATION.md` under "2026-11-17 post-merge verification". Hosted CI run `44019753876` passed all 10 jobs on that commit. Extras tests currently report 92 passed plus 4 explicitly invoked child-only workers marked ignored; earlier `96 tests` statements in this report are historical 2026-11-13 figures. No M1 exit approval, M2 authorization, platform-readiness claim or live-trading change follows from this note.
+The post-merge verification for commit `f832789` is recorded in
+`evidence/VERIFICATION-2026-11-17.md` under "2026-11-17 post-merge
+verification". Hosted CI run `44019753876` passed all 10 jobs on that commit.
+Extras tests currently report 92 passed plus 4 explicitly invoked child-only
+workers marked ignored; earlier `96 tests` statements in this report are
+historical 2026-11-13 figures. No M1 exit approval, M2 authorization,
+platform-readiness claim or live-trading change follows from this note.

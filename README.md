@@ -4,6 +4,13 @@
 
 **Release status:** research/paper engineering candidate. This repository is not a certified broker-connected trading system, not a SEBI/exchange-approved algo product, and not evidence of profitable alpha. Live order routing is hard-disabled. Every capability statement below distinguishes code present from external verification still required.
 
+<!-- CURRENT-STATE
+commit: c91ad3f
+verified_on: 2026-11-18
+ci_run: 44199935228
+scope: local make check and hosted CI on c91ad3f; not a claim for later commits
+-->
+
 ## What is actually implemented
 
 | Capability | Active implementation | Boundary / non-claim |
@@ -260,7 +267,8 @@ under GCC and runs schema validation and the required Parquet round-trip. The
 Parquet test executes rather than skips. Live Upstox/FYERS/Kite accounts were
 not accessed; provider tests use deterministic fixtures and fake clients/SDK
 objects. Earlier 2026-11-13 counts (278 root tests, 96 extras tests) are
-historical. See `BUILD-RESULTS.md`, `VERIFICATION.md` and
+historical. See `BUILD-RESULTS.md`,
+`evidence/VERIFICATION-2026-11-17.md` and
 `engineering/provider-environments.md`.
 
 ## Extras policy
@@ -286,32 +294,40 @@ retained in the dated verification documents; the current result is the
 Promotion of the retained India code into the active workspace still requires a
 new crate, ADR, owner and tests.
 
-## Engineering standards and evidence
+## Documentation map and maintenance
 
-- `AGENTS.md`, `CONTRIBUTING.md`, `SECURITY.md`
-- `engineering/style-policy.md` (binding style gates for every source language)
-- `engineering/anti-patterns.md`
-- `engineering/research/point-in-time-data.md`
-- `engineering/research/provider-normalization.md`
-- `engineering/research/backtesting-and-alpha.md`
-- `engineering/research/oms-and-live-risk.md`
-- `engineering/production-readiness-matrix.md`
-- `engineering/deployment/aws-kms-risk-service.md`
-- `engineering/market-compliance-and-entitlements.md`
-- `engineering/extras-promotion-audit.md`
-- `UPGRADE-VERIFICATION.md` (current implementation inventory, exact verification results and owner-run Rust/live acceptance gates)
-- `VERIFICATION.md` (executed checks, including the owner completion rerun)
+Canonical documents are updated with the code. Dated evidence is immutable
+once published; a new run adds a new dated file instead of rewriting history.
+`scripts/check_docs.py` enforces this split in `make check` and CI.
 
-**Governing principle:** a capability is admitted by contract, executable tests and external evidence—not by a successful demo, strategy backtest, architecture diagram or a green check from a different commit.
+| Class | Document | Purpose |
+|---|---|---|
+| Canonical | `README.md` | current state, scope and this map |
+| Canonical | `AGENTS.md` | agent and contributor rules |
+| Canonical | `CONTRIBUTING.md` | change and evidence workflow |
+| Canonical | `SECURITY.md` | disclosure and secret handling |
+| Canonical | `engineering/verification-policy.md` | claim-state vocabulary |
+| Dated evidence | `BUILD-RESULTS.md` | owner-maintained bundle record; do not edit |
+| Dated evidence | `evidence/VERIFICATION-2026-11-17.md` | executed checks and boundaries |
+| Dated evidence | `evidence/UPGRADE-VERIFICATION-2026-11-13.md` | implementation inventory and upgrade gates |
+| Dated evidence | `evidence/BUILD-INVENTORY-2026-11-13.json` | machine-readable release inventory |
+
+The current-state block above names the verified commit, date, CI run and
+scope. Update it in the PR that changes the verified baseline. Do not add a
+new root-level status, brief or inventory file; extend a canonical document
+or add a dated file under `evidence/`.
+
+**Governing principle:** a capability is admitted by contract, executable
+tests and external evidence—not by a successful demo, strategy backtest,
+architecture diagram or a green check from a different commit.
 
 ### 2026-11-18 current-state note
 
-The verification for the current `main` commit `c91ad3f` is recorded in this
-note and in hosted CI run `44199935228`, which passed 11/11 jobs; the
-pinned-toolchain local `make check` passed all project gates (410 Rust test
-cases, 156 Python tests, 2 subtests). `VERIFICATION.md` still contains the
-older dated 2026-11-17 record; older counts and commit hashes in dated
-documents are historical. These results verify the named commit only and do
-not grant M1 exit approval, M2 authorization, platform readiness or live
-trading. Capture-session verification is implemented; the canonical-event,
-dataset, replay and paper stages of the vertical slice are still outstanding.
+The verification for commit `c91ad3f` is recorded in hosted CI run
+`44199935228`, which passed 11/11 jobs; the pinned-toolchain local `make
+check` passed all project gates (410 Rust test cases, 156 Python tests, 2
+subtests). Dated documents retain older counts and commit hashes as
+historical records. These results verify the named commit only and do not
+grant M1 exit approval, M2 authorization, platform readiness or live trading.
+Capture-session verification is implemented; the canonical-event, dataset,
+replay and paper stages of the vertical slice are still outstanding.

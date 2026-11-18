@@ -25,7 +25,7 @@ Owner ruling: the cited nightly run `actions/runs/43792611015` returns 404 unaut
 | **Keep the single `status` field and just add more labels** | Conflates "code exists" (maturity) with "independently verified" (evidence); any reader of `implemented` over-infers verification (A7-001). Rejected. |
 | **Set some claims to `verified` to make the gate fire** | Would be a fabricated verification — policy forbids JSON-only promotion and no named command/date/environment evidence exists (A7-002). Rejected. |
 | **Count the nightly run / local rerun as `Verified`** | Owner ruling downgraded it to UNVERIFIED; no hosted run id or attestation is committed (§1). Rejected. |
-| **Keep the third `production-readiness-matrix.md` vocabulary as equally authoritative** | Its own `locally_verified` criterion is unmet (`VERIFICATION.md:12` says no VCS metadata present), producing contradiction (A7 §3.1). Rejected as a status source. |
+| **Keep the third `production-readiness-matrix.md` vocabulary as equally authoritative** | Its own `locally_verified` criterion is unmet (`evidence/VERIFICATION-2026-11-17.md:12` says no VCS metadata present), producing contradiction (A7 §3.1). Rejected as a status source. |
 | **Trust design documents / this ADR as certification** | Design work has no certifying authority; owner approval is required and M1 authorises no implementation (README §15, Amendment A §A6). Rejected (M1-EV-INV-007). |
 | **Make the gate non-vacuous by code changes during M1** | M1 is ADR/design only; gate code belongs to a future milestone. Rejected as present work; stated as a design requirement instead (§3.3). |
 

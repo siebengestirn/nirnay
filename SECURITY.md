@@ -12,3 +12,6 @@ Any future live integration must fail closed on stale data, unknown broker order
 state, missing risk authorization, reconciliation mismatch, rate-limit breach,
 configuration drift or unhealthy persistence. A kill switch must be independent
 of strategy code. Live deployment requires a separate reviewed release process.
+
+This is a canonical policy document. Updates follow `CONTRIBUTING.md`;
+current state and dated evidence pointers live in `README.md`.

@@ -70,7 +70,7 @@
       "post_fix_result": "All root and extras Rust gates, Python suite (156 passed, 0 skipped, 2 subtests), Parquet round-trip, repository gate with Cargo, schema validation (41 JSON, 26 TOML, 17 schemas), root and extras C++ (1/1 each on AppleClang and GCC), clang-format, deterministic demo, PIT CLI and 25-candidate synthetic alpha screen passed",
       "remaining_external_gates": "No live Upstox/FYERS/Kite session, broker order, entitlement verification, HSM/KMS deployment, real archived provider-session replay or real-data Parquet scale test was performed"
     },
-    "extras_rust": "PASS: cargo test --manifest-path extras/Cargo.toml --locked, 96 tests, 0 failed (historical 2026-11-13 count; current 92 passed plus 4 ignored child-only workers invoked by parents — see VERIFICATION.md 2026-11-17 section); Clippy -D warnings and rustfmt clean",
+    "extras_rust": "PASS: cargo test --manifest-path extras/Cargo.toml --locked, 96 tests, 0 failed (historical 2026-11-13 count; current 92 passed plus 4 ignored child-only workers invoked by parents — see evidence/VERIFICATION-2026-11-17.md 2026-11-17 section); Clippy -D warnings and rustfmt clean",
     "extras_cpp": "PASS: extras/cpp CMake build + CTest 1/1 under AppleClang 21 and GCC 16.2.0",
     "clang_format": "PASS: clang-format 21.1.8 --dry-run --Werror over all 10 C/C++ files; enforced in CI",
     "ci_coverage": [
@@ -95,7 +95,7 @@
     "Upstox Full D30 and full pre-open/closing-auction state semantics are not implemented/certified by the active recorder-normalizer path",
     "Parquet is verified on synthetic fixtures only; real-data schema evolution, partitioning, row-group sizing and long-run compatibility remain external"
   ],
-  "detail": "See VERIFICATION.md for final executed checks and explicit evidence boundaries. Provider tests use fake SDK/client objects; no live provider or broker access was performed. The supplied predecessor is retained as the promoted, separately built 61-file extras reference workspace under extras/ (package nirnay-extras); the full pre-cleanup tree is preserved in the external backup named above.",
+  "detail": "See evidence/VERIFICATION-2026-11-17.md for final executed checks and explicit evidence boundaries. Provider tests use fake SDK/client objects; no live provider or broker access was performed. The supplied predecessor is retained as the promoted, separately built 61-file extras reference workspace under extras/ (package nirnay-extras); the full pre-cleanup tree is preserved in the external backup named above.",
   "upgrade_implementation": {
     "research_modules": [
       "market.py",
@@ -123,7 +123,7 @@
       "engineering/extras-promotion-audit.md",
       "engineering/provider-boundaries.md",
       "engineering/adapters-roadmap.md",
-      "VERIFICATION.md",
+      "evidence/VERIFICATION-2026-11-17.md",
       "engineering/legacy-audit-2026-11-13.md",
       "engineering/provider-environments.md",
       "BUILD-RESULTS.md"
