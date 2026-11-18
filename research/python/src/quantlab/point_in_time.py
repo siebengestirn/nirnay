@@ -353,6 +353,24 @@ class DatasetRow:
                 "point_in_time": self.point_in_time}
 
 
+def _source_code_digest() -> str:
+    """Digest of the active quantlab source package that built a dataset."""
+    from pathlib import Path
+
+    package = Path(__file__).resolve().parent
+    digest = hashlib.sha256()
+    for path in sorted(package.glob("*.py")):
+        digest.update(path.name.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _config_digest(**config: Any) -> str:
+    return hashlib.sha256(canonical_bytes(config)).hexdigest()
+
+
 @dataclass(frozen=True, slots=True)
 class DatasetManifest:
     schema_version: int
@@ -376,6 +394,9 @@ class DatasetManifest:
     adjustment_policy: str
     warnings: tuple[str, ...]
     data_sha256: str
+    input_sha256: str
+    code_digest: str
+    config_digest: str
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -387,7 +408,8 @@ class PITDatasetBuilder:
 
     def build(self, events: Iterable[MarketEvent], *, dataset_id: str,
               created_at_utc_ns: int, max_event_age_ns: int | None = None,
-              universe_id: str | None = None) -> tuple[list[DatasetRow], DatasetManifest]:
+              universe_id: str | None = None,
+              input_sha256: str | None = None) -> tuple[list[DatasetRow], DatasetManifest]:
         if not isinstance(dataset_id, str) or not dataset_id.strip() or type(created_at_utc_ns) is not int or created_at_utc_ns <= 0:
             raise ValueError("dataset_id and positive integer created_at_utc_ns are required")
         if max_event_age_ns is not None and (type(max_event_age_ns) is not int or max_event_age_ns < 0):
@@ -402,11 +424,13 @@ class PITDatasetBuilder:
         used_action_hashes: set[str] = set()
         used_membership_hashes: set[str] = set()
         warnings: set[str] = set()
+        input_hasher = hashlib.sha256()
         if universe_id is None:
             warnings.add("no_point_in_time_universe_membership_filter_applied_survivorship_not_certified")
         elif not universe_id.strip():
             raise ValueError("universe_id must be a non-empty string")
         for event in events:
+            input_hasher.update(canonical_bytes(event.as_dict()) + b"\n")
             if event.event_id in seen_event_ids:
                 raise ValueError(f"duplicate canonical event_id in dataset input: {event.event_id}")
             seen_event_ids.add(event.event_id)
@@ -487,6 +511,12 @@ class PITDatasetBuilder:
             warnings.add("some_rows_lack_original_capture_frame_hash")
         rows.sort(key=lambda x: (x.event["received_utc_ns"], x.instrument_id,
                                  x.event["provider"], x.event["event_id"]))
+        provenance_input = input_sha256 or input_hasher.hexdigest()
+        code_digest = _source_code_digest()
+        config_digest = _config_digest(
+            dataset_id=dataset_id, created_at_utc_ns=created_at_utc_ns,
+            max_event_age_ns=max_event_age_ns, universe_id=universe_id,
+        )
         data_digest = hashlib.sha256(b"\n".join(canonical_bytes(r.as_dict()) for r in rows)).hexdigest()
         listing_hashes = tuple(sorted(used_listing_hashes))
         action_hashes = tuple(sorted(used_action_hashes))
@@ -506,6 +536,8 @@ class PITDatasetBuilder:
             "point_in_time": True, "raw_prices_mutated": False,
             "adjustment_policy": "exact split/bonus share-ratio view; dividends remain cash events; complex actions require approved transform",
             "warnings": sorted(warnings), "data_sha256": data_digest,
+            "input_sha256": provenance_input,
+            "code_digest": code_digest, "config_digest": config_digest,
         }
         dataset_hash = hashlib.sha256(canonical_bytes(manifest_body)).hexdigest()
         manifest = DatasetManifest(
@@ -523,7 +555,9 @@ class PITDatasetBuilder:
             listing_source_hashes=listing_hashes, corporate_action_source_hashes=action_hashes,
             point_in_time=True, raw_prices_mutated=False,
             adjustment_policy=manifest_body["adjustment_policy"],
-            warnings=tuple(sorted(warnings)), data_sha256=data_digest)
+            warnings=tuple(sorted(warnings)), data_sha256=data_digest,
+            input_sha256=provenance_input, code_digest=code_digest,
+            config_digest=config_digest)
         return rows, manifest
 
 
@@ -731,6 +765,9 @@ def verify_published_dataset(dataset_dir: str | Path, *,
     canonical_digest = hashlib.sha256(b"\n".join(canonical_bytes(row) for row in rows)).hexdigest()
     if dataset.get("data_sha256") != canonical_digest:
         raise ValueError("canonical data_sha256 differs from dataset rows")
+    for field in ("input_sha256", "code_digest", "config_digest"):
+        if not _valid_sha256(dataset.get(field)):
+            raise ValueError(f"dataset {field} is not a SHA-256 digest")
     if dataset.get("raw_prices_mutated") is not False or dataset.get("point_in_time") is not True:
         raise ValueError("dataset manifest has an invalid adjustment or knowledge policy")
     if dataset.get("universe_membership_filter_applied") is not (dataset.get("universe_id") is not None):

@@ -216,6 +216,26 @@ class PointInTimeTests(unittest.TestCase):
             self.assertTrue((destination / "manifest.json").exists())
             self.assertEqual(verify_published_dataset(destination)["status"], "verified_internal_integrity")
 
+    def test_dataset_manifest_carries_input_code_and_config_digests(self):
+        event = self._event()
+        listing = PITListing("L1", "upstox", "NSE_EQ|X", "in.x", "NSE",
+            date(2026, 11, 1), None, event.received_utc_ns - 1, "nse-master", "d"*64)
+        reference = PITReferenceData([listing])
+        rows, manifest = PITDatasetBuilder(reference).build(
+            [event], dataset_id="provenance", created_at_utc_ns=event.received_utc_ns,
+            input_sha256="a"*64)
+        for digest in (manifest.input_sha256, manifest.code_digest, manifest.config_digest):
+            self.assertRegex(digest, r"^[0-9a-f]{64}$")
+        self.assertEqual(manifest.input_sha256, "a"*64)
+        _, changed = PITDatasetBuilder(reference).build(
+            [event], dataset_id="different", created_at_utc_ns=event.received_utc_ns)
+        self.assertNotEqual(manifest.config_digest, changed.config_digest)
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / "dataset"
+            write_dataset(rows, manifest, destination)
+            self.assertEqual(verify_published_dataset(destination)["status"],
+                             "verified_internal_integrity")
+
     def test_dataset_rejects_provider_listing_venue_mismatch(self):
         event = self._event()
         listing = PITListing("L1", "upstox", "NSE_EQ|X", "in.x", "BSE",
