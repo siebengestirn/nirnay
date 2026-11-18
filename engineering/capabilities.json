@@ -159,6 +159,14 @@
       "evidence_status": "Rerun 2026-11-13 on pinned Rust 1.99.1 and Python 3.14.8: scripts/supply_chain.py pins reported 30 workflow action references pinned to commit SHAs; constraints reported 3 files covering 79 exact pins; sbom wrote a deterministic 342-component CycloneDX document (sha256 e0a199e65a0b08cf3a5a12d15fc51be0b33ec52b1c2bc1dd759e99aac60d238b); pip-audit found 0 advisories in research and kite-ops and 51 waived formerly-inherited advisories (aiohttp, requests, setuptools) in fyers-recorder. The hosted CI job has not executed yet.",
       "owner": "release-engineering",
       "scope": "scripts/supply_chain.py, constraints/, .github/workflows"
+    },
+    {
+      "id": "CAP-020",
+      "name": "Versioned exchange reference-master ingestion with dated-source conformance",
+      "status": "implemented",
+      "evidence_status": "Local run 2026-11-18: ignored source_conformance::dated_exchange_sources_conform PASS against operator-supplied dated NSE and BSE files (code commit 2ebacd7). Full row accounting, deterministic repeat parse and fail-closed undeclared versions; see evidence/SOURCE-CONFORMANCE-2026-11-18.md. Compatibility is limited to the two tested source versions and categories; no exchange entitlement, all-product coverage or every-date claim.",
+      "owner": "reference-data",
+      "scope": "crates/india-reference/src/source; crates/india-reference/tests/source_conformance.rs"
     }
   ]
 }
