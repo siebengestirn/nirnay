@@ -1286,3 +1286,235 @@ fn rsv06_tick_lineage_hashes_resolve_and_fail_closed() {
         "a missing schedule source fails full verification"
     );
 }
+
+// ---------------------------------------------------------------------------
+// RSV-07, RSV-09 and RSV-10. RSV-08 remains deferred with a recorded
+// contract divergence (see evidence/RSV-COMPLETION-2026-11-19.md).
+// ---------------------------------------------------------------------------
+
+use fs2::FileExt;
+
+#[test]
+#[ignore = "child-only publisher invoked by parent with --ignored"]
+fn child_publish_contract_snapshot() {
+    let root = std::env::var_os("NIRNAY_RSV_CHILD_ROOT").expect("child requires root");
+    let label = std::env::var("NIRNAY_RSV_CHILD_LABEL").expect("child requires label");
+    let parent = std::env::var("NIRNAY_RSV_CHILD_PARENT").expect("child requires parent");
+    let expected = if parent == "none" {
+        None
+    } else {
+        Some(parent.parse::<u64>().expect("numeric expected parent"))
+    };
+    let mut store = DurableReferenceStore::open(PathBuf::from(root)).expect("child store opens");
+    let outcome = store.publish(&contract_snapshot(&label), expected);
+    if outcome.is_err() {
+        std::process::exit(3);
+    }
+}
+
+fn spawn_publisher(root: &Path, label: &str, parent: &str) -> std::process::Child {
+    Command::new(std::env::current_exe().expect("test executable"))
+        .arg("--ignored")
+        .arg("child_publish_contract_snapshot")
+        .env("NIRNAY_RSV_CHILD_ROOT", root)
+        .env("NIRNAY_RSV_CHILD_LABEL", label)
+        .env("NIRNAY_RSV_CHILD_PARENT", parent)
+        .spawn()
+        .expect("spawn publisher")
+}
+
+#[test]
+fn rsv07_competing_processes_publish_once_and_replay_is_idempotent() {
+    let root = contract_root("rsv07");
+    let mut first = spawn_publisher(&root, "alpha", "none");
+    let mut second = spawn_publisher(&root, "beta", "none");
+    let outcomes = [
+        first.wait().expect("first child"),
+        second.wait().expect("second child"),
+    ];
+    assert_eq!(
+        outcomes.iter().filter(|status| status.success()).count(),
+        1,
+        "only one competing publication succeeds"
+    );
+    let store = DurableReferenceStore::open(&root).expect("store opens");
+    assert_eq!(
+        store.verify_full().expect("verification").revision_count,
+        1,
+        "competing processes leave exactly one revision"
+    );
+
+    let mut retry_a = spawn_publisher(&root, "gamma", "0");
+    let mut retry_b = spawn_publisher(&root, "gamma", "0");
+    let retries = [
+        retry_a.wait().expect("retry child A"),
+        retry_b.wait().expect("retry child B"),
+    ];
+    assert!(
+        retries.iter().all(|status| status.success()),
+        "same-key concurrent retries both resolve"
+    );
+    assert_eq!(
+        store.verify_full().expect("verification").revision_count,
+        2,
+        "retries add no duplicate revision"
+    );
+}
+
+#[test]
+fn rsv09_lock_contention_times_out_without_mutation() {
+    let root = contract_root("rsv09-lock");
+    let lock_path = root.join("archive").join(".lock");
+    let held = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&lock_path)
+        .expect("open lock file");
+    FileExt::lock_exclusive(&held).expect("hold exclusive lock");
+    let before = std::fs::read(root.join("archive").join("manifest.jsonl")).expect("manifest");
+    let outcome = SourceArchive::open_with_timeout(root.join("archive"), 50);
+    assert!(
+        matches!(outcome, Err(ArchiveError::LockBusy { .. })),
+        "bounded lock contention is reported explicitly"
+    );
+    drop(held);
+    assert_eq!(
+        std::fs::read(root.join("archive").join("manifest.jsonl")).expect("manifest"),
+        before,
+        "a busy timeout mutates nothing"
+    );
+    assert!(
+        SourceArchive::open_with_timeout(root.join("archive"), 1000).is_ok(),
+        "the archive opens once the lock is released"
+    );
+}
+
+#[test]
+fn rsv09_torn_tail_is_recovered_only_by_writable_open() {
+    let root = contract_root("rsv09-torn");
+    let manifest = root.join("archive").join("manifest.jsonl");
+    let mut bytes = std::fs::read(&manifest).expect("manifest");
+    bytes.extend_from_slice(b"{\"partial\":");
+    std::fs::write(&manifest, &bytes).expect("append torn fragment");
+    assert!(
+        matches!(
+            SourceArchive::open(root.join("archive")),
+            Err(ArchiveError::TornManifest)
+        ),
+        "normal open still fails closed"
+    );
+    assert!(
+        matches!(
+            SourceArchive::open_readonly(root.join("archive"), 1000),
+            Err(ArchiveError::TornManifest)
+        ),
+        "read-only open never repairs a torn tail"
+    );
+    let recovered = SourceArchive::open_with_timeout(root.join("archive"), 1000)
+        .expect("writable open repairs under lock");
+    assert_eq!(
+        recovered.verify().expect("verification"),
+        1,
+        "complete records survive"
+    );
+    assert!(
+        SourceArchive::open_readonly(root.join("archive"), 1000).is_ok(),
+        "read-only open succeeds after repair"
+    );
+}
+
+#[test]
+fn rsv10_corruption_and_duplicate_digest_fail_closed() {
+    let root = contract_root("rsv10");
+    let archive_root = root.join("archive");
+    let manifest = archive_root.join("manifest.jsonl");
+
+    let digest = contract_digest();
+    let mut conflicting = serde_json::to_vec(&india_reference::SourceRecord {
+        hash_hex: digest.clone(),
+        size: CONTRACT_SOURCE_BYTES.len() as u64,
+        source_id: "conflicting.source".to_owned(),
+        source_version: "v2".to_owned(),
+    })
+    .expect("record");
+    conflicting.push(b'\n');
+    let original = std::fs::read(&manifest).expect("manifest");
+    let mut with_conflict = original.clone();
+    with_conflict.extend_from_slice(&conflicting);
+    std::fs::write(&manifest, &with_conflict).expect("write conflicting record");
+    assert!(
+        matches!(
+            SourceArchive::open(&archive_root).expect("open").verify(),
+            Err(ArchiveError::ConflictingDigest { .. })
+        ),
+        "a conflicting duplicate digest fails closed"
+    );
+
+    let mut malformed = original.clone();
+    malformed.extend_from_slice(b"{not json}\n");
+    std::fs::write(&manifest, &malformed).expect("write malformed record");
+    assert!(
+        matches!(
+            SourceArchive::open(&archive_root).expect("open").verify(),
+            Err(ArchiveError::InvalidRecord(_))
+        ),
+        "a malformed complete line fails closed"
+    );
+
+    std::fs::write(&manifest, &original).expect("restore manifest");
+    let orphan = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+    std::fs::write(
+        archive_root.join("objects").join(orphan),
+        b"unindexed object bytes",
+    )
+    .expect("write orphan object");
+    let archive = SourceArchive::open(&archive_root).expect("open");
+    assert!(
+        archive
+            .unindexed_objects()
+            .expect("orphan scan")
+            .contains(&orphan.to_owned()),
+        "an unindexed object is reported"
+    );
+    assert!(
+        matches!(
+            archive.fetch(orphan),
+            Err(ArchiveError::MissingSource { .. })
+        ),
+        "an unindexed object is never served"
+    );
+}
+
+#[test]
+fn rsv08_replacement_orphan_source_is_not_a_publication() {
+    let root = contract_root("rsv08-orphan");
+    let mut archive = SourceArchive::open(root.join("archive")).expect("archive opens");
+    let record = archive
+        .put_source(b"published-but-not-committed", "nse.cash", "v1")
+        .expect("persist source before publication");
+    let store = DurableReferenceStore::open(&root).expect("store opens");
+    assert_eq!(
+        store.head().expect("head"),
+        None,
+        "no revision was published"
+    );
+    assert_eq!(
+        store.verify_full().expect("verification").revision_count,
+        0,
+        "an archived object is not a publication"
+    );
+    assert_eq!(
+        archive.verify().expect("archive verify"),
+        2,
+        "both sources verify"
+    );
+    assert!(
+        !archive
+            .unindexed_objects()
+            .expect("orphan scan")
+            .contains(&record.hash_hex),
+        "a persisted source is indexed even when no revision references it"
+    );
+}

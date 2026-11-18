@@ -14,7 +14,14 @@ pub mod snapshot;
 pub mod source;
 pub mod store;
 
-pub use archive::{ArchiveError, RecoveryReport, SourceArchive, SourceRecord, recover};
+pub use archive::{
+    ArchiveError, //
+    DEFAULT_ARCHIVE_LOCK_TIMEOUT_MS,
+    RecoveryReport,
+    SourceArchive,
+    SourceRecord,
+    recover,
+};
 pub use csv::{CsvDocument, CsvError, CsvRow, Limits};
 pub use identity::{IdentityError, IdentityRegistry};
 pub use observation::{Exclusion, Rejection, RowOutcome, SnapshotScope, SourceBatch};
