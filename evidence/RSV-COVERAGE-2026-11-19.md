@@ -8,11 +8,23 @@ touch `extras/`.
 
 ## Implemented in this step
 
-| Group | Active behavior | Executable evidence (`crates/india-reference/tests/durability.rs`) |
-|---|---|---|
-| RSV-01 snapshot persistence/validation | `snapshot.rs` versioned envelope, `validate()`, `encode_payload`/`decode_payload`; `DurableReferenceStore::publish/revision` stores and reopens the exact bytes | `rsv01_snapshot_persists_reopen_and_compares_all_fields`, `validation_rejects_noncanonical_and_unknown_fields` |
-| RSV-02 revision identity | contiguous zero-based `revision_id`, numeric parent chain, singleton head, unique publication key, immutable revision/head triggers | `rsv02_revision_ids_contiguous_and_parent_chain_survive_restart`, `stale_expected_parent_rejects_and_publication_key_replay_resolves`, `reference_revisions_and_head_are_immutable` |
-| RSV-03 hashes | semantic hash over exactly `{valid_at, instruments, calendar, listing_states}`; `payload_sha256` over the exact stored envelope bytes; decode order checksum → version → validate → semantic hash → metadata | `rsv03_hashes_stable_across_restart_and_detect_tamper` |
+All test paths below are relative to `crates/india-reference/tests/durability.rs`.
+
+- **RSV-01 snapshot persistence/validation.** `snapshot.rs` provides a versioned
+  envelope, `validate()`, `encode_payload` and `decode_payload`;
+  `DurableReferenceStore::publish/revision` stores and reopens the exact bytes.
+  Tests: `rsv01_snapshot_persists_reopen_and_compares_all_fields`,
+  `validation_rejects_noncanonical_and_unknown_fields`.
+- **RSV-02 revision identity.** Contiguous zero-based `revision_id`, numeric
+  parent chain, singleton head, unique publication key, immutable revision/head
+  triggers. Tests:
+  `rsv02_revision_ids_contiguous_and_parent_chain_survive_restart`,
+  `stale_expected_parent_rejects_and_publication_key_replay_resolves`,
+  `reference_revisions_and_head_are_immutable`.
+- **RSV-03 hashes.** Semantic hash over exactly `{valid_at, instruments,
+  calendar, listing_states}`; `payload_sha256` over the exact stored envelope
+  bytes; decode order checksum → version → validate → semantic hash → metadata.
+  Test: `rsv03_hashes_stable_across_restart_and_detect_tamper`.
 
 The exact publication key is
 `sha256_hex(json!(["p1-04-publication-v1", expected_parent_or_null, schema_version, payload_sha256]))`.
