@@ -132,6 +132,61 @@ fn bse_group_classification_is_versioned_and_fails_closed() {
     );
 }
 
+fn standardised_bse_csv() -> String {
+    format!(
+        "FININSTRMID,TCKRSYMB,FININSTRMNM,ISIN,TICKSZ,NEWBRDLOTQTY,SCTYTPFLG,SCTYSRS,STS\n\
+         500001,AAA,Alpha Limited,{ISIN_A},0.05,1,EQ,A,A\n\
+         500002,BBB,Beta Limited,{ISIN_B},0.05,1,EQ,NS,A\n\
+         500003,CCC,Gamma Limited,{ISIN_A},0.05,1,EQ,A,S\n\
+         500004,DDD,Delta Mutual Fund,{ISIN_B},0.05,1,MF,A,A\n\
+         500005,EEE,Echo Limited,{ISIN_A},0.05,1,EQ,A,A\n"
+    )
+}
+
+#[test]
+fn standardised_bse_master_accounts_for_every_declared_state() {
+    let batch = bse::parse_bse_master(
+        standardised_bse_csv().as_bytes(),
+        "bse-security-master-v2",
+        SnapshotScope::Partial,
+        Limits::default(),
+    )
+    .unwrap();
+    assert!(
+        batch.is_complete(),
+        "every physical row has exactly one outcome"
+    );
+    assert_eq!(batch.accepted.len(), 1, "active classified EQ row accepted");
+    assert_eq!(
+        batch.excluded.len(),
+        2,
+        "suspended status and non-EQ type are declared exclusions"
+    );
+    assert_eq!(
+        batch.rejected.len(),
+        2,
+        "unknown group and duplicate ISIN fail closed"
+    );
+    assert_eq!(
+        batch.accepted[0].scrip_code, "500001",
+        "the active classified scrip keeps its source identifier"
+    );
+    assert_eq!(
+        batch.accepted[0].tick_paise, 5,
+        "0.05 rupees is 5 paise exactly"
+    );
+    assert!(
+        bse::parse_bse_master(
+            standardised_bse_csv().as_bytes(),
+            "bse-security-master-v3",
+            SnapshotScope::Partial,
+            Limits::default(),
+        )
+        .is_err(),
+        "an undeclared standardised version must still fail closed"
+    );
+}
+
 #[test]
 fn csv_parser_handles_logical_records_and_bom() {
     let mut bytes = Vec::new();

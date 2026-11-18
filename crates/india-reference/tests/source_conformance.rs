@@ -116,7 +116,10 @@ fn dated_exchange_sources_conform() {
         "unsupported NSE format version must fail closed"
     );
     assert!(
-        manifest.bse.format_version == "bse-security-master-v1",
+        matches!(
+            manifest.bse.format_version.as_str(),
+            "bse-security-master-v1" | "bse-security-master-v2"
+        ),
         "unsupported BSE format version must fail closed"
     );
     let nse_scope = declared_scope(&manifest.nse.declared_coverage, Venue::Nse);
