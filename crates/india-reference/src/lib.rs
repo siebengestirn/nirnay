@@ -37,16 +37,22 @@ pub use snapshot::{
     latest_states_at,
 };
 pub use store::{
-    DurableReferenceStore, //
+    BACKUP_FORMAT_VERSION, //
+    BackupManifest,
+    BackupResult,
+    DurableReferenceStore,
     Publication,
     PublishOutcome,
     ReferenceStore,
     RestoreOutcome,
+    RestoreVerification,
     STORE_SCHEMA_VERSION,
     StoreError,
     StoredRevision,
     VerificationReport,
+    backup_verified,
     restore_verified,
+    restore_verified_store,
 };
 #[cfg(debug_assertions)]
 pub use store::{durable_connection_for_test, set_fail_point};

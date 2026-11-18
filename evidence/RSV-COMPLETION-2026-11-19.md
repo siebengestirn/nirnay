@@ -1,4 +1,4 @@
-# RSV completion record — PR3 (2026-11-19)
+# RSV completion record — PR3 and PR4 (2026-11-19)
 
 **Scope:** third promotion step for GAP-1. Active crate `india-reference`,
 base `0c05641`. The frozen P1-04 source contract is
@@ -44,8 +44,23 @@ base `0c05641`. The frozen P1-04 source contract is
   a Nirnay-owned crash-boundary protocol. This record does not make that
   decision.
 
+## PR4 addition — RSV-11 backup/restore
+
+`backup_verified` first runs `verify_full`, copies the database with `VACUUM
+INTO`, copies the referenced archive objects, writes a versioned `backup.json`
+with database and archive-manifest hashes, syncs files and directories, then
+renames the staging directory into `<root>/backups/<id>`. `restore_verified_store`
+checks versions and both hashes, verifies the staged store (revisions, parent
+chain, head and source lineage), checks the declared head, and only then swaps
+the staged tree into the target with rollback of any previous target.
+
+| Requirement | Test |
+|---|---|
+| Restore verifies every revision, head, parent chain and source reference | `rsv11_restore_verifies_revisions_head_chain_and_sources` |
+| Tampered database or wrong declared head fails closed with no target | `rsv11_restore_fails_closed_without_publishing_a_target` |
+
 ## Still deferred
 
-RSV-11 (full backup/restore verification) and RSV-12 (performance baseline)
-have no active implementation claim in this step. No capability or claim record
-is promoted.
+RSV-12 (performance baseline) has no active implementation claim in these
+steps. RSV-08 remains an unresolved owner decision as recorded above. No
+capability or claim record is promoted.

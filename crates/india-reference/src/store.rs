@@ -23,6 +23,10 @@ use rusqlite::{
     TransactionBehavior,
     params,
 };
+use serde::{
+    Deserialize, //
+    Serialize,
+};
 use sha2::{
     Digest, //
     Sha256,
@@ -1044,4 +1048,235 @@ pub fn durable_connection_for_test(store: &DurableReferenceStore) -> &Connection
 #[must_use]
 pub fn durable_store_path(store: &DurableReferenceStore) -> &Path {
     &store.path
+}
+
+// ---------------------------------------------------------------------------
+// Promoted P1-04 contract: verified backup and restore (RSV-11).
+// ---------------------------------------------------------------------------
+
+/// Format of the root-based backup manifest. A version change requires a new
+/// reviewed decision; an old backup is never silently reinterpreted.
+pub const BACKUP_FORMAT_VERSION: u32 = 1;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupManifest {
+    pub format_version: u32,
+    pub created_at: String,
+    pub store_schema_version: u32,
+    pub payload_schema_version: u32,
+    pub head_revision_id: Option<u64>,
+    pub database_sha256: String,
+    pub archive_manifest_sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BackupResult {
+    pub path: PathBuf,
+    pub manifest: BackupManifest,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RestoreVerification {
+    pub revision_count: u64,
+    pub head_revision_id: Option<u64>,
+}
+
+fn fresh_stamp() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos()
+}
+
+/// Back up a fully verified store into `<root>/backups/<id>`.
+///
+/// The database is copied with `VACUUM INTO` (never a live WAL copy), the
+/// referenced archive is copied alongside it, and every file is synced before
+/// the staging directory is renamed into place.
+pub fn backup_verified(store: &mut DurableReferenceStore) -> Result<BackupResult, StoreError> {
+    let report = store.verify_full()?;
+    let root = store
+        .path
+        .parent()
+        .ok_or_else(|| StoreError::BadPath("store path has no parent".to_owned()))?;
+    let backups = root.join("backups");
+    std::fs::create_dir_all(&backups)?;
+    let id = format!(
+        "backup-{}-{}-{}",
+        fresh_stamp(),
+        std::process::id(),
+        report.revision_count
+    );
+    let staging = backups.join(format!(".staging-{id}"));
+    let final_path = backups.join(&id);
+    if staging.exists() {
+        std::fs::remove_dir_all(&staging)?;
+    }
+    std::fs::create_dir_all(staging.join("archive").join("objects"))?;
+
+    let database = staging.join("reference.sqlite3");
+    store.connection.execute(
+        "VACUUM INTO ?1",
+        params![database.to_string_lossy().into_owned()],
+    )?;
+    let source_archive = root.join("archive");
+    let archive = staging.join("archive");
+    std::fs::copy(
+        source_archive.join("manifest.jsonl"),
+        archive.join("manifest.jsonl"),
+    )?;
+    for entry in std::fs::read_dir(source_archive.join("objects"))? {
+        let entry = entry?;
+        if entry.file_type()?.is_file() {
+            std::fs::copy(
+                entry.path(),
+                archive.join("objects").join(entry.file_name()),
+            )?;
+        }
+    }
+
+    let manifest = BackupManifest {
+        format_version: BACKUP_FORMAT_VERSION,
+        created_at: Timestamp::now().to_string(),
+        store_schema_version: STORE_SCHEMA_VERSION,
+        payload_schema_version: crate::snapshot::PAYLOAD_SCHEMA_VERSION,
+        head_revision_id: report.head_revision_id,
+        database_sha256: hash_file(&database)?,
+        archive_manifest_sha256: hash_file(&archive.join("manifest.jsonl"))?,
+    };
+    let manifest_text = serde_json::to_vec_pretty(&manifest).map_err(|error| {
+        StoreError::Corruption(format!("backup manifest encoding failed: {error}"))
+    })?;
+    let manifest_path = staging.join("backup.json");
+    std::fs::write(&manifest_path, manifest_text)?;
+    sync_tree(&staging)?;
+    std::fs::rename(&staging, &final_path)?;
+    sync_tree(&backups)?;
+    Ok(BackupResult {
+        path: final_path,
+        manifest,
+    })
+}
+
+fn sync_tree(root: &Path) -> Result<(), StoreError> {
+    let mut directories = vec![root.to_path_buf()];
+    while let Some(directory) = directories.pop() {
+        for entry in std::fs::read_dir(&directory)? {
+            let entry = entry?;
+            let path = entry.path();
+            if entry.file_type()?.is_dir() {
+                directories.push(path);
+                continue;
+            }
+            File::open(&path)?.sync_all()?;
+        }
+    }
+    File::open(root)?.sync_all()?;
+    Ok(())
+}
+
+/// Verify a backup in a staging directory, then swap it into `target_root`.
+/// A verification failure never creates or replaces the target.
+pub fn restore_verified_store(
+    backup_dir: &Path,
+    target_root: &Path,
+) -> Result<RestoreVerification, StoreError> {
+    if backup_dir.is_symlink() || target_root.is_symlink() {
+        return Err(StoreError::BadPath(
+            "backup inputs contain a symlink".to_owned(),
+        ));
+    }
+    let manifest_text =
+        std::fs::read_to_string(backup_dir.join("backup.json")).map_err(|error| {
+            StoreError::Corruption(format!(
+                "backup manifest at {}: {error}",
+                backup_dir.join("backup.json").display()
+            ))
+        })?;
+    let manifest: BackupManifest = serde_json::from_str(&manifest_text)
+        .map_err(|error| StoreError::Corruption(format!("backup manifest is invalid: {error}")))?;
+    if manifest.format_version != BACKUP_FORMAT_VERSION
+        || manifest.store_schema_version != STORE_SCHEMA_VERSION
+        || manifest.payload_schema_version != crate::snapshot::PAYLOAD_SCHEMA_VERSION
+    {
+        return Err(StoreError::UnsupportedStoreSchema {
+            actual: manifest.store_schema_version,
+            expected: STORE_SCHEMA_VERSION,
+        });
+    }
+    let backup_database = backup_dir.join("reference.sqlite3");
+    let backup_archive_manifest = backup_dir.join("archive").join("manifest.jsonl");
+    if hash_file(&backup_database)? != manifest.database_sha256
+        || hash_file(&backup_archive_manifest)? != manifest.archive_manifest_sha256
+    {
+        return Err(StoreError::Corruption(
+            "backup file hashes do not match the manifest".to_owned(),
+        ));
+    }
+
+    let parent = target_root
+        .parent()
+        .ok_or_else(|| StoreError::BadPath("restore target has no parent".to_owned()))?;
+    std::fs::create_dir_all(parent)?;
+    let staging = parent.join(format!(
+        ".restore-staging-{}-{}",
+        fresh_stamp(),
+        std::process::id()
+    ));
+    if staging.exists() {
+        std::fs::remove_dir_all(&staging)?;
+    }
+    copy_tree(backup_dir, &staging).map_err(|error| {
+        StoreError::Corruption(format!(
+            "staging restore copy from {}: {error}",
+            backup_dir.display()
+        ))
+    })?;
+    let verified = (|| -> Result<RestoreVerification, StoreError> {
+        let store = DurableReferenceStore::open(&staging).map_err(|error| {
+            StoreError::Corruption(format!(
+                "opening staged restore at {}: {error}",
+                staging.display()
+            ))
+        })?;
+        let report = store.verify_full()?;
+        if report.head_revision_id != manifest.head_revision_id {
+            return Err(StoreError::Corruption(
+                "restored head does not match the backup manifest".to_owned(),
+            ));
+        }
+        Ok(RestoreVerification {
+            revision_count: report.revision_count,
+            head_revision_id: report.head_revision_id,
+        })
+    })();
+    let verification = match verified {
+        Ok(value) => value,
+        Err(error) => {
+            // A failed verification leaves no staging residue behind.
+            let _ = std::fs::remove_dir_all(&staging);
+            return Err(error);
+        }
+    };
+
+    let previous = parent.join(format!(
+        ".restore-previous-{}-{}",
+        fresh_stamp(),
+        std::process::id()
+    ));
+    let had_previous = target_root.exists();
+    if had_previous {
+        std::fs::rename(target_root, &previous)?;
+    }
+    if let Err(error) = std::fs::rename(&staging, target_root) {
+        if had_previous {
+            let _ = std::fs::rename(&previous, target_root);
+        }
+        return Err(error.into());
+    }
+    if had_previous {
+        std::fs::remove_dir_all(&previous)?;
+    }
+    Ok(verification)
 }

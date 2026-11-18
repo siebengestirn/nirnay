@@ -55,9 +55,9 @@ RSV-07 concurrency and RSV-09/RSV-10 filesystem and corruption handling are
 covered by PR3; see `evidence/RSV-COMPLETION-2026-11-19.md`. RSV-08 crash
 boundaries are **not passed**: the frozen protocol's archive-write and
 manifest-append boundaries do not exist in the active design, and an owner
-decision is required to supersede them. RSV-11 backup/restore and RSV-12
-performance baseline remain uncovered. No capability or claim record is
-promoted by these steps.
+decision is required to supersede them. RSV-11 is covered by PR4 (see
+`evidence/RSV-COMPLETION-2026-11-19.md`). RSV-12 performance baseline remains
+uncovered. No capability or claim record is promoted by these steps.
 
 ## Nirnay-owned decisions (not copied from the predecessor)
 
