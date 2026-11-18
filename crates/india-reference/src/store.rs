@@ -47,8 +47,6 @@ pub enum StoreError {
     BadPath(String),
     #[error("reference store corruption: {0}")]
     Corruption(String),
-    #[error("the previous commit outcome is unknown; reopen and resolve by publication key")]
-    Poisoned,
     #[error("unsupported reference store schema version {actual}; expected {expected}")]
     UnsupportedStoreSchema { actual: u32, expected: u32 },
     #[error(transparent)]
@@ -545,6 +543,10 @@ pub enum RestoreOutcome {
 /// Schema version of the contract-shaped reference tables.
 pub const STORE_SCHEMA_VERSION: u32 = 1;
 
+type RawReplayRow = (i64, Option<i64>, String, String, Vec<u8>);
+
+type ReplayRow = (u64, Option<u64>, String, String, Vec<u8>);
+
 type RawContractRevision = (
     i64,
     Option<i64>,
@@ -626,7 +628,6 @@ pub struct VerificationReport {
 pub struct DurableReferenceStore {
     connection: Connection,
     path: PathBuf,
-    poisoned: bool,
 }
 
 fn contract_hex(bytes: &[u8]) -> String {
@@ -667,7 +668,7 @@ fn publication_key(
     let bytes = serde_json::to_vec(&serde_json::json!([
         "p1-04-publication-v1",
         parent,
-        STORE_SCHEMA_VERSION,
+        crate::snapshot::PAYLOAD_SCHEMA_VERSION,
         payload_sha256
     ]))
     .map_err(|error| StoreError::Corruption(format!("publication key encoding failed: {error}")))?;
@@ -715,11 +716,7 @@ impl DurableReferenceStore {
                 "reference store schema version could not be established".to_owned(),
             ));
         }
-        Ok(Self {
-            connection,
-            path,
-            poisoned: false,
-        })
+        Ok(Self { connection, path })
     }
 
     /// Publish a snapshot. An exact key replay is idempotent; a stale expected
@@ -729,9 +726,6 @@ impl DurableReferenceStore {
         snapshot: &crate::snapshot::ReferenceSnapshot,
         expected_parent: Option<u64>,
     ) -> Result<PublishOutcome, StoreError> {
-        if self.poisoned {
-            return Err(StoreError::Poisoned);
-        }
         snapshot.validate()?;
         let payload = crate::snapshot::encode_payload(snapshot)?;
         let payload_sha256 = contract_hex(&payload);
@@ -746,22 +740,48 @@ impl DurableReferenceStore {
         // An exact key replay is resolved before the parent check: a retry of
         // an acknowledged delivery must not be turned into a stale-parent
         // error by its own earlier success.
-        let raw: Option<(i64, String, String)> = transaction
+        let raw: Option<RawReplayRow> = transaction
             .query_row(
-                "SELECT revision_id, snapshot_hash, payload_sha256 FROM reference_revision WHERE publication_key = ?1",
+                "SELECT revision_id, parent_revision_id, snapshot_hash, payload_sha256, payload FROM reference_revision WHERE publication_key = ?1",
                 params![key],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
             )
             .optional()?;
-        let existing: Option<(u64, String, String)> = raw
-            .map(|(id, hash, payload)| {
-                Ok::<_, StoreError>((read_revision_id_from_value(id)?, hash, payload))
+        let existing: Option<ReplayRow> = raw
+            .map(|(id, parent, hash, checksum, bytes)| {
+                Ok::<_, StoreError>((
+                    read_revision_id_from_value(id)?,
+                    match parent {
+                        Some(value) => Some(read_revision_id_from_value(value)?),
+                        None => None,
+                    },
+                    hash,
+                    checksum,
+                    bytes,
+                ))
             })
             .transpose()?;
-        if let Some((revision_id, stored_hash, stored_payload)) = existing {
-            if stored_hash != snapshot_hash || stored_payload != payload_sha256 {
+        if let Some((revision_id, stored_parent, stored_hash, stored_checksum, stored_bytes)) =
+            existing
+        {
+            // Replay is only safe when the committed row still matches every
+            // dimension of the key, including its parent and exact bytes.
+            if stored_parent != expected_parent
+                || stored_hash != snapshot_hash
+                || stored_checksum != payload_sha256
+                || contract_hex(&stored_bytes) != stored_checksum
+            {
                 return Err(StoreError::Corruption(
-                    "publication key was reused with different snapshot content".to_owned(),
+                    "publication key was reused with a different parent or snapshot content"
+                        .to_owned(),
                 ));
             }
             transaction.commit()?;
@@ -812,9 +832,6 @@ impl DurableReferenceStore {
 
     /// The committed head revision id, if any.
     pub fn head(&self) -> Result<Option<u64>, StoreError> {
-        if self.poisoned {
-            return Err(StoreError::Poisoned);
-        }
         read_head(&self.connection)
     }
 

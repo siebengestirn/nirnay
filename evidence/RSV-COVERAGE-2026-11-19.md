@@ -26,8 +26,9 @@ All test paths below are relative to `crates/india-reference/tests/durability.rs
   bytes; decode order checksum → version → validate → semantic hash → metadata.
   Test: `rsv03_hashes_stable_across_restart_and_detect_tamper`.
 
-The exact publication key is
-`sha256_hex(json!(["p1-04-publication-v1", expected_parent_or_null, schema_version, payload_sha256]))`.
+The exact publication key is `sha256_hex` of a JSON array containing the
+marker `p1-04-publication-v1`, the expected parent (or null), the payload
+schema version and `payload_sha256`.
 An exact key replay is resolved before the parent fence so a retry of an
 acknowledged delivery cannot be turned into a stale-parent error by its own
 earlier success.

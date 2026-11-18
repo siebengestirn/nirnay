@@ -569,15 +569,18 @@ fn copy_directory(source: &std::path::Path, destination: &std::path::Path) {
 // ---------------------------------------------------------------------------
 
 use india_domain::{
-    Instrument, //
+    CalendarDay, //
+    Instrument,
     InstrumentId,
     Listing,
     ListingStatus,
     ListingTerms,
     Segment,
+    SessionDay,
     SettlementRegime,
     SourceProvenance,
     TickAssignment,
+    TradingCalendar,
 };
 use india_reference::{
     DurableReferenceStore, //
@@ -660,11 +663,38 @@ fn contract_instrument(id: &str, isin: &str, symbol: &str) -> Instrument {
     }
 }
 
+fn contract_state(
+    instrument_id: &InstrumentId,
+    symbol: &str,
+    valid_from: Date,
+    valid_to: Option<Date>,
+    recorded_at: Timestamp,
+) -> ListingStateRecord {
+    ListingStateRecord {
+        instrument_id: instrument_id.clone(),
+        venue: Venue::Nse,
+        symbol: symbol.to_owned(),
+        token: None,
+        status: ListingStatus::Active,
+        settlement_regime: SettlementRegime::Standard,
+        z_category: false,
+        settlement_group: None,
+        market_lot: 1,
+        tick_assignment: contract_tick(),
+        valid_from,
+        valid_to,
+        recorded_at,
+        provenance: contract_provenance(DIGEST_A),
+    }
+}
+
 fn contract_snapshot(suffix: &str) -> ReferenceSnapshot {
     let instrument_id = InstrumentId::new(format!("eq.{suffix}")).expect("valid id");
     let recorded_at: Timestamp = "2026-11-18T12:00:00Z".parse().expect("valid timestamp");
+    let later: Timestamp = "2026-11-19T12:00:00Z".parse().expect("valid timestamp");
+    let day = Date::new(2026, 11, 18).expect("valid date");
     ReferenceSnapshot {
-        valid_at: Date::new(2026, 11, 18).expect("valid date"),
+        valid_at: day,
         recorded_at,
         provenance: contract_provenance(DIGEST_A),
         instruments: vec![contract_instrument(
@@ -672,28 +702,38 @@ fn contract_snapshot(suffix: &str) -> ReferenceSnapshot {
             "INE848E01016",
             suffix,
         )],
-        calendar: None,
+        calendar: Some(TradingCalendar {
+            venue: Venue::Nse,
+            days: vec![CalendarDay {
+                venue: Venue::Nse,
+                date: day,
+                session: SessionDay::Trading,
+                note: None,
+            }],
+        }),
         reconciliation: Some(Reconciliation {
             added: vec![instrument_id.clone()],
             removed: Vec::new(),
             changed: Vec::new(),
         }),
-        listing_states: vec![ListingStateRecord {
-            instrument_id,
-            venue: Venue::Nse,
-            symbol: suffix.to_owned(),
-            token: None,
-            status: ListingStatus::Active,
-            settlement_regime: SettlementRegime::Standard,
-            z_category: false,
-            settlement_group: None,
-            market_lot: 1,
-            tick_assignment: contract_tick(),
-            valid_from: Date::new(2026, 1, 1).expect("valid date"),
-            valid_to: None,
-            recorded_at,
-            provenance: contract_provenance(DIGEST_A),
-        }],
+        // Canonical order is by recorded_at first, not by instrument or
+        // validity. Both a calendar and a multi-record history are exercised.
+        listing_states: vec![
+            contract_state(
+                &instrument_id,
+                suffix,
+                Date::new(2026, 1, 1).expect("valid date"),
+                Some(Date::new(2026, 11, 17).expect("valid date")),
+                recorded_at,
+            ),
+            contract_state(
+                &instrument_id,
+                suffix,
+                Date::new(2026, 11, 18).expect("valid date"),
+                None,
+                later,
+            ),
+        ],
     }
 }
 
@@ -750,6 +790,13 @@ fn validation_rejects_noncanonical_and_unknown_fields() {
     assert!(
         duplicate.validate().is_err(),
         "duplicate observation keys are refused"
+    );
+
+    let mut noncanonical = contract_snapshot("alpha");
+    noncanonical.listing_states.reverse();
+    assert!(
+        noncanonical.validate().is_err(),
+        "non-canonical listing-state order is refused, not silently sorted"
     );
 
     let mut unknown = serde_json::to_value(contract_snapshot("alpha")).expect("snapshot value");

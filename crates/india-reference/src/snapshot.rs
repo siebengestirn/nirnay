@@ -105,6 +105,8 @@ pub struct PayloadEnvelope {
     pub snapshot: ReferenceSnapshot,
 }
 
+type ListingStateOrderKey<'a> = (Timestamp, &'a str, u8, &'a str, Date, Option<Date>);
+
 fn invalid(message: impl Into<String>) -> SnapshotError {
     SnapshotError::Validation(message.into())
 }
@@ -148,7 +150,7 @@ impl ReferenceSnapshot {
             }
         }
 
-        let mut previous_state: Option<(&InstrumentId, Venue, Date, Timestamp)> = None;
+        let mut previous_state: Option<ListingStateOrderKey<'_>> = None;
         for state in &self.listing_states {
             state
                 .provenance
@@ -166,15 +168,21 @@ impl ReferenceSnapshot {
                 return Err(invalid("listing state tick size must be positive"));
             }
             validate_tick_lineage(&state.tick_assignment)?;
+            // Frozen contract canonical order: (recorded_at, instrument_id,
+            // venue discriminant, symbol, valid_from, valid_to), with a null
+            // valid_to sorting before a present date. The vector must already
+            // be in this order; it is never sorted silently.
             let key = (
-                &state.instrument_id,
-                state.venue,
-                state.valid_from,
                 state.recorded_at,
+                state.instrument_id.as_str(),
+                venue_discriminant(state.venue),
+                state.symbol.as_str(),
+                state.valid_from,
+                state.valid_to,
             );
             if previous_state.is_some_and(|old| old >= key) {
                 return Err(invalid(
-                    "listing states must be strictly ordered by observation key",
+                    "listing states must be in canonical order by recorded_at, instrument, venue, symbol and validity",
                 ));
             }
             previous_state = Some(key);
@@ -204,6 +212,13 @@ impl ReferenceSnapshot {
         let bytes =
             serde_json::to_vec(&value).map_err(|error| SnapshotError::Encode(error.to_string()))?;
         Ok(hex_digest(&bytes))
+    }
+}
+
+fn venue_discriminant(venue: Venue) -> u8 {
+    match venue {
+        Venue::Nse => 0,
+        Venue::Bse => 1,
     }
 }
 
