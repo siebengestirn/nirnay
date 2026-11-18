@@ -24,6 +24,10 @@ use trading_core::{
 
 const ISIN_A: &str = "INE848E01016";
 const ISIN_B: &str = "INE002A01018";
+const DIGEST_1: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const DIGEST_2: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+const DIGEST_A: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+const DIGEST_B: &str = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
 
 fn archive_root(directory: &Path) -> PathBuf {
     directory.join("archive")
@@ -108,22 +112,22 @@ fn revisions_enforce_parent_and_idempotency() {
     let path = directory.path().join("reference.sqlite3");
     let mut store = ReferenceStore::open(&path).unwrap();
     let first = store
-        .publish_revision(None, "digest-1", Path::new("revision-1.json"), "key-1")
+        .publish_revision(None, DIGEST_1, Path::new("revision-1.json"), "key-1")
         .unwrap();
     assert!(!first.deduplicated, "first publication is new");
     let repeat = store
-        .publish_revision(None, "digest-1", Path::new("revision-1.json"), "key-1")
+        .publish_revision(None, DIGEST_1, Path::new("revision-1.json"), "key-1")
         .unwrap();
     assert!(repeat.deduplicated, "same key and digest is idempotent");
     assert!(
         matches!(
-            store.publish_revision(Some("wrong"), "digest-2", Path::new("r2"), "key-2"),
+            store.publish_revision(Some("wrong"), DIGEST_2, Path::new("r2"), "key-2"),
             Err(StoreError::ParentMismatch { .. })
         ),
         "wrong parent fails closed"
     );
     let second = store
-        .publish_revision(Some("digest-1"), "digest-2", Path::new("r2"), "key-2")
+        .publish_revision(Some(DIGEST_1), DIGEST_2, Path::new("r2"), "key-2")
         .unwrap();
     assert!(
         second.sequence > first.sequence,
@@ -131,7 +135,7 @@ fn revisions_enforce_parent_and_idempotency() {
     );
     assert_eq!(
         store.head().unwrap().as_deref(),
-        Some("digest-2"),
+        Some(DIGEST_2),
         "head advances to the last published revision"
     );
 }
@@ -145,7 +149,7 @@ fn backup_and_restore_preserve_db_manifest_and_objects() {
         .resolve_identity(&Isin::new(ISIN_A).unwrap(), Venue::Nse, "AAA", "in.ref")
         .unwrap();
     store
-        .publish_revision(None, "digest-1", Path::new("revision-1.json"), "key-1")
+        .publish_revision(None, DIGEST_1, Path::new("revision-1.json"), "key-1")
         .unwrap();
     let archive_root = directory.path().join("archive");
     let mut archive = SourceArchive::create_new(&archive_root).unwrap();
@@ -176,7 +180,7 @@ fn backup_and_restore_preserve_db_manifest_and_objects() {
     let mut restored_store = ReferenceStore::open(restore_dir.join("reference.sqlite3")).unwrap();
     assert_eq!(
         restored_store.head().unwrap().as_deref(),
-        Some("digest-1"),
+        Some(DIGEST_1),
         "restored store retains the revision head"
     );
     let restored_archive = SourceArchive::open(restore_dir.join("source-archive")).unwrap();
@@ -295,7 +299,7 @@ fn revisions_are_immutable_on_update() {
     let directory = tempfile::tempdir().unwrap();
     let mut store = ReferenceStore::open(directory.path().join("immutable.sqlite3")).unwrap();
     store
-        .publish_revision(None, "digest-1", Path::new("r1"), "key-1")
+        .publish_revision(None, DIGEST_1, Path::new("r1"), "key-1")
         .unwrap();
     assert!(
         store
@@ -316,7 +320,7 @@ fn concurrent_publishers_cannot_bypass_the_parent_check() {
         move || {
             let mut store = ReferenceStore::open(&path).unwrap();
             store
-                .publish_revision(None, "digest-a", Path::new("a"), "key-a")
+                .publish_revision(None, DIGEST_A, Path::new("a"), "key-a")
                 .map(|_| ())
                 .map_err(|e| format!("{e}"))
         }
@@ -324,7 +328,7 @@ fn concurrent_publishers_cannot_bypass_the_parent_check() {
     let second = std::thread::spawn(move || {
         let mut store = ReferenceStore::open(&path).unwrap();
         store
-            .publish_revision(None, "digest-b", Path::new("b"), "key-b")
+            .publish_revision(None, DIGEST_B, Path::new("b"), "key-b")
             .map(|_| ())
             .map_err(|e| format!("{e}"))
     });
@@ -376,5 +380,95 @@ fn fresh_process_crash_leaves_no_identity() {
         recovered.as_str(),
         "in.ref00000000",
         "crashed transaction consumed no identity"
+    );
+}
+
+#[test]
+fn non_hex_digest_is_rejected() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut store = ReferenceStore::open(directory.path().join("digest.sqlite3")).unwrap();
+    assert!(
+        store
+            .publish_revision(None, "not-a-digest", Path::new("r"), "key")
+            .is_err(),
+        "a digest must be content-bound hex"
+    );
+}
+
+#[test]
+fn after_commit_publication_failure_is_visible_on_reopen() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("after-commit.sqlite3");
+    let mut store = ReferenceStore::open(&path).unwrap();
+    india_reference::set_fail_point(Some("after_commit"));
+    let result = store.publish_revision(None, DIGEST_1, Path::new("r1"), "key-1");
+    india_reference::set_fail_point(None);
+    assert!(result.is_err(), "injected post-commit failure is reported");
+    let reopened = ReferenceStore::open(&path).unwrap();
+    assert_eq!(
+        reopened.head().unwrap().as_deref(),
+        Some(DIGEST_1),
+        "the committed revision is visible after restart"
+    );
+}
+
+#[test]
+fn restore_sync_failure_is_uncertain_not_clean_rollback() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("sync.sqlite3");
+    let store = ReferenceStore::open(&source).unwrap();
+    let backup_root = directory.path().join("backup");
+    let archive_root = directory.path().join("archive");
+    std::fs::create_dir(&archive_root).unwrap();
+    std::fs::write(archive_root.join("manifest.jsonl"), b"").unwrap();
+    store
+        .backup_with_source(&backup_root, &archive_root)
+        .unwrap();
+    india_reference::set_fail_point(Some("restore_sync"));
+    let outcome =
+        india_reference::restore_verified(&backup_root, &directory.path().join("restored"));
+    india_reference::set_fail_point(None);
+    assert_eq!(
+        outcome.unwrap(),
+        india_reference::RestoreOutcome::Uncertain {
+            message: "parent directory sync failed after restore; target may have changed"
+                .to_owned()
+        },
+        "an uncertain restore is represented explicitly"
+    );
+}
+
+/// Child-only process-termination worker: commits an identity, then aborts.
+#[test]
+#[ignore = "child-only crash worker invoked by parent with --ignored"]
+fn child_abort_after_commit() {
+    let path = std::env::var_os("NIRNAY_ABORT_DB").expect("child requires NIRNAY_ABORT_DB");
+    let mut store = ReferenceStore::open(PathBuf::from(path)).unwrap();
+    store
+        .resolve_identity(&Isin::new(ISIN_A).unwrap(), Venue::Nse, "AAA", "in.ref")
+        .unwrap();
+    std::process::abort();
+}
+
+#[test]
+fn process_termination_after_commit_does_not_duplicate_identity() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("abort.sqlite3");
+    let child = Command::new(std::env::current_exe().unwrap())
+        .arg("--ignored")
+        .arg("child_abort_after_commit")
+        .env("NIRNAY_ABORT_DB", &path)
+        .output()
+        .unwrap();
+    assert!(!child.status.success(), "child process was terminated");
+
+    let mut store = ReferenceStore::open(&path).unwrap();
+    let identity = store
+        .resolve_identity(&Isin::new(ISIN_A).unwrap(), Venue::Nse, "AAA", "in.ref")
+        .unwrap();
+    assert_eq!(
+        identity.as_str(),
+        "in.ref00000000",
+        "committed identity is recovered once, without reuse"
     );
 }

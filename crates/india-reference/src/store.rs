@@ -47,6 +47,7 @@ pub enum StoreError {
 enum FailPoint {
     BeforeCommit,
     AfterCommit,
+    RestoreSync,
 }
 
 #[cfg(debug_assertions)]
@@ -59,6 +60,7 @@ fn inject(point: FailPoint) -> Result<(), StoreError> {
     let code = match point {
         FailPoint::BeforeCommit => 1,
         FailPoint::AfterCommit => 2,
+        FailPoint::RestoreSync => 3,
     };
     if FAIL_POINT.with(|cell| cell.get()) == code {
         return Err(StoreError::BadPath(format!(
@@ -78,6 +80,7 @@ pub fn set_fail_point(point: Option<&str>) {
     let code = match point {
         Some("before_commit") => 1,
         Some("after_commit") => 2,
+        Some("restore_sync") => 3,
         _ => 0,
     };
     FAIL_POINT.with(|cell| cell.set(code));
@@ -305,9 +308,21 @@ impl ReferenceStore {
                 actual: head,
             });
         }
-        if digest.trim().is_empty() || output_path.as_os_str().is_empty() {
+        if digest.len() != 64
+            || !digest
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        {
             return Err(StoreError::BadPath(
-                "digest and output path are required".to_owned(),
+                "digest must be 64 lowercase hex characters".to_owned(),
+            ));
+        }
+        if output_path.as_os_str().is_empty()
+            || output_path.is_absolute()
+            || output_path.components().count() != 1
+        {
+            return Err(StoreError::BadPath(
+                "output path must be a relative file name".to_owned(),
             ));
         }
         transaction.execute(
@@ -426,7 +441,7 @@ fn hash_file(path: &Path) -> Result<String, StoreError> {
     };
     let mut file = File::open(path)?;
     let mut hasher = Sha256::new();
-    let mut buffer = [0_u8; 1024 * 1024];
+    let mut buffer = vec![0_u8; 64 * 1024];
     loop {
         let read = file.read(&mut buffer)?;
         if read == 0 {
@@ -496,7 +511,7 @@ pub fn restore_verified(backup: &Path, target: &Path) -> Result<RestoreOutcome, 
         .parent()
         .ok_or_else(|| StoreError::BadPath("restore target has no parent directory".to_owned()))?;
     let directory = File::open(staging)?;
-    if directory.sync_all().is_err() {
+    if inject(FailPoint::RestoreSync).is_err() || directory.sync_all().is_err() {
         return Ok(RestoreOutcome::Uncertain {
             message: "parent directory sync failed after restore; target may have changed"
                 .to_owned(),

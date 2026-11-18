@@ -29,7 +29,7 @@ use sha2::{
 };
 use thiserror::Error;
 
-const COPY_BUFFER: usize = 1024 * 1024;
+const COPY_BUFFER: usize = 64 * 1024;
 const MAX_MANIFEST_LINE: usize = 64 * 1024;
 const MAX_OBJECT_BYTES: usize = 256 * 1024 * 1024;
 
@@ -89,7 +89,7 @@ impl SourceArchive {
         let root = root.into();
         let path = root.join("manifest.jsonl");
         let mut file = File::open(path)?;
-        let mut buffer = [0_u8; COPY_BUFFER];
+        let mut buffer = vec![0_u8; COPY_BUFFER];
         let mut last_byte = 0_u8;
         loop {
             let read = file.read(&mut buffer)?;
@@ -164,7 +164,9 @@ impl SourceArchive {
         let mut count = 0_usize;
         loop {
             line.clear();
-            let read = reader.read_until(b'\n', &mut line)?;
+            let read = (&mut reader)
+                .take(MAX_MANIFEST_LINE as u64 + 1)
+                .read_until(b'\n', &mut line)?;
             if read == 0 {
                 break;
             }
@@ -186,9 +188,14 @@ impl SourceArchive {
 }
 
 fn verify_object(path: &Path, record: &SourceRecord) -> Result<(), ArchiveError> {
+    if record.size > MAX_OBJECT_BYTES as u64 {
+        return Err(ArchiveError::ObjectTooLarge {
+            limit: MAX_OBJECT_BYTES,
+        });
+    }
     let mut file = File::open(path)?;
     let mut hasher = Sha256::new();
-    let mut buffer = [0_u8; COPY_BUFFER];
+    let mut buffer = vec![0_u8; COPY_BUFFER];
     let mut total = 0_u64;
     loop {
         let read = file.read(&mut buffer)?;
@@ -197,6 +204,7 @@ fn verify_object(path: &Path, record: &SourceRecord) -> Result<(), ArchiveError>
         }
         total = total
             .checked_add(read as u64)
+            .filter(|value| *value <= MAX_OBJECT_BYTES as u64)
             .ok_or(ArchiveError::ObjectTooLarge {
                 limit: MAX_OBJECT_BYTES,
             })?;
@@ -214,7 +222,7 @@ fn verify_object(path: &Path, record: &SourceRecord) -> Result<(), ArchiveError>
 /// keeps every complete record. Never silently truncates.
 fn manifest_boundary(path: &Path) -> Result<(u64, u64, usize), ArchiveError> {
     let mut file = File::open(path)?;
-    let mut buffer = [0_u8; COPY_BUFFER];
+    let mut buffer = vec![0_u8; COPY_BUFFER];
     let mut offset = 0_u64;
     let mut last_newline = None;
     let mut records = 0_usize;
@@ -245,7 +253,7 @@ pub fn recover(root: impl AsRef<Path>) -> Result<RecoveryReport, ArchiveError> {
     {
         let mut source = File::open(&path)?;
         std::io::Seek::seek(&mut source, std::io::SeekFrom::Start(complete_len))?;
-        let mut buffer = [0_u8; COPY_BUFFER];
+        let mut buffer = vec![0_u8; COPY_BUFFER];
         let mut remaining = damaged_len;
         while remaining > 0 {
             let wanted = remaining.min(buffer.len() as u64) as usize;
