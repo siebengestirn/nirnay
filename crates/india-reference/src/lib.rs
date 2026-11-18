@@ -24,8 +24,10 @@ pub use snapshot::{
     Reconciliation,
     ReferenceSnapshot,
     SnapshotError,
+    collect_lineage_hashes,
     decode_payload,
     encode_payload,
+    latest_states_at,
 };
 pub use store::{
     DurableReferenceStore, //

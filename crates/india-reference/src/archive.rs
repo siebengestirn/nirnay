@@ -19,6 +19,7 @@ use std::path::{
     PathBuf,
 };
 
+use india_domain::is_sha256_hex;
 use serde::{
     Deserialize, //
     Serialize,
@@ -47,6 +48,8 @@ pub enum ArchiveError {
     ManifestLineTooLarge { limit: usize },
     #[error("archive manifest record is invalid: {0}")]
     InvalidRecord(String),
+    #[error("archived source {hash} is not indexed by the manifest")]
+    MissingSource { hash: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -154,6 +157,51 @@ impl SourceArchive {
         manifest.write_all(b"\n")?;
         manifest.sync_all()?;
         Ok(record)
+    }
+
+    fn find_record(&self, hash_hex: &str) -> Result<Option<SourceRecord>, ArchiveError> {
+        if !is_sha256_hex(hash_hex) {
+            return Err(ArchiveError::InvalidRecord(
+                "source lookup key is not a sha256 value".to_owned(),
+            ));
+        }
+        let mut reader = BufReader::new(File::open(self.manifest_path())?);
+        let mut line = Vec::new();
+        loop {
+            line.clear();
+            let read = (&mut reader)
+                .take(MAX_MANIFEST_LINE as u64 + 1)
+                .read_until(b'\n', &mut line)?;
+            if read == 0 {
+                return Ok(None);
+            }
+            if line.last() == Some(&b'\n') {
+                line.pop();
+            }
+            let record: SourceRecord = serde_json::from_slice(&line)
+                .map_err(|error| ArchiveError::InvalidRecord(error.to_string()))?;
+            if record.hash_hex == hash_hex {
+                return Ok(Some(record));
+            }
+        }
+    }
+
+    /// Assert that a hash resolves to a manifest entry whose object bytes still
+    /// verify. Used before a reference revision can claim source lineage.
+    pub fn resolve(&self, hash_hex: &str) -> Result<(), ArchiveError> {
+        let record = self
+            .find_record(hash_hex)?
+            .ok_or_else(|| ArchiveError::MissingSource {
+                hash: hash_hex.to_owned(),
+            })?;
+        verify_object(&self.object_path(hash_hex), &record)
+    }
+
+    /// Fetch archived bytes by content hash. An unindexed or corrupt object is
+    /// never returned, even when a file happens to exist on disk.
+    pub fn fetch(&self, hash_hex: &str) -> Result<Vec<u8>, ArchiveError> {
+        self.resolve(hash_hex)?;
+        std::fs::read(self.object_path(hash_hex)).map_err(ArchiveError::from)
     }
 
     /// Stream the manifest and verify every referenced object.
