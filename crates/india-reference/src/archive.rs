@@ -4,6 +4,10 @@
 //! operation that quarantines damaged bytes and writes a report. Object bytes
 //! are verified against their manifest hash and reads and writes are bounded.
 
+use std::collections::{
+    BTreeMap, //
+    BTreeSet,
+};
 use std::fs::{
     File, //
     OpenOptions,
@@ -11,6 +15,7 @@ use std::fs::{
 use std::io::{
     BufRead, //
     BufReader,
+    ErrorKind,
     Read,
     Write,
 };
@@ -18,7 +23,12 @@ use std::path::{
     Path, //
     PathBuf,
 };
+use std::time::{
+    Duration, //
+    Instant,
+};
 
+use fs2::FileExt;
 use india_domain::is_sha256_hex;
 use serde::{
     Deserialize, //
@@ -29,6 +39,9 @@ use sha2::{
     Sha256,
 };
 use thiserror::Error;
+
+/// Default bounded wait for the per-archive advisory lock.
+pub const DEFAULT_ARCHIVE_LOCK_TIMEOUT_MS: u64 = 10_000;
 
 const COPY_BUFFER: usize = 64 * 1024;
 const MAX_MANIFEST_LINE: usize = 64 * 1024;
@@ -50,6 +63,10 @@ pub enum ArchiveError {
     InvalidRecord(String),
     #[error("archived source {hash} is not indexed by the manifest")]
     MissingSource { hash: String },
+    #[error("archive lock was not acquired within {timeout_ms} ms")]
+    LockBusy { timeout_ms: u64 },
+    #[error("archive manifest has a conflicting duplicate digest {hash}")]
+    ConflictingDigest { hash: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -107,6 +124,71 @@ impl SourceArchive {
         Ok(Self { root })
     }
 
+    /// Open an existing archive, taking a bounded shared lock and repairing a
+    /// torn manifest tail by truncating to the last complete record. Normal
+    /// `open()` continues to fail closed; repair only happens here, under the
+    /// exclusive lock, and is visible to every later reader.
+    pub fn open_with_timeout(
+        root: impl Into<PathBuf>,
+        timeout_ms: u64,
+    ) -> Result<Self, ArchiveError> {
+        let root = root.into();
+        let archive = Self { root };
+        let _guard = archive.acquire_lock(true, timeout_ms)?;
+        let (complete_len, total, _) = manifest_boundary(&archive.manifest_path())?;
+        if total > complete_len {
+            let manifest = OpenOptions::new()
+                .write(true)
+                .open(archive.manifest_path())?;
+            manifest.set_len(complete_len)?;
+            manifest.sync_all()?;
+        }
+        Ok(archive)
+    }
+
+    /// Open an existing archive for reads under a shared lock. A torn tail is
+    /// refused; only a writable `open_with_timeout` may repair it.
+    pub fn open_readonly(root: impl Into<PathBuf>, timeout_ms: u64) -> Result<Self, ArchiveError> {
+        let root = root.into();
+        let archive = Self { root };
+        let _guard = archive.acquire_lock(false, timeout_ms)?;
+        let (complete_len, total, _) = manifest_boundary(&archive.manifest_path())?;
+        if total > complete_len {
+            return Err(ArchiveError::TornManifest);
+        }
+        Ok(archive)
+    }
+
+    fn acquire_lock(&self, exclusive: bool, timeout_ms: u64) -> Result<File, ArchiveError> {
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(self.root.join(".lock"))?;
+        let started = Instant::now();
+        loop {
+            let attempt = if exclusive {
+                FileExt::try_lock_exclusive(&file)
+            } else {
+                FileExt::try_lock_shared(&file)
+            };
+            match attempt {
+                Ok(()) => return Ok(file),
+                Err(error)
+                    if error.kind() == ErrorKind::WouldBlock
+                        || error.raw_os_error() == Some(11) =>
+                {
+                    if started.elapsed() >= Duration::from_millis(timeout_ms) {
+                        return Err(ArchiveError::LockBusy { timeout_ms });
+                    }
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Err(error) => return Err(ArchiveError::Io(error)),
+            }
+        }
+    }
+
     fn manifest_path(&self) -> PathBuf {
         self.root.join("manifest.jsonl")
     }
@@ -122,6 +204,24 @@ impl SourceArchive {
         source_id: &str,
         source_version: &str,
     ) -> Result<SourceRecord, ArchiveError> {
+        self.put_source_with_timeout(
+            bytes,
+            source_id,
+            source_version,
+            DEFAULT_ARCHIVE_LOCK_TIMEOUT_MS,
+        )
+    }
+
+    /// Archive bytes under a bounded exclusive lock so no reader can observe a
+    /// half-written object or a manifest line without its object.
+    pub fn put_source_with_timeout(
+        &mut self,
+        bytes: &[u8],
+        source_id: &str,
+        source_version: &str,
+        timeout_ms: u64,
+    ) -> Result<SourceRecord, ArchiveError> {
+        let _guard = self.acquire_lock(true, timeout_ms)?;
         if bytes.len() > MAX_OBJECT_BYTES {
             return Err(ArchiveError::ObjectTooLarge {
                 limit: MAX_OBJECT_BYTES,
@@ -189,6 +289,16 @@ impl SourceArchive {
     /// Assert that a hash resolves to a manifest entry whose object bytes still
     /// verify. Used before a reference revision can claim source lineage.
     pub fn resolve(&self, hash_hex: &str) -> Result<(), ArchiveError> {
+        self.resolve_with_timeout(hash_hex, DEFAULT_ARCHIVE_LOCK_TIMEOUT_MS)
+    }
+
+    /// Resolve under a bounded shared lock.
+    pub fn resolve_with_timeout(
+        &self,
+        hash_hex: &str,
+        timeout_ms: u64,
+    ) -> Result<(), ArchiveError> {
+        let _guard = self.acquire_lock(false, timeout_ms)?;
         let record = self
             .find_record(hash_hex)?
             .ok_or_else(|| ArchiveError::MissingSource {
@@ -200,15 +310,32 @@ impl SourceArchive {
     /// Fetch archived bytes by content hash. An unindexed or corrupt object is
     /// never returned, even when a file happens to exist on disk.
     pub fn fetch(&self, hash_hex: &str) -> Result<Vec<u8>, ArchiveError> {
-        self.resolve(hash_hex)?;
+        self.fetch_with_timeout(hash_hex, DEFAULT_ARCHIVE_LOCK_TIMEOUT_MS)
+    }
+
+    /// Fetch under a bounded shared lock.
+    pub fn fetch_with_timeout(
+        &self,
+        hash_hex: &str,
+        timeout_ms: u64,
+    ) -> Result<Vec<u8>, ArchiveError> {
+        self.resolve_with_timeout(hash_hex, timeout_ms)?;
         std::fs::read(self.object_path(hash_hex)).map_err(ArchiveError::from)
     }
 
     /// Stream the manifest and verify every referenced object.
     pub fn verify(&self) -> Result<usize, ArchiveError> {
+        self.verify_with_timeout(DEFAULT_ARCHIVE_LOCK_TIMEOUT_MS)
+    }
+
+    /// Verify under a bounded shared lock, rejecting a complete line that
+    /// disagrees with an earlier record for the same content digest.
+    pub fn verify_with_timeout(&self, timeout_ms: u64) -> Result<usize, ArchiveError> {
+        let _guard = self.acquire_lock(false, timeout_ms)?;
         let file = File::open(self.manifest_path())?;
         let mut reader = BufReader::new(file);
         let mut line = Vec::new();
+        let mut seen: BTreeMap<String, SourceRecord> = BTreeMap::new();
         let mut count = 0_usize;
         loop {
             line.clear();
@@ -228,10 +355,50 @@ impl SourceArchive {
             }
             let record: SourceRecord = serde_json::from_slice(&line)
                 .map_err(|error| ArchiveError::InvalidRecord(error.to_string()))?;
+            if let Some(earlier) = seen.get(&record.hash_hex)
+                && earlier != &record
+            {
+                return Err(ArchiveError::ConflictingDigest {
+                    hash: record.hash_hex.clone(),
+                });
+            }
+            seen.insert(record.hash_hex.clone(), record.clone());
             verify_object(&self.object_path(&record.hash_hex), &record)?;
             count += 1;
         }
         Ok(count)
+    }
+
+    /// Object files that exist on disk but have no manifest entry. These are
+    /// crash residue or orphaned sources, never served by `fetch`.
+    pub fn unindexed_objects(&self) -> Result<Vec<String>, ArchiveError> {
+        let _guard = self.acquire_lock(false, DEFAULT_ARCHIVE_LOCK_TIMEOUT_MS)?;
+        let mut indexed = BTreeSet::new();
+        let file = File::open(self.manifest_path())?;
+        let mut reader = BufReader::new(file);
+        let mut line = Vec::new();
+        loop {
+            line.clear();
+            let read = (&mut reader)
+                .take(MAX_MANIFEST_LINE as u64 + 1)
+                .read_until(b'\n', &mut line)?;
+            if read == 0 {
+                break;
+            }
+            let record: SourceRecord = serde_json::from_slice(&line)
+                .map_err(|error| ArchiveError::InvalidRecord(error.to_string()))?;
+            indexed.insert(record.hash_hex);
+        }
+        let mut orphans = Vec::new();
+        for entry in std::fs::read_dir(self.root.join("objects"))? {
+            let entry = entry?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if !indexed.contains(&name) {
+                orphans.push(name);
+            }
+        }
+        orphans.sort();
+        Ok(orphans)
     }
 }
 

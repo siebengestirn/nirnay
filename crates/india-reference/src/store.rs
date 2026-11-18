@@ -635,6 +635,7 @@ pub struct DurableReferenceStore {
     connection: Connection,
     path: PathBuf,
     archive: crate::archive::SourceArchive,
+    archive_timeout_ms: u64,
 }
 
 fn contract_hex(bytes: &[u8]) -> String {
@@ -685,11 +686,19 @@ fn publication_key(
 impl DurableReferenceStore {
     /// Open or create a contract-shaped store at `<root>/reference.sqlite3`.
     pub fn open(root: impl AsRef<Path>) -> Result<Self, StoreError> {
+        Self::open_with_options(root, crate::archive::DEFAULT_ARCHIVE_LOCK_TIMEOUT_MS)
+    }
+
+    /// Open with an explicit bounded archive lock timeout.
+    pub fn open_with_options(
+        root: impl AsRef<Path>,
+        archive_timeout_ms: u64,
+    ) -> Result<Self, StoreError> {
         let root = root.as_ref();
         std::fs::create_dir_all(root)?;
         let archive_root = root.join("archive");
         let archive = if archive_root.join("manifest.jsonl").exists() {
-            crate::archive::SourceArchive::open(&archive_root)
+            crate::archive::SourceArchive::open_with_timeout(&archive_root, archive_timeout_ms)
         } else {
             crate::archive::SourceArchive::create_new(&archive_root)
         }
@@ -734,6 +743,7 @@ impl DurableReferenceStore {
             connection,
             path,
             archive,
+            archive_timeout_ms,
         })
     }
 
@@ -743,7 +753,7 @@ impl DurableReferenceStore {
     ) -> Result<(), StoreError> {
         for hash in crate::snapshot::collect_lineage_hashes(snapshot) {
             self.archive
-                .resolve(&hash)
+                .resolve_with_timeout(&hash, self.archive_timeout_ms)
                 .map_err(|error| StoreError::Lineage(format!("{hash}: {error}")))?;
         }
         Ok(())

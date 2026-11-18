@@ -956,6 +956,7 @@ name = "india-reference"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "fs2",
  "india-domain",
  "jiff",
  "market-types",
