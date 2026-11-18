@@ -6,6 +6,8 @@
 //! provenance in `NIRNAY_SOURCE_FIXTURES_DIR`. Synthetic parser tests prove CSV
 //! grammar and rule behavior; they are not evidence of exchange compatibility.
 
+use std::collections::BTreeSet;
+use std::fmt::Debug;
 use std::path::{
     Path, //
     PathBuf,
@@ -19,6 +21,7 @@ use india_reference::{
 };
 use serde::Deserialize;
 use sha2::Digest;
+use trading_core::Venue;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -30,9 +33,9 @@ struct Fixture {
     size_bytes: u64,
     format_version: String,
     declared_coverage: String,
-    expected_accepted: Option<usize>,
-    expected_excluded: Option<usize>,
-    expected_rejected: Option<usize>,
+    expected_accepted: usize,
+    expected_excluded: usize,
+    expected_rejected: usize,
 }
 
 #[derive(Debug, Deserialize)]
@@ -57,12 +60,43 @@ fn verify_fixture(root: &Path, fixture: &Fixture) -> Vec<u8> {
         "fixture bytes must match provenance hash"
     );
     assert!(
-        !fixture.source_url.is_empty()
-            && !fixture.retrieved_at_utc.is_empty()
-            && !fixture.declared_coverage.is_empty(),
-        "fixture must record source URL, retrieval time and coverage"
+        !fixture.source_url.is_empty() && !fixture.retrieved_at_utc.is_empty(),
+        "fixture must record source URL and retrieval time"
     );
     bytes
+}
+
+/// Parse structured coverage from the provenance declaration.
+///
+/// Parsed forms: `full:NSE`, `full:BSE`, `full:NSE+BSE` and `partial`.
+/// The dated gate then requires exactly the source's own venue, so combined
+/// and partial declarations are rejected for a per-source fixture.
+fn declared_scope(text: &str, expected: Venue) -> SnapshotScope {
+    let scope = match text {
+        "partial" => SnapshotScope::Partial,
+        "full:NSE" => SnapshotScope::Full {
+            covered_venues: BTreeSet::from([Venue::Nse]),
+        },
+        "full:BSE" => SnapshotScope::Full {
+            covered_venues: BTreeSet::from([Venue::Bse]),
+        },
+        "full:NSE+BSE" => SnapshotScope::Full {
+            covered_venues: BTreeSet::from([Venue::Nse, Venue::Bse]),
+        },
+        other => panic!("unsupported declared coverage: {other}"),
+    };
+    assert_scope_covers(&scope, expected);
+    scope
+}
+
+fn assert_scope_covers(scope: &SnapshotScope, expected: Venue) {
+    let exact = SnapshotScope::Full {
+        covered_venues: BTreeSet::from([expected]),
+    };
+    assert_eq!(
+        *scope, exact,
+        "dated source must declare exactly its own venue coverage"
+    );
 }
 
 #[test]
@@ -85,25 +119,25 @@ fn dated_exchange_sources_conform() {
         manifest.bse.format_version == "bse-security-master-v1",
         "unsupported BSE format version must fail closed"
     );
+    let nse_scope = declared_scope(&manifest.nse.declared_coverage, Venue::Nse);
+    let bse_scope = declared_scope(&manifest.bse.declared_coverage, Venue::Bse);
+    assert_scope_covers(&nse_scope, Venue::Nse);
+    assert_scope_covers(&bse_scope, Venue::Bse);
+
     let nse_bytes = verify_fixture(&root, &manifest.nse);
     let bse_bytes = verify_fixture(&root, &manifest.bse);
 
-    let scope = SnapshotScope::Full {
-        covered_venues: [trading_core::Venue::Nse, trading_core::Venue::Bse]
-            .into_iter()
-            .collect(),
-    };
     let nse = source::nse::parse_nse_cash_master(
         &nse_bytes,
         &manifest.nse.format_version,
-        scope.clone(),
+        nse_scope.clone(),
         Limits::default(),
     )
     .expect("NSE source must parse under its declared version");
     let bse = source::bse::parse_bse_master(
         &bse_bytes,
         &manifest.bse.format_version,
-        scope,
+        bse_scope.clone(),
         Limits::default(),
     )
     .expect("BSE source must parse under its declared version");
@@ -124,49 +158,67 @@ fn dated_exchange_sources_conform() {
         !nse.accepted.is_empty() && !bse.accepted.is_empty(),
         "dated sources must yield accepted rows; otherwise the format is unsupported"
     );
+    check_counts(&manifest.nse, &nse);
+    check_counts(&manifest.bse, &bse);
 
-    let repeat = source::nse::parse_nse_cash_master(
+    let nse_repeat = source::nse::parse_nse_cash_master(
         &nse_bytes,
         &manifest.nse.format_version,
-        SnapshotScope::Full {
-            covered_venues: [trading_core::Venue::Nse].into_iter().collect(),
-        },
+        nse_scope,
         Limits::default(),
     )
     .expect("repeat NSE parse");
-    assert_eq!(
-        nse.accepted, repeat.accepted,
-        "repeated ingestion of the same bytes is deterministic"
-    );
-    assert_eq!(
-        nse.rejected, repeat.rejected,
-        "rejections are deterministic across repeated ingestion"
-    );
-
-    check_counts("NSE", &manifest.nse, &nse);
-    check_counts("BSE", &manifest.bse, &bse);
+    let bse_repeat = source::bse::parse_bse_master(
+        &bse_bytes,
+        &manifest.bse.format_version,
+        bse_scope,
+        Limits::default(),
+    )
+    .expect("repeat BSE parse");
+    assert_outcomes_equal(&nse, &nse_repeat);
+    assert_outcomes_equal(&bse, &bse_repeat);
 }
 
-fn check_counts<T>(name: &str, fixture: &Fixture, batch: &SourceBatch<T>) {
-    if let Some(expected) = fixture.expected_accepted {
-        assert_eq!(
-            batch.accepted.len(),
-            expected,
-            "{name} accepted count must match provenance"
-        );
-    }
-    if let Some(expected) = fixture.expected_excluded {
-        assert_eq!(
-            batch.excluded.len(),
-            expected,
-            "{name} excluded count must match provenance"
-        );
-    }
-    if let Some(expected) = fixture.expected_rejected {
-        assert_eq!(
-            batch.rejected.len(),
-            expected,
-            "{name} rejected count must match provenance"
-        );
-    }
+fn check_counts<T>(fixture: &Fixture, batch: &SourceBatch<T>) {
+    assert_eq!(
+        batch.accepted.len(),
+        fixture.expected_accepted,
+        "accepted count must match provenance"
+    );
+    assert_eq!(
+        batch.excluded.len(),
+        fixture.expected_excluded,
+        "excluded count must match provenance"
+    );
+    assert_eq!(
+        batch.rejected.len(),
+        fixture.expected_rejected,
+        "rejected count must match provenance"
+    );
+    assert_eq!(
+        batch.physical_rows,
+        fixture.expected_accepted + fixture.expected_excluded + fixture.expected_rejected,
+        "provenance outcomes must cover every physical row"
+    );
+}
+
+fn assert_outcomes_equal<T: PartialEq + Debug>(first: &SourceBatch<T>, second: &SourceBatch<T>) {
+    assert_eq!(
+        first.accepted, second.accepted,
+        "accepted rows are reproducible"
+    );
+    assert_eq!(
+        first.excluded, second.excluded,
+        "exclusions are reproducible"
+    );
+    assert_eq!(
+        first.rejected, second.rejected,
+        "rejections are reproducible"
+    );
+}
+
+#[test]
+fn unknown_coverage_declaration_fails_closed() {
+    let result = std::panic::catch_unwind(|| declared_scope("full:XYZ", Venue::Nse));
+    assert!(result.is_err(), "an unknown coverage declaration must fail");
 }
