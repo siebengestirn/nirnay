@@ -23,7 +23,8 @@ def test_upstox_normalize_cli_links_canonical_events_to_raw_frames(tmp_path):
             "vtt": "1000",
         }}}},
     }
-    _dump(raw, [{"received_at_utc_ns": 1794372000000000000,
+    _dump(raw, [{"schema_version": 1, "provider": "upstox",
+                 "received_at_utc_ns": 1794372000000000000,
                  "received_monotonic_ns": 12345, "capture_sequence": 1,
                  "payload_sha256": "a" * 64, "message": payload}])
     assert main(["normalize", "--provider", "upstox", "--input", str(raw),
@@ -80,7 +81,8 @@ def test_normalize_cli_group_publication_refuses_existing_sidecar_without_partia
         "ltpc": {"ltp": "100", "ltt": "1794371999000", "ltq": "2"},
         "marketLevel": {"bidAskQuote": [{"bidP": "99.9", "bidQ": "10", "askP": "100.1", "askQ": "11"}]},
         "vtt": "1000"}}}}}
-    _dump(raw, [{"received_at_utc_ns": 1794372000000000000, "capture_sequence": 1,
+    _dump(raw, [{"schema_version": 1, "provider": "upstox",
+                 "received_at_utc_ns": 1794372000000000000, "capture_sequence": 1,
                  "payload_sha256": "a" * 64, "message": payload}])
     sidecar.write_text("reserved", encoding="utf-8")
     assert main(["normalize", "--provider", "upstox", "--input", str(raw),
@@ -96,3 +98,65 @@ def test_jsonl_reader_rejects_blank_lines_as_ambiguous_source_records(tmp_path):
     import pytest
     with pytest.raises(ValueError, match="blank lines"):
         _read_jsonl(source)
+
+
+def _decoded_row(sequence, **overrides):
+    row = {
+        "schema_version": 1, "provider": "upstox",
+        "received_at_utc_ns": 1794372000000000000 + sequence,
+        "capture_sequence": sequence,
+        "payload_sha256": "a" * 64,
+        "message": {"currentTs": "1794372000000", "feeds": {}},
+    }
+    row.update(overrides)
+    return row
+
+
+def test_upstox_normalize_rejects_non_increasing_capture_sequence(tmp_path):
+    raw = tmp_path / "decoded.jsonl"
+    mapping = tmp_path / "instrument-map.json"
+    output = tmp_path / "canonical.jsonl"
+    mapping.write_text(json.dumps({}), encoding="utf-8")
+    _dump(raw, [_decoded_row(2), _decoded_row(1)])
+    assert main(["normalize", "--provider", "upstox", "--input", str(raw),
+                 "--instrument-map", str(mapping), "--output", str(output)]) == 2
+    assert not output.exists()
+
+
+def test_upstox_normalize_rejects_missing_capture_sequence(tmp_path):
+    raw = tmp_path / "decoded.jsonl"
+    mapping = tmp_path / "instrument-map.json"
+    output = tmp_path / "canonical.jsonl"
+    mapping.write_text(json.dumps({}), encoding="utf-8")
+    row = _decoded_row(1)
+    row.pop("capture_sequence")
+    _dump(raw, [row])
+    assert main(["normalize", "--provider", "upstox", "--input", str(raw),
+                 "--instrument-map", str(mapping), "--output", str(output)]) == 2
+    assert not output.exists()
+
+
+def test_upstox_normalize_marks_sequence_gaps_not_research_grade(tmp_path):
+    raw = tmp_path / "decoded.jsonl"
+    mapping = tmp_path / "instrument-map.json"
+    output = tmp_path / "canonical.jsonl"
+    mapping.write_text(json.dumps({}), encoding="utf-8")
+    payload = {"currentTs": "1794372000000", "feeds": {
+        "NSE_EQ|X": {"ltpc": {"ltp": "100", "ltt": "1794371999000", "ltq": "1"}}
+    }}
+    _dump(raw, [_decoded_row(1, message=payload), _decoded_row(3, message=payload)])
+    assert main(["normalize", "--provider", "upstox", "--input", str(raw),
+                 "--instrument-map", str(mapping), "--output", str(output)]) == 0
+    report = json.loads(output.with_suffix(".jsonl.quality.json").read_text())
+    assert report["research_grade"] is False
+    assert any("capture_sequence_gap" in warning for warning in report["warnings"])
+    assert report["ordering_contract"].startswith("capture_sequence")
+
+
+def test_iter_jsonl_streams_rows_without_materializing(tmp_path):
+    from quantlab.cli import _iter_jsonl
+    source = tmp_path / "source.jsonl"
+    _dump(source, [{"n": 1}, {"n": 2}])
+    iterator = _iter_jsonl(source)
+    assert next(iterator) == {"n": 1}
+    assert next(iterator) == {"n": 2}

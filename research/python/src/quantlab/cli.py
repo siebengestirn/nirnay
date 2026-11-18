@@ -22,8 +22,8 @@ from .point_in_time import (CorporateAction, PITDatasetBuilder, PITListing,
                             verify_published_dataset, write_dataset)
 
 
-def _read_jsonl(path: Path) -> list[dict[str, Any]]:
-    rows = []
+def _iter_jsonl(path: Path):
+    """Yield immutable JSONL rows one at a time, without retaining the file."""
     with path.open(encoding="utf-8") as stream:
         for line_number, raw in enumerate(stream, 1):
             if not raw.strip():
@@ -34,8 +34,11 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
                 raise ValueError(f"{path}:{line_number}: invalid JSON: {exc.msg}") from exc
             if not isinstance(value, dict):
                 raise ValueError(f"{path}:{line_number}: each JSONL row must be an object")
-            rows.append(value)
-    return rows
+            yield value
+
+
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    return list(_iter_jsonl(path))
 
 
 def _load_reference_data(path: Path) -> PITReferenceData:
@@ -129,6 +132,107 @@ def _write_new(path: Path, content: bytes) -> None:
     _write_many_new([(path, content)])
 
 
+def _normalize_upstox_bounded(args: argparse.Namespace, normalizer: UpstoxV3Normalizer) -> int:
+    """Stream decoded Upstox rows to canonical events with bounded memory.
+
+    Ordering is defined by `capture_sequence`: the decoder emits journal records
+    in append order, so events are written in that order without a global sort.
+    A non-increasing sequence is an error; gaps are reported and prevent a
+    research-grade classification.
+    """
+    output = Path(args.output)
+    report_path = output.with_suffix(output.suffix + ".quality.json")
+    if output.exists() or report_path.exists():
+        raise ValueError("immutable output or quality report already exists")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary_name = tempfile.mkstemp(
+        prefix=f".{output.name}.normalize-", dir=output.parent
+    )
+    temporary = Path(temporary_name)
+    hasher = hashlib.sha256()
+    warnings: list[str] = []
+    input_rows = 0
+    event_count = 0
+    previous_sequence = 0
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            for row in _iter_jsonl(Path(args.input)):
+                if row.get("event_type") == "gap":
+                    raise ValueError("Upstox decoded input must not contain gap records")
+                if row.get("schema_version") != 1 or row.get("provider") != "upstox":
+                    raise ValueError("decoded row must be schema_version 1 from provider upstox")
+                sequence = row.get("capture_sequence")
+                if type(sequence) is not int or sequence <= 0:
+                    raise ValueError("decoded row lacks a positive capture_sequence")
+                if previous_sequence and sequence <= previous_sequence:
+                    raise ValueError(
+                        f"capture_sequence {sequence} is not strictly increasing "
+                        f"after {previous_sequence}"
+                    )
+                if previous_sequence == 0 and sequence != 1:
+                    warnings.append(f"capture_stream_does_not_start_at_one:{sequence}")
+                elif previous_sequence and sequence != previous_sequence + 1:
+                    warnings.append(f"capture_sequence_gap:{previous_sequence}->{sequence}")
+                previous_sequence = sequence
+                frame_hash = row.get("payload_sha256")
+                if (not isinstance(frame_hash, str) or len(frame_hash) != 64
+                        or any(char not in "0123456789abcdef" for char in frame_hash)):
+                    raise ValueError("decoded row lacks a valid payload_sha256")
+                receive = row.get("received_at_utc_ns", row.get("received_utc_ns"))
+                if type(receive) is not int or receive <= 0:
+                    raise ValueError("decoded row lacks a valid received timestamp")
+                payload = row.get("message")
+                if not isinstance(payload, dict):
+                    raise ValueError("decoded row lacks a message object")
+                events = normalizer.normalize(
+                    payload, received_utc_ns=receive,
+                    received_monotonic_ns=row.get("received_monotonic_ns"),
+                    local_sequence=sequence, source_frame_sha256=frame_hash,
+                )
+                for event in events:
+                    encoded = canonical_bytes(event.as_dict()) + b"\n"
+                    stream.write(encoded)
+                    hasher.update(encoded)
+                    event_count += 1
+                input_rows += 1
+            if event_count == 0:
+                raise ValueError("no market observations were normalized")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, 0o600)
+        os.link(temporary, output)
+    finally:
+        temporary.unlink(missing_ok=True)
+    parent_fd = os.open(output.parent, os.O_RDONLY)
+    try:
+        os.fsync(parent_fd)
+    finally:
+        os.close(parent_fd)
+    report = {
+        "schema_version": 1,
+        "provider": "upstox",
+        "input_rows": input_rows,
+        "canonical_events": event_count,
+        "ordering_contract": (
+            "capture_sequence strictly increasing; decoder append order; "
+            "no global sort; bounded memory"
+        ),
+        "explicit_capture_gaps": len(warnings),
+        "warnings": warnings,
+        "output_sha256": hasher.hexdigest(),
+        "research_grade": not warnings,
+        "quality_limitations": [
+            "provider_callbacks_are_not_raw_exchange_packets",
+            "no_exchange_sequence_or_fifo_queue_position_is_inferred",
+            "last_trade_snapshot_changes_are_not_confirmed_trade_prints",
+        ],
+    }
+    report_content = (json.dumps(report, sort_keys=True, indent=2) + "\n").encode()
+    _write_new(report_path, report_content)
+    print(json.dumps(report, sort_keys=True, indent=2))
+    return 0
+
+
 def _cmd_normalize(args: argparse.Namespace) -> int:
     instrument_map = json.loads(args.instrument_map.read_text(encoding="utf-8"))
     if not isinstance(instrument_map, dict) or any(not isinstance(k, str) or not isinstance(v, str) or not v for k, v in instrument_map.items()):
@@ -140,6 +244,8 @@ def _cmd_normalize(args: argparse.Namespace) -> int:
             raise ValueError("venue map must be a JSON object of provider instrument ID to canonical venue")
     normalizer = (UpstoxV3Normalizer(instrument_map, venue_map) if args.provider == "upstox"
                   else FyersV3Normalizer(instrument_map))
+    if args.provider == "upstox":
+        return _normalize_upstox_bounded(args, normalizer)
     rows = _read_jsonl(args.input)
     events = []
     gaps = []
