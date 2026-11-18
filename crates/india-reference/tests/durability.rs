@@ -1631,3 +1631,72 @@ fn rsv11_restore_fails_closed_without_publishing_a_target() {
     );
     assert!(!target.exists(), "a head mismatch publishes no target");
 }
+
+// ---------------------------------------------------------------------------
+// RSV-12 — measurement-only baseline. Ignored in the default suite: this is a
+// dated measurement, not a performance assertion or a regression threshold.
+// ---------------------------------------------------------------------------
+
+#[test]
+#[ignore = "measurement-only baseline; run with --ignored --nocapture; no thresholds"]
+fn rsv12_performance_baseline_records_sizes_and_timings() {
+    fn directory_bytes(path: &Path) -> u64 {
+        let mut total = 0_u64;
+        let mut directories = vec![path.to_path_buf()];
+        while let Some(directory) = directories.pop() {
+            for entry in std::fs::read_dir(&directory).expect("read directory") {
+                let entry = entry.expect("directory entry");
+                let kind = entry.file_type().expect("file type");
+                if kind.is_dir() {
+                    directories.push(entry.path());
+                } else if kind.is_file() {
+                    total += entry.metadata().expect("metadata").len();
+                }
+            }
+        }
+        total
+    }
+
+    let root = contract_root("rsv12");
+    let before_bytes = directory_bytes(&root);
+    let snapshot = contract_snapshot("alpha");
+    let payload = india_reference::encode_payload(&snapshot).expect("encode payload");
+    let dataset_hash = format!("{:x}", sha2::Sha256::digest(&payload));
+    let payload_bytes = payload.len();
+
+    let write_started = std::time::Instant::now();
+    {
+        let mut store = DurableReferenceStore::open(&root).expect("store opens");
+        store.publish(&snapshot, None).expect("publish");
+    }
+    let write_ms = write_started.elapsed().as_secs_f64() * 1000.0;
+
+    let reopen_started = std::time::Instant::now();
+    let store = DurableReferenceStore::open(&root).expect("store reopens");
+    let reopen_ms = reopen_started.elapsed().as_secs_f64() * 1000.0;
+
+    let valid_at = Date::new(2026, 11, 18).expect("date");
+    let recorded_at: Timestamp = "2026-11-20T00:00:00Z".parse().expect("timestamp");
+    let query_started = std::time::Instant::now();
+    let rows = store
+        .reference(valid_at, recorded_at)
+        .expect("reference query");
+    let query_ms = query_started.elapsed().as_secs_f64() * 1000.0;
+    let after_bytes = directory_bytes(&root);
+
+    eprintln!(
+        "RSV12-BASELINE dataset_sha256={dataset_hash} payload_bytes={payload_bytes} revisions=1 write_ms={write_ms:.3} reopen_ms={reopen_ms:.3} query_ms={query_ms:.3} disk_before={before_bytes} disk_after={after_bytes} disk_growth={}",
+        after_bytes.saturating_sub(before_bytes)
+    );
+    assert!(payload_bytes > 0, "the measured payload is non-empty");
+    assert_eq!(
+        rows.len(),
+        1,
+        "baseline query resolves exactly one interval"
+    );
+    assert_eq!(
+        store.verify_full().expect("verification").revision_count,
+        1,
+        "the measured store contains one verified revision"
+    );
+}
