@@ -52,7 +52,7 @@ crates = [
   "http",
   "url",
 ]
-allowed_in = ["adapters", "apps"]
+allowed_in = ["adapters", "apps", "reference"]
 
 [[deny_edge]]
 from = "risk-*"

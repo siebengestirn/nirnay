@@ -10,8 +10,15 @@ description = "Bounded India exchange reference-data ingestion and identity reso
 [dependencies]
 anyhow.workspace = true
 market-types.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
 trading-core.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true

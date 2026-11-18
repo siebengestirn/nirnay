@@ -39,6 +39,7 @@ protoc-bin-vendored = "=3.3.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "gzip", "http2"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 sha2 = "0.10"
 tokio = { version = "1.54", features = ["rt-multi-thread", "macros", "signal", "time", "sync", "net", "io-util", "io-std"] }
 tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
