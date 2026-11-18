@@ -6,7 +6,8 @@
 //! hash covers only the fields that affect a decision, never capture metadata.
 
 use std::collections::{
-    BTreeSet, //
+    BTreeMap, //
+    BTreeSet,
 };
 
 use india_domain::{
@@ -187,14 +188,7 @@ impl ReferenceSnapshot {
             // venue discriminant, symbol, valid_from, valid_to), with a null
             // valid_to sorting before a present date. The vector must already
             // be in this order; it is never sorted silently.
-            let key = (
-                state.recorded_at,
-                state.instrument_id.as_str(),
-                venue_discriminant(state.venue),
-                state.symbol.as_str(),
-                state.valid_from,
-                state.valid_to,
-            );
+            let key = listing_state_key(state);
             if previous_state.is_some_and(|old| old >= key) {
                 return Err(invalid(
                     "listing states must be in canonical order by recorded_at, instrument, venue, symbol and validity",
@@ -228,6 +222,17 @@ impl ReferenceSnapshot {
             serde_json::to_vec(&value).map_err(|error| SnapshotError::Encode(error.to_string()))?;
         Ok(hex_digest(&bytes))
     }
+}
+
+fn listing_state_key(state: &ListingStateRecord) -> ListingStateOrderKey<'_> {
+    (
+        state.recorded_at,
+        state.instrument_id.as_str(),
+        venue_discriminant(state.venue),
+        state.symbol.as_str(),
+        state.valid_from,
+        state.valid_to,
+    )
 }
 
 fn venue_discriminant(venue: Venue) -> u8 {
@@ -287,4 +292,72 @@ pub fn decode_payload(bytes: &[u8]) -> Result<ReferenceSnapshot, SnapshotError> 
     }
     envelope.snapshot.validate()?;
     Ok(envelope.snapshot)
+}
+
+/// Every source hash a snapshot claims lineage to, sorted and deduplicated.
+/// An empty result means the snapshot claims no archived source bytes.
+#[must_use]
+pub fn collect_lineage_hashes(snapshot: &ReferenceSnapshot) -> Vec<String> {
+    let mut hashes = BTreeSet::new();
+    hashes.insert(snapshot.provenance.sha256_hex.clone());
+    for state in &snapshot.listing_states {
+        hashes.insert(state.provenance.sha256_hex.clone());
+        if let Some(hash) = &state.tick_assignment.reference_sha256_hex {
+            hashes.insert(hash.clone());
+        }
+        if let Some(hash) = &state.tick_assignment.schedule_sha256_hex {
+            hashes.insert(hash.clone());
+        }
+        if let Some(hash) = &state.tick_assignment.calendar_sha256_hex {
+            hashes.insert(hash.clone());
+        }
+    }
+    hashes.into_iter().collect()
+}
+
+/// Resolve the listing states visible at `(t_valid, t_recorded)` from the
+/// HEAD snapshot only. Earlier revisions are never concatenated: a correction
+/// supersedes the state it replaces. For each `(instrument, venue, valid_from)`
+/// the latest knowledge at or before `t_recorded` wins; per `(instrument,
+/// venue)` the interval with the greatest `valid_from` covering `t_valid` is
+/// returned. Results are in canonical order and contain no duplicates.
+#[must_use]
+pub fn latest_states_at(
+    states: &[ListingStateRecord],
+    t_valid: Date,
+    t_recorded: Timestamp,
+) -> Vec<ListingStateRecord> {
+    let mut by_interval: BTreeMap<(&InstrumentId, Venue, Date), &ListingStateRecord> =
+        BTreeMap::new();
+    // Knowledge first: for each interval key the latest record at or before
+    // t_recorded supersedes older ones, including a late close. Coverage is
+    // applied afterwards so a corrected interval cannot leave a stale open
+    // record visible.
+    for state in states
+        .iter()
+        .filter(|state| state.recorded_at <= t_recorded)
+    {
+        let key = (&state.instrument_id, state.venue, state.valid_from);
+        let supersedes = by_interval
+            .get(&key)
+            .is_none_or(|current| state.recorded_at > current.recorded_at);
+        if supersedes {
+            by_interval.insert(key, state);
+        }
+    }
+    let mut by_instrument: BTreeMap<(&InstrumentId, Venue), &ListingStateRecord> = BTreeMap::new();
+    for state in by_interval.into_values().filter(|state| {
+        state.valid_from <= t_valid && state.valid_to.is_none_or(|end| t_valid <= end)
+    }) {
+        let key = (&state.instrument_id, state.venue);
+        let supersedes = by_instrument
+            .get(&key)
+            .is_none_or(|current| state.valid_from > current.valid_from);
+        if supersedes {
+            by_instrument.insert(key, state);
+        }
+    }
+    let mut result: Vec<ListingStateRecord> = by_instrument.into_values().cloned().collect();
+    result.sort_by(|left, right| listing_state_key(left).cmp(&listing_state_key(right)));
+    result
 }

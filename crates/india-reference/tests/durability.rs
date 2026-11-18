@@ -596,6 +596,13 @@ use jiff::{
     Timestamp, //
     civil::Date,
 };
+use sha2::Digest;
+
+const CONTRACT_SOURCE_BYTES: &[u8] = b"nirnay-p1-04-source-bytes";
+
+fn contract_digest() -> String {
+    format!("{:x}", sha2::Sha256::digest(CONTRACT_SOURCE_BYTES))
+}
 
 fn contract_provenance(digest: &str) -> SourceProvenance {
     SourceProvenance {
@@ -684,7 +691,7 @@ fn contract_state(
         valid_from,
         valid_to,
         recorded_at,
-        provenance: contract_provenance(DIGEST_A),
+        provenance: contract_provenance(&contract_digest()),
     }
 }
 
@@ -696,7 +703,7 @@ fn contract_snapshot(suffix: &str) -> ReferenceSnapshot {
     ReferenceSnapshot {
         valid_at: day,
         recorded_at,
-        provenance: contract_provenance(DIGEST_A),
+        provenance: contract_provenance(&contract_digest()),
         instruments: vec![contract_instrument(
             instrument_id.as_str(),
             "INE848E01016",
@@ -744,6 +751,11 @@ fn contract_root(name: &str) -> PathBuf {
         std::thread::current().name().unwrap_or("main")
     ));
     let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("contract root exists");
+    let mut archive = SourceArchive::create_new(root.join("archive")).expect("contract archive");
+    archive
+        .put_source(CONTRACT_SOURCE_BYTES, "nse.cash", "v1")
+        .expect("archive contract source");
     root
 }
 
@@ -1002,5 +1014,275 @@ fn reference_revisions_and_head_are_immutable() {
     assert_eq!(
         STORE_SCHEMA_VERSION, 1,
         "the contract schema version is pinned"
+    );
+}
+
+#[test]
+fn rsv04_bitemporal_identical_across_restart() {
+    let root = contract_root("rsv04");
+    let instrument_id = InstrumentId::new("eq.alpha").expect("valid id");
+    let first: Timestamp = "2026-11-18T12:00:00Z".parse().expect("timestamp");
+    let second: Timestamp = "2026-11-19T12:00:00Z".parse().expect("timestamp");
+    let third: Timestamp = "2026-11-20T12:00:00Z".parse().expect("timestamp");
+    let base = contract_snapshot("alpha");
+    let mut early = base.clone();
+    early.listing_states = vec![contract_state(
+        &instrument_id,
+        "alpha",
+        Date::new(2026, 1, 1).expect("date"),
+        None,
+        first,
+    )];
+    let mut later = base.clone();
+    later.listing_states = vec![
+        contract_state(
+            &instrument_id,
+            "alpha",
+            Date::new(2026, 1, 1).expect("date"),
+            None,
+            first,
+        ),
+        contract_state(
+            &instrument_id,
+            "alpha",
+            Date::new(2026, 6, 1).expect("date"),
+            None,
+            second,
+        ),
+    ];
+    let mut corrected = base;
+    corrected.listing_states = vec![
+        contract_state(
+            &instrument_id,
+            "alpha",
+            Date::new(2026, 1, 1).expect("date"),
+            None,
+            first,
+        ),
+        contract_state(
+            &instrument_id,
+            "alpha",
+            Date::new(2026, 6, 1).expect("date"),
+            None,
+            second,
+        ),
+        contract_state(
+            &instrument_id,
+            "alpha",
+            Date::new(2026, 1, 1).expect("date"),
+            Some(Date::new(2026, 2, 28).expect("date")),
+            third,
+        ),
+    ];
+    {
+        let mut store = DurableReferenceStore::open(&root).expect("store opens");
+        store.publish(&early, None).expect("revision 0");
+        store.publish(&later, Some(0)).expect("revision 1");
+        store.publish(&corrected, Some(1)).expect("revision 2");
+    }
+    let queries = [
+        (Date::new(2026, 3, 1).expect("date"), second),
+        (Date::new(2026, 7, 1).expect("date"), second),
+        (Date::new(2026, 3, 1).expect("date"), third),
+    ];
+    let before: Vec<_> = queries
+        .iter()
+        .map(|(valid, recorded)| {
+            DurableReferenceStore::open(&root)
+                .expect("store opens")
+                .reference(*valid, *recorded)
+                .expect("reference query")
+        })
+        .collect();
+    let after: Vec<_> = queries
+        .iter()
+        .map(|(valid, recorded)| {
+            DurableReferenceStore::open(&root)
+                .expect("store reopens")
+                .reference(*valid, *recorded)
+                .expect("reference query")
+        })
+        .collect();
+    assert_eq!(
+        before, after,
+        "bitemporal results are identical after reopen"
+    );
+    assert_eq!(before[0].len(), 1, "historical query has one interval");
+    assert_eq!(
+        before[2].len(),
+        0,
+        "a late-known correction removes the stale interval"
+    );
+}
+
+#[test]
+fn rsv05_history_appends_without_duplication_or_stale_resurrection() {
+    let root = contract_root("rsv05");
+    let instrument_id = InstrumentId::new("eq.alpha").expect("valid id");
+    let t0: Timestamp = "2026-11-18T12:00:00Z".parse().expect("timestamp");
+    let t1: Timestamp = "2026-11-19T12:00:00Z".parse().expect("timestamp");
+    let t2: Timestamp = "2026-11-20T12:00:00Z".parse().expect("timestamp");
+    let base = contract_snapshot("alpha");
+    let mut opened = base.clone();
+    opened.listing_states = vec![contract_state(
+        &instrument_id,
+        "alpha",
+        Date::new(2026, 1, 1).expect("date"),
+        None,
+        t0,
+    )];
+    let mut closed_relisted = base.clone();
+    closed_relisted.listing_states = vec![
+        contract_state(
+            &instrument_id,
+            "alpha",
+            Date::new(2026, 1, 1).expect("date"),
+            Some(Date::new(2026, 6, 30).expect("date")),
+            t1,
+        ),
+        contract_state(
+            &instrument_id,
+            "alpha-new",
+            Date::new(2026, 7, 1).expect("date"),
+            None,
+            t1,
+        ),
+    ];
+    let mut corrected = base;
+    corrected.listing_states = vec![
+        contract_state(
+            &instrument_id,
+            "alpha-new",
+            Date::new(2026, 7, 1).expect("date"),
+            None,
+            t1,
+        ),
+        contract_state(
+            &instrument_id,
+            "alpha",
+            Date::new(2026, 1, 1).expect("date"),
+            Some(Date::new(2026, 5, 31).expect("date")),
+            t2,
+        ),
+    ];
+    let mut store = DurableReferenceStore::open(&root).expect("store opens");
+    store.publish(&opened, None).expect("open");
+    store
+        .publish(&closed_relisted, Some(0))
+        .expect("close and relist");
+    store.publish(&corrected, Some(1)).expect("late correction");
+
+    let august = Date::new(2026, 8, 1).expect("date");
+    let head = store.reference(august, t2).expect("head reference");
+    assert_eq!(head.len(), 1, "head query has no duplicate instrument rows");
+    assert_eq!(
+        head[0].symbol, "alpha-new",
+        "a closed listing is not resurrected"
+    );
+    let march = Date::new(2026, 3, 1).expect("date");
+    let corrected_head = store.reference(march, t2).expect("corrected reference");
+    assert_eq!(
+        corrected_head[0].valid_to,
+        Some(Date::new(2026, 5, 31).expect("date")),
+        "a late correction replaces the earlier close"
+    );
+    assert_eq!(
+        store.verify_full().expect("verification").revision_count,
+        3,
+        "corrections append revisions and never rewrite history"
+    );
+}
+
+#[test]
+fn rsv06_lineage_resolves_after_restart_and_missing_source_fails_closed() {
+    let root = contract_root("rsv06");
+    let digest = contract_digest();
+    let snapshot = contract_snapshot("alpha");
+    let archived = SourceArchive::open(root.join("archive"))
+        .expect("archive opens")
+        .fetch(&digest)
+        .expect("archived bytes resolve");
+    assert_eq!(
+        archived, CONTRACT_SOURCE_BYTES,
+        "fetch returns exact source bytes"
+    );
+    {
+        let mut store = DurableReferenceStore::open(&root).expect("store opens");
+        store
+            .publish(&snapshot, None)
+            .expect("lineage resolves before publish");
+    }
+    let reopened = DurableReferenceStore::open(&root).expect("store reopens");
+    assert_eq!(
+        reopened.verify_full().expect("verification").revision_count,
+        1,
+        "lineage still resolves after restart"
+    );
+    let object = root.join("archive").join("objects").join(&digest);
+    std::fs::remove_file(&object).expect("remove archived object");
+    assert!(
+        reopened.verify_full().is_err(),
+        "full verification fails when a source disappears"
+    );
+    let mut store = DurableReferenceStore::open(&root).expect("store reopens");
+    assert!(
+        matches!(store.publish(&snapshot, None), Err(StoreError::Lineage(_))),
+        "a new publication fails closed before any revision is written"
+    );
+    assert_eq!(
+        store.head().expect("head"),
+        Some(0),
+        "no new revision was published"
+    );
+}
+
+#[test]
+fn rsv06_tick_lineage_hashes_resolve_and_fail_closed() {
+    let root = contract_root("rsv06-tick");
+    let reference_bytes = b"nirnay-reference-close-bytes";
+    let schedule_bytes = b"nirnay-tick-schedule-bytes";
+    let calendar_bytes = b"nirnay-calendar-bytes";
+    let reference_hash = format!("{:x}", sha2::Sha256::digest(reference_bytes));
+    let schedule_hash = format!("{:x}", sha2::Sha256::digest(schedule_bytes));
+    let calendar_hash = format!("{:x}", sha2::Sha256::digest(calendar_bytes));
+    let mut archive = SourceArchive::open(root.join("archive")).expect("archive opens");
+    archive
+        .put_source(reference_bytes, "nse.eod", "v1")
+        .expect("archive reference close");
+    archive
+        .put_source(schedule_bytes, "nse.tick", "v1")
+        .expect("archive tick schedule");
+    archive
+        .put_source(calendar_bytes, "nse.calendar", "v1")
+        .expect("archive calendar");
+
+    let mut snapshot = contract_snapshot("alpha");
+    let tick = &mut snapshot.listing_states[0].tick_assignment;
+    tick.reference_sha256_hex = Some(reference_hash.clone());
+    tick.schedule_sha256_hex = Some(schedule_hash.clone());
+    tick.calendar_sha256_hex = Some(calendar_hash.clone());
+    let lineage = india_reference::collect_lineage_hashes(&snapshot);
+    assert!(
+        lineage.contains(&reference_hash)
+            && lineage.contains(&schedule_hash)
+            && lineage.contains(&calendar_hash),
+        "all three tick lineage hashes are collected"
+    );
+
+    {
+        let mut store = DurableReferenceStore::open(&root).expect("store opens");
+        store.publish(&snapshot, None).expect("all hashes resolve");
+    }
+    let store = DurableReferenceStore::open(&root).expect("store reopens");
+    assert_eq!(
+        store.verify_full().expect("verification").revision_count,
+        1,
+        "tick lineage resolves after restart"
+    );
+    let object = root.join("archive").join("objects").join(&schedule_hash);
+    std::fs::remove_file(&object).expect("remove schedule object");
+    assert!(
+        store.verify_full().is_err(),
+        "a missing schedule source fails full verification"
     );
 }

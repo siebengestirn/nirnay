@@ -1,6 +1,6 @@
-# RSV coverage record — PR1 foundation (2026-11-19)
+# RSV coverage record — PR1 + PR2 (2026-11-19)
 
-**Scope:** first promotion step for GAP-1. The frozen P1-04 source contract is
+**Scope:** first two promotion steps for GAP-1. The frozen P1-04 source contract is
 `extras/engineering/reference-store-contract.json` (status `frozen`,
 RSV-01…RSV-12). This record describes what the **active** crate now covers and
 what remains deferred. It does not change the frozen contract and does not
@@ -25,6 +25,22 @@ All test paths below are relative to `crates/india-reference/tests/durability.rs
   calendar, listing_states}`; `payload_sha256` over the exact stored envelope
   bytes; decode order checksum → version → validate → semantic hash → metadata.
   Test: `rsv03_hashes_stable_across_restart_and_detect_tamper`.
+- **RSV-04 bitemporal query.** `latest_states_at` and
+  `DurableReferenceStore::reference(t_valid, t_recorded)` resolve against the
+  HEAD snapshot only; older revisions are never concatenated. Knowledge at
+  `t_recorded` supersedes an earlier open interval before coverage at
+  `t_valid` is applied. Test: `rsv04_bitemporal_identical_across_restart`.
+- **RSV-05 listing lifecycle.** Corrections append new observation records;
+  a closed interval cannot resurrect a stale open record. Test:
+  `rsv05_history_appends_without_duplication_or_stale_resurrection`.
+- **RSV-06 source lineage.** `collect_lineage_hashes` gathers top-level and
+  embedded provenance plus tick reference/schedule/calendar hashes;
+  `SourceArchive::fetch/resolve` require a manifest entry and verify object
+  bytes. Every hash resolves before a revision is written and on every
+  `verify_full`. Tests:
+  `rsv06_lineage_resolves_after_restart_and_missing_source_fails_closed` and
+  `rsv06_tick_lineage_hashes_resolve_and_fail_closed`, which archives three
+  distinct tick hashes and exercises every hash branch.
 
 The exact publication key is `sha256_hex` of a JSON array containing the
 marker `p1-04-publication-v1`, the expected parent (or null), the payload
@@ -35,12 +51,11 @@ earlier success.
 
 ## Deferred groups (not claimed)
 
-RSV-04 bitemporal query, RSV-05 listing lifecycle, RSV-06 lineage resolution,
 RSV-07 process concurrency, RSV-08 crash boundaries, RSV-09 disk/filesystem
 failures, RSV-10 corruption/torn-manifest handling, RSV-11 backup/restore and
 RSV-12 performance baseline remain **uncovered by the active crate**. They are
 planned as separate, independently testable PRs. No capability or claim record
-is promoted by this step.
+is promoted by these steps.
 
 ## Nirnay-owned decisions (not copied from the predecessor)
 
@@ -58,6 +73,12 @@ is promoted by this step.
 6. Failure-injection and raw-connection access are `#[cfg(debug_assertions)]`
    test seams; the negative-control in RSV-03 drops the SQL immutability
    trigger through that seam to simulate on-disk corruption.
+7. The source archive is opened or created under `<root>/archive` by
+   `DurableReferenceStore::open`; the legacy `SourceArchive` API is unchanged.
+8. `reference()` is HEAD-only. A correction supersedes the record it replaces;
+   revisions are never concatenated into a query result.
+9. A missing or hash-wrong archived object blocks publication before any
+   revision row is written and also fails full verification after restart.
 
 `extras/` remains the unchanged reference baseline. This step does not retire
 or modify it.

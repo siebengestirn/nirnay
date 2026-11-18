@@ -13,6 +13,10 @@ use std::path::{
     PathBuf,
 };
 
+use jiff::{
+    Timestamp, //
+    civil::Date,
+};
 use rusqlite::{
     Connection, //
     OptionalExtension,
@@ -51,6 +55,8 @@ pub enum StoreError {
     UnsupportedStoreSchema { actual: u32, expected: u32 },
     #[error(transparent)]
     Snapshot(#[from] crate::snapshot::SnapshotError),
+    #[error("reference source lineage could not be resolved: {0}")]
+    Lineage(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -628,6 +634,7 @@ pub struct VerificationReport {
 pub struct DurableReferenceStore {
     connection: Connection,
     path: PathBuf,
+    archive: crate::archive::SourceArchive,
 }
 
 fn contract_hex(bytes: &[u8]) -> String {
@@ -680,6 +687,13 @@ impl DurableReferenceStore {
     pub fn open(root: impl AsRef<Path>) -> Result<Self, StoreError> {
         let root = root.as_ref();
         std::fs::create_dir_all(root)?;
+        let archive_root = root.join("archive");
+        let archive = if archive_root.join("manifest.jsonl").exists() {
+            crate::archive::SourceArchive::open(&archive_root)
+        } else {
+            crate::archive::SourceArchive::create_new(&archive_root)
+        }
+        .map_err(|error| StoreError::Lineage(error.to_string()))?;
         let path = root.join("reference.sqlite3");
         let connection = Connection::open(&path)?;
         connection.execute_batch(
@@ -716,7 +730,23 @@ impl DurableReferenceStore {
                 "reference store schema version could not be established".to_owned(),
             ));
         }
-        Ok(Self { connection, path })
+        Ok(Self {
+            connection,
+            path,
+            archive,
+        })
+    }
+
+    fn resolve_lineage(
+        &self,
+        snapshot: &crate::snapshot::ReferenceSnapshot,
+    ) -> Result<(), StoreError> {
+        for hash in crate::snapshot::collect_lineage_hashes(snapshot) {
+            self.archive
+                .resolve(&hash)
+                .map_err(|error| StoreError::Lineage(format!("{hash}: {error}")))?;
+        }
+        Ok(())
     }
 
     /// Publish a snapshot. An exact key replay is idempotent; a stale expected
@@ -727,6 +757,9 @@ impl DurableReferenceStore {
         expected_parent: Option<u64>,
     ) -> Result<PublishOutcome, StoreError> {
         snapshot.validate()?;
+        // Lineage must resolve before any write: an unresolvable source hash
+        // must never acquire a revision or a head position.
+        self.resolve_lineage(snapshot)?;
         let payload = crate::snapshot::encode_payload(snapshot)?;
         let payload_sha256 = contract_hex(&payload);
         let snapshot_hash = snapshot.snapshot_hash()?;
@@ -955,11 +988,37 @@ impl DurableReferenceStore {
                     "revision {id} has an unexpected parent"
                 )));
             }
+            self.resolve_lineage(&row.snapshot)?;
         }
         Ok(VerificationReport {
             revision_count: revision_count as u64,
             head_revision_id,
         })
+    }
+
+    /// The fully verified snapshot at the committed head.
+    pub fn head_snapshot(&self) -> Result<Option<crate::snapshot::ReferenceSnapshot>, StoreError> {
+        match self.head()? {
+            Some(id) => self.revision(id),
+            None => Ok(None),
+        }
+    }
+
+    /// Bitemporal query against the HEAD snapshot only. Earlier revisions are
+    /// never concatenated; a correction supersedes the state it replaces.
+    pub fn reference(
+        &self,
+        t_valid: Date,
+        t_recorded: Timestamp,
+    ) -> Result<Vec<crate::snapshot::ListingStateRecord>, StoreError> {
+        let Some(snapshot) = self.head_snapshot()? else {
+            return Ok(Vec::new());
+        };
+        Ok(crate::snapshot::latest_states_at(
+            &snapshot.listing_states,
+            t_valid,
+            t_recorded,
+        ))
     }
 }
 
