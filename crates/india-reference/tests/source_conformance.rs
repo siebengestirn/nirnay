@@ -88,15 +88,13 @@ fn declared_scope(text: &str, expected: Venue) -> SnapshotScope {
 }
 
 fn assert_scope_covers(scope: &SnapshotScope, expected: Venue) {
-    match scope {
-        SnapshotScope::Partial => panic!("dated full snapshots must declare coverage"),
-        SnapshotScope::Full { covered_venues } => {
-            assert!(
-                covered_venues.contains(&expected),
-                "scope must cover its venue"
-            );
-        }
-    }
+    let exact = SnapshotScope::Full {
+        covered_venues: BTreeSet::from([expected]),
+    };
+    assert_eq!(
+        *scope, exact,
+        "dated source must declare exactly its own venue coverage"
+    );
 }
 
 #[test]
