@@ -11,6 +11,10 @@ use std::collections::{
     VecDeque,
 };
 
+use base64::{
+    Engine as _, //
+    engine::general_purpose::STANDARD,
+};
 use serde::{
     Deserialize, //
     Serialize,
@@ -446,5 +450,56 @@ impl IngressSource for FyersCallbackAdapter {
             Some(Ok(callback)) => Ok(Some(callback.into_source_frame())),
             Some(Err(error)) => Err(error),
         }
+    }
+}
+
+/// Replay source backed by a committed raw-frame journal. It emits the exact
+/// original bytes and capture metadata of frames belonging to one source, so
+/// replay is independent of provider decoding and canonical resolution.
+pub struct JournalReplaySource {
+    source_id: String,
+    frames: VecDeque<SourceFrame>,
+}
+
+impl JournalReplaySource {
+    pub fn open(path: impl AsRef<std::path::Path>, source_id: &str) -> Result<Self, IngressError> {
+        let mut frames = VecDeque::new();
+        for raw in scan_journal(path).map_err(IngressError::Archive)?.frames {
+            if raw.source != source_id {
+                continue;
+            }
+            let payload = STANDARD.decode(&raw.payload_base64).map_err(|_| {
+                IngressError::Malformed("replayed payload is not valid base64".to_owned())
+            })?;
+            frames.push_back(SourceFrame {
+                source_id: raw.source,
+                provider_instrument_id: raw.provider_instrument_id,
+                entitlement_ref: raw.entitlement_ref,
+                received_utc_nanos: raw.received_utc_nanos,
+                received_monotonic_nanos: raw.received_monotonic_nanos,
+                exchange_utc_nanos: raw.exchange_utc_nanos,
+                provider_sequence: raw.capture_sequence,
+                payload,
+            });
+        }
+        Ok(Self {
+            source_id: source_id.to_owned(),
+            frames,
+        })
+    }
+
+    #[must_use]
+    pub fn remaining(&self) -> usize {
+        self.frames.len()
+    }
+}
+
+impl IngressSource for JournalReplaySource {
+    fn source_id(&self) -> &str {
+        &self.source_id
+    }
+
+    fn next_frame(&mut self) -> Result<Option<SourceFrame>, IngressError> {
+        Ok(self.frames.pop_front())
     }
 }
