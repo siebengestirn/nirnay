@@ -12,7 +12,7 @@
       "id": "CAP-001",
       "name": "Exact financial arithmetic and India instrument domain",
       "status": "implemented",
-      "evidence_status": "Owner rerun 2026-11-12: Rust workspace check, Clippy (-D warnings) and 278 tests passed on pinned Rust 1.99.1. No live broker/account operation was performed; see VERIFICATION.md.",
+      "evidence_status": "Owner rerun 2026-11-12: Rust workspace check, Clippy (-D warnings) and 278 tests passed on pinned Rust 1.99.1. No live broker/account operation was performed; see evidence/VERIFICATION-2026-11-17.md.",
       "owner": "domain",
       "scope": "existing Rust crates"
     },
@@ -20,7 +20,7 @@
       "id": "CAP-002",
       "name": "Effective-dated transaction cost model",
       "status": "implemented",
-      "evidence_status": "Owner rerun 2026-11-12: Rust workspace check, Clippy (-D warnings) and 278 tests passed on pinned Rust 1.99.1. No live broker/account operation was performed; see VERIFICATION.md.",
+      "evidence_status": "Owner rerun 2026-11-12: Rust workspace check, Clippy (-D warnings) and 278 tests passed on pinned Rust 1.99.1. No live broker/account operation was performed; see evidence/VERIFICATION-2026-11-17.md.",
       "owner": "cost-model",
       "scope": "existing Rust crate"
     },
@@ -28,7 +28,7 @@
       "id": "CAP-003",
       "name": "Append-only account event journal",
       "status": "implemented",
-      "evidence_status": "Owner rerun 2026-11-12: Rust workspace check, Clippy (-D warnings) and 278 tests passed on pinned Rust 1.99.1. No live broker/account operation was performed; see VERIFICATION.md.",
+      "evidence_status": "Owner rerun 2026-11-12: Rust workspace check, Clippy (-D warnings) and 278 tests passed on pinned Rust 1.99.1. No live broker/account operation was performed; see evidence/VERIFICATION-2026-11-17.md.",
       "owner": "account-journal",
       "scope": "existing Rust crate"
     },
@@ -36,7 +36,7 @@
       "id": "CAP-004",
       "name": "Deterministic paper engine and pre-trade risk checks",
       "status": "implemented",
-      "evidence_status": "Owner rerun 2026-11-12: Rust workspace check, Clippy (-D warnings) and 278 tests passed on pinned Rust 1.99.1. No live broker/account operation was performed; see VERIFICATION.md.",
+      "evidence_status": "Owner rerun 2026-11-12: Rust workspace check, Clippy (-D warnings) and 278 tests passed on pinned Rust 1.99.1. No live broker/account operation was performed; see evidence/VERIFICATION-2026-11-17.md.",
       "owner": "paper-engine",
       "scope": "existing Rust crates"
     },

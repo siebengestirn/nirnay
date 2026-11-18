@@ -124,7 +124,11 @@ These defects are consistent with the original delivery never having compiled th
 | PIT `build-dataset` + `verify-dataset` | **PASS — 3 synthetic rows**, `verified_internal_integrity` |
 | Alpha screen | **PASS — 25 candidates over 420 synthetic observations**; status `positive_holdout_screen_passed_not_alpha_certified` |
 
-The 102/104 difference in earlier reports is explained by the repository-gate tests: `scripts/test_check_repo.py` contributes 2 tests. The application/research suites contribute 102; the full command documented in `VERIFICATION.md` and `Makefile` contributes 104.
+The 102/104 difference in earlier reports is explained by the repository-gate
+tests: `scripts/test_check_repo.py` contributes 2 tests. The
+application/research suites contribute 102; the full command documented in
+this file and `Makefile` contributes 104.
+contributes 104.
 
 The final package was rebuilt from the corrected tree and re-verified from a fresh extraction. Its SHA-256 is recorded in the adjacent `SHA256SUMS` file. No live provider session, broker order, entitlement check or Parquet run was added by this rerun.
 

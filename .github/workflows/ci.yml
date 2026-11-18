@@ -96,6 +96,10 @@ jobs:
         run: python3 scripts/check_rust_style.py
       - name: Python/C++/Shell/Makefile/JSON/Markdown style on added lines
         run: python3 scripts/check_source_style.py
+      - name: Documentation lifecycle
+        run: |
+          python3 scripts/check_docs.py --self-test
+          python3 scripts/check_docs.py
       - name: Style gate self-tests
         run: |
           python3 scripts/check_rust_style.py --self-test

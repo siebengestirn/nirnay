@@ -71,7 +71,8 @@ No system moves from research/paper to live until all applicable gates have evid
 Use these terms in PRs and documentation:
 
 - `implemented`: source exists and is covered by repository-level tests;
-- `locally_verified`: command and exact commit SHA recorded in `VERIFICATION.md`;
+- `locally_verified`: command and exact commit SHA recorded in
+  `evidence/VERIFICATION-2026-11-17.md`;
 - `provider_verified`: real provider connection/entitlement and session evidence exists;
 - `data_certified`: source rights and completeness have been independently reviewed;
 - `operationally_certified`: runbooks, recovery, security and ownership gates passed;

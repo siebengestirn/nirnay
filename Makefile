@@ -1,5 +1,6 @@
-.PHONY: check style rust-style source-style style-gate python-format-check rust-test extras-test python-test python-check cpp-test cpp-format-check schema-check verify-local fmt constraints sbom supply-chain wheels packaging-test bundle bundle-verify git-policy
+.PHONY: check docs-check style rust-style source-style style-gate python-format-check rust-test extras-test python-test python-check cpp-test cpp-format-check schema-check verify-local fmt constraints sbom supply-chain wheels packaging-test bundle bundle-verify git-policy
 check:
+	$(MAKE) docs-check
 	$(MAKE) fmt
 	cargo xtask check
 	cargo deny check
@@ -8,6 +9,9 @@ check:
 	$(MAKE) extras-test
 	$(MAKE) schema-check
 	$(MAKE) python-test
+docs-check:
+	python3 scripts/check_docs.py --self-test
+	python3 scripts/check_docs.py
 style: rust-style source-style style-gate
 rust-style:
 	python3 scripts/check_rust_style.py --self-test
