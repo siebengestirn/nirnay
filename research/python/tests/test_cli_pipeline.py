@@ -169,7 +169,10 @@ def test_upstox_normalize_rolls_back_output_if_report_link_fails(tmp_path, monke
     output = tmp_path / "canonical.jsonl"
     sidecar = output.with_suffix(".jsonl.quality.json")
     mapping.write_text(json.dumps({}), encoding="utf-8")
-    _dump(raw, [_decoded_row(1)])
+    payload = {"currentTs": "1794372000000", "feeds": {
+        "NSE_EQ|X": {"ltpc": {"ltp": "100", "ltt": "1794371999000", "ltq": "1"}}
+    }}
+    _dump(raw, [_decoded_row(1, message=payload)])
     real_link = cli.os.link
     calls = []
 
@@ -182,5 +185,6 @@ def test_upstox_normalize_rolls_back_output_if_report_link_fails(tmp_path, monke
     monkeypatch.setattr(cli.os, "link", failing_link)
     assert main(["normalize", "--provider", "upstox", "--input", str(raw),
                  "--instrument-map", str(mapping), "--output", str(output)]) == 2
+    assert len(calls) == 2, "the injected report-link failure actually fired"
     assert not output.exists()
     assert not sidecar.exists()
