@@ -9,6 +9,8 @@ description = "Bounded India exchange reference-data ingestion and identity reso
 
 [dependencies]
 anyhow.workspace = true
+india-domain.workspace = true
+jiff.workspace = true
 market-types.workspace = true
 rusqlite.workspace = true
 serde.workspace = true

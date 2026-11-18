@@ -956,6 +956,8 @@ name = "india-reference"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "india-domain",
+ "jiff",
  "market-types",
  "rusqlite",
  "serde",
