@@ -164,6 +164,18 @@
         ]
       },
       "falsifier": "A dated source file has a row with no accepted/excluded/rejected outcome, a repeat parse differs from the first, an undeclared format version parses successfully, or a passing run is presented as coverage of untested versions or products."
+    },
+    {
+      "id": "CLM-015",
+      "statement": "The shared ingress port preserves original provider bytes and capture metadata, refuses foreign-source or malformed frames, accounts for duplicates and sequence gaps, and rebuilds a consumer checkpoint from the durable journal after restart without inventing canonical identities.",
+      "status": "implemented",
+      "scope": {
+        "packages": [
+          "crates/market-archive/src/ingress.rs",
+          "crates/market-archive/tests/ingress.rs"
+        ]
+      },
+      "falsifier": "An ingested frame changes its payload bytes or metadata, a foreign-source frame is committed, a duplicate produces a second journal record, a gap or malformed frame is silently ignored, a restart loses the last committed position or payload hash, or an unknown instrument is assigned a canonical identity in the ingress stage."
     }
   ]
 }

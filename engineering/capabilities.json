@@ -167,6 +167,14 @@
       "evidence_status": "Local run 2026-11-18: ignored source_conformance::dated_exchange_sources_conform PASS against operator-supplied dated NSE and BSE files (code commit 2ebacd7). Full row accounting, deterministic repeat parse and fail-closed undeclared versions; see evidence/SOURCE-CONFORMANCE-2026-11-18.md. Compatibility is limited to the two tested source versions and categories; no exchange entitlement, all-product coverage or every-date claim.",
       "owner": "reference-data",
       "scope": "crates/india-reference/src/source; crates/india-reference/tests/source_conformance.rs"
+    },
+    {
+      "id": "CAP-021",
+      "name": "Shared raw ingress port with Upstox V3 adapter",
+      "status": "implemented",
+      "evidence_status": "Market-archive ingress module routes original Upstox V3 protobuf bytes and capture metadata through the durable raw-frame journal with source binding, duplicate/sequence/malformed accounting, disconnect stops and a checkpoint rebuilt from the journal on restart. Ten dedicated tests cover replay-after-restart dedup, post-commit continuity advancement and bounded continuity state; no provider decoding or canonical instrument resolution is performed here, and no live entitlement or network path is certified.",
+      "owner": "market-data",
+      "scope": "crates/market-archive/src/ingress.rs; crates/market-archive/tests/ingress.rs"
     }
   ]
 }
