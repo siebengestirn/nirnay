@@ -583,14 +583,17 @@ use india_domain::{
     TradingCalendar,
 };
 use india_reference::{
-    DurableReferenceStore, //
+    BACKUP_FORMAT_VERSION, //
+    DurableReferenceStore,
     ListingStateRecord,
     Reconciliation,
     ReferenceSnapshot,
     STORE_SCHEMA_VERSION,
     StoredRevision,
+    backup_verified,
     decode_payload,
     durable_connection_for_test,
+    restore_verified_store,
 };
 use jiff::{
     Timestamp, //
@@ -1517,4 +1520,114 @@ fn rsv08_replacement_orphan_source_is_not_a_publication() {
             .contains(&record.hash_hex),
         "a persisted source is indexed even when no revision references it"
     );
+}
+
+#[test]
+fn rsv11_restore_verifies_revisions_head_chain_and_sources() {
+    let root = contract_root("rsv11");
+    {
+        let mut store = DurableReferenceStore::open(&root).expect("store opens");
+        store
+            .publish(&contract_snapshot("alpha"), None)
+            .expect("revision 0");
+        store
+            .publish(&contract_snapshot("beta"), Some(0))
+            .expect("revision 1");
+    }
+    let mut store = DurableReferenceStore::open(&root).expect("store reopens");
+    let backup = backup_verified(&mut store).expect("verified backup");
+    assert_eq!(
+        backup.manifest.format_version, BACKUP_FORMAT_VERSION,
+        "the backup format version is pinned"
+    );
+    assert_eq!(
+        backup.manifest.head_revision_id,
+        Some(1),
+        "the backup declares the committed head"
+    );
+    assert_eq!(
+        backup.manifest.store_schema_version,
+        india_reference::STORE_SCHEMA_VERSION,
+        "the backup declares the store schema version"
+    );
+
+    let target = root
+        .parent()
+        .expect("temp parent")
+        .join(format!("nirnay-rsv11-restored-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&target);
+    let verification = restore_verified_store(&backup.path, &target).expect("verified restore");
+    assert_eq!(
+        verification.revision_count, 2,
+        "both revisions are restored"
+    );
+    assert_eq!(
+        verification.head_revision_id,
+        Some(1),
+        "the restored head matches the manifest"
+    );
+
+    let restored = DurableReferenceStore::open(&target).expect("restored store opens");
+    let report = restored.verify_full().expect("restored verification");
+    assert_eq!(report.revision_count, 2, "all revisions survive restore");
+    assert_eq!(report.head_revision_id, Some(1), "head survives restore");
+    assert_eq!(
+        restored
+            .revision(1)
+            .expect("revision verifies")
+            .expect("revision exists"),
+        contract_snapshot("beta"),
+        "restored payload bytes match the source snapshot"
+    );
+    let _ = std::fs::remove_dir_all(&target);
+}
+
+#[test]
+fn rsv11_restore_fails_closed_without_publishing_a_target() {
+    let root = contract_root("rsv11-tamper");
+    {
+        let mut store = DurableReferenceStore::open(&root).expect("store opens");
+        store
+            .publish(&contract_snapshot("alpha"), None)
+            .expect("revision 0");
+    }
+    let mut store = DurableReferenceStore::open(&root).expect("store reopens");
+    let tampered_db = backup_verified(&mut store).expect("first backup");
+
+    let database = tampered_db.path.join("reference.sqlite3");
+    let mut bytes = std::fs::read(&database).expect("backup database");
+    let last = bytes.len() - 1;
+    bytes[last] ^= 0xff;
+    std::fs::write(&database, bytes).expect("tamper backup database");
+    let target = root
+        .parent()
+        .expect("temp parent")
+        .join(format!("nirnay-rsv11-tamper-db-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&target);
+    assert!(
+        restore_verified_store(&tampered_db.path, &target).is_err(),
+        "a tampered database fails closed"
+    );
+    assert!(!target.exists(), "a failed restore publishes no target");
+
+    let tampered_head = backup_verified(&mut store).expect("second backup");
+    let manifest_path = tampered_head.path.join("backup.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&manifest_path).expect("manifest")).expect("json");
+    manifest["head_revision_id"] = serde_json::json!(99);
+    std::fs::write(
+        &manifest_path,
+        serde_json::to_vec(&manifest).expect("json bytes"),
+    )
+    .expect("tamper backup manifest");
+    let target = root
+        .parent()
+        .expect("temp parent")
+        .join(format!("nirnay-rsv11-tamper-head-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&target);
+    assert!(
+        restore_verified_store(&tampered_head.path, &target).is_err(),
+        "a wrong declared head fails closed"
+    );
+    assert!(!target.exists(), "a head mismatch publishes no target");
 }
