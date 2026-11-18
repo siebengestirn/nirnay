@@ -319,7 +319,15 @@ impl SourceArchive {
         hash_hex: &str,
         timeout_ms: u64,
     ) -> Result<Vec<u8>, ArchiveError> {
-        self.resolve_with_timeout(hash_hex, timeout_ms)?;
+        // Hold the shared lock through the read so verification and byte
+        // access observe the same archive state.
+        let _guard = self.acquire_lock(false, timeout_ms)?;
+        let record = self
+            .find_record(hash_hex)?
+            .ok_or_else(|| ArchiveError::MissingSource {
+                hash: hash_hex.to_owned(),
+            })?;
+        verify_object(&self.object_path(hash_hex), &record)?;
         std::fs::read(self.object_path(hash_hex)).map_err(ArchiveError::from)
     }
 

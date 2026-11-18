@@ -706,7 +706,7 @@ impl DurableReferenceStore {
         let path = root.join("reference.sqlite3");
         let connection = Connection::open(&path)?;
         connection.execute_batch(
-            "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;",
+            "PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;",
         )?;
         let journal: String = connection.query_row("PRAGMA journal_mode", [], |row| row.get(0))?;
         let synchronous: i64 = connection.query_row("PRAGMA synchronous", [], |row| row.get(0))?;

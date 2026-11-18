@@ -1372,7 +1372,7 @@ fn rsv09_lock_contention_times_out_without_mutation() {
         .truncate(false)
         .open(&lock_path)
         .expect("open lock file");
-    FileExt::try_lock_exclusive(&held).expect("hold exclusive lock");
+    FileExt::lock_exclusive(&held).expect("hold exclusive lock");
     let before = std::fs::read(root.join("archive").join("manifest.jsonl")).expect("manifest");
     let outcome = SourceArchive::open_with_timeout(root.join("archive"), 50);
     assert!(
