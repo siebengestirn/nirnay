@@ -160,3 +160,27 @@ def test_iter_jsonl_streams_rows_without_materializing(tmp_path):
     iterator = _iter_jsonl(source)
     assert next(iterator) == {"n": 1}
     assert next(iterator) == {"n": 2}
+
+
+def test_upstox_normalize_rolls_back_output_if_report_link_fails(tmp_path, monkeypatch):
+    import quantlab.cli as cli
+    raw = tmp_path / "decoded.jsonl"
+    mapping = tmp_path / "instrument-map.json"
+    output = tmp_path / "canonical.jsonl"
+    sidecar = output.with_suffix(".jsonl.quality.json")
+    mapping.write_text(json.dumps({}), encoding="utf-8")
+    _dump(raw, [_decoded_row(1)])
+    real_link = cli.os.link
+    calls = []
+
+    def failing_link(source, destination):
+        calls.append(destination)
+        if len(calls) == 2:
+            raise OSError("injected report link failure")
+        return real_link(source, destination)
+
+    monkeypatch.setattr(cli.os, "link", failing_link)
+    assert main(["normalize", "--provider", "upstox", "--input", str(raw),
+                 "--instrument-map", str(mapping), "--output", str(output)]) == 2
+    assert not output.exists()
+    assert not sidecar.exists()

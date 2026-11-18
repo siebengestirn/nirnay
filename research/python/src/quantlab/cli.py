@@ -132,6 +132,41 @@ def _write_new(path: Path, content: bytes) -> None:
     _write_many_new([(path, content)])
 
 
+def _publish_streamed_with_report(
+    output: Path, staged_output: Path, report_path: Path, report_content: bytes
+) -> None:
+    """Publish a streamed output together with its commit marker, or roll back."""
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, report_name = tempfile.mkstemp(
+        prefix=f".{report_path.name}.normalize-", dir=report_path.parent
+    )
+    staged_report = Path(report_name)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(report_content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(staged_report, 0o600)
+        published: list[Path] = []
+        try:
+            os.link(staged_output, output)
+            published.append(output)
+            os.link(staged_report, report_path)
+            published.append(report_path)
+        except Exception:
+            for path in reversed(published):
+                path.unlink(missing_ok=True)
+            raise
+        for parent in sorted({output.parent, report_path.parent}, key=str):
+            parent_fd = os.open(parent, os.O_RDONLY)
+            try:
+                os.fsync(parent_fd)
+            finally:
+                os.close(parent_fd)
+    finally:
+        staged_report.unlink(missing_ok=True)
+
+
 def _normalize_upstox_bounded(args: argparse.Namespace, normalizer: UpstoxV3Normalizer) -> int:
     """Stream decoded Upstox rows to canonical events with bounded memory.
 
@@ -200,35 +235,29 @@ def _normalize_upstox_bounded(args: argparse.Namespace, normalizer: UpstoxV3Norm
             stream.flush()
             os.fsync(stream.fileno())
         os.chmod(temporary, 0o600)
-        os.link(temporary, output)
+        report = {
+            "schema_version": 1,
+            "provider": "upstox",
+            "input_rows": input_rows,
+            "canonical_events": event_count,
+            "ordering_contract": (
+                "capture_sequence strictly increasing; decoder append order; "
+                "no global sort; bounded memory"
+            ),
+            "explicit_capture_gaps": len(warnings),
+            "warnings": warnings,
+            "output_sha256": hasher.hexdigest(),
+            "research_grade": not warnings,
+            "quality_limitations": [
+                "provider_callbacks_are_not_raw_exchange_packets",
+                "no_exchange_sequence_or_fifo_queue_position_is_inferred",
+                "last_trade_snapshot_changes_are_not_confirmed_trade_prints",
+            ],
+        }
+        report_content = (json.dumps(report, sort_keys=True, indent=2) + "\n").encode()
+        _publish_streamed_with_report(output, temporary, report_path, report_content)
     finally:
         temporary.unlink(missing_ok=True)
-    parent_fd = os.open(output.parent, os.O_RDONLY)
-    try:
-        os.fsync(parent_fd)
-    finally:
-        os.close(parent_fd)
-    report = {
-        "schema_version": 1,
-        "provider": "upstox",
-        "input_rows": input_rows,
-        "canonical_events": event_count,
-        "ordering_contract": (
-            "capture_sequence strictly increasing; decoder append order; "
-            "no global sort; bounded memory"
-        ),
-        "explicit_capture_gaps": len(warnings),
-        "warnings": warnings,
-        "output_sha256": hasher.hexdigest(),
-        "research_grade": not warnings,
-        "quality_limitations": [
-            "provider_callbacks_are_not_raw_exchange_packets",
-            "no_exchange_sequence_or_fifo_queue_position_is_inferred",
-            "last_trade_snapshot_changes_are_not_confirmed_trade_prints",
-        ],
-    }
-    report_content = (json.dumps(report, sort_keys=True, indent=2) + "\n").encode()
-    _write_new(report_path, report_content)
     print(json.dumps(report, sort_keys=True, indent=2))
     return 0
 
