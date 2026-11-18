@@ -117,11 +117,8 @@ fn dataset_produces_journal_and_replays_without_duplicate_orders() {
     let output = directory.path().join("run");
 
     let first = invoke(&dataset, &spec, &output, false);
-    assert!(
-        first.status.success(),
-        "first run failed: {}",
-        String::from_utf8_lossy(&first.stderr)
-    );
+    let first_stderr = String::from_utf8_lossy(&first.stderr);
+    assert!(first.status.success(), "first run failed: {first_stderr}");
     assert!(
         output.join("journal.jsonl").is_dir(),
         "journal was published"
@@ -140,11 +137,8 @@ fn dataset_produces_journal_and_replays_without_duplicate_orders() {
     let first_records = first_value["journal_records"].as_u64().unwrap();
 
     let second = invoke(&dataset, &spec, &output, true);
-    assert!(
-        second.status.success(),
-        "replay failed: {}",
-        String::from_utf8_lossy(&second.stderr)
-    );
+    let second_stderr = String::from_utf8_lossy(&second.stderr);
+    assert!(second.status.success(), "replay failed: {second_stderr}");
     let second_report = std::fs::read(output.join("run-report.json")).unwrap();
     let second_value: Value = serde_json::from_slice(&second_report).unwrap();
     for field in [
