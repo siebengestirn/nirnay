@@ -20,6 +20,7 @@ use jiff::{
 };
 use rusqlite::{
     Connection, //
+    ErrorCode,
     OptionalExtension,
     TransactionBehavior,
     params,
@@ -725,9 +726,27 @@ impl DurableReferenceStore {
         .map_err(|error| StoreError::Lineage(error.to_string()))?;
         let path = root.join("reference.sqlite3");
         let connection = Connection::open(&path)?;
-        connection.execute_batch(
-            "PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;",
-        )?;
+        // `busy_timeout` does not cover a concurrent `journal_mode` change,
+        // so a bounded retry is required when another process is publishing.
+        let pragmas = "PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;";
+        let mut attempts = 0_u32;
+        loop {
+            match connection.execute_batch(pragmas) {
+                Ok(()) => break,
+                Err(error)
+                    if attempts < 10
+                        && matches!(
+                            &error,
+                            rusqlite::Error::SqliteFailure(detail, _)
+                                if detail.code == ErrorCode::DatabaseBusy
+                        ) =>
+                {
+                    attempts += 1;
+                    std::thread::sleep(Duration::from_millis(20 * u64::from(attempts)));
+                }
+                Err(error) => return Err(error.into()),
+            }
+        }
         let journal: String = connection.query_row("PRAGMA journal_mode", [], |row| row.get(0))?;
         let synchronous: i64 = connection.query_row("PRAGMA synchronous", [], |row| row.get(0))?;
         let foreign_keys: i64 =
