@@ -12,6 +12,7 @@ use std::path::{
     Path, //
     PathBuf,
 };
+use std::time::Duration;
 
 use jiff::{
     Timestamp, //
@@ -475,9 +476,16 @@ fn hash_file(path: &Path) -> Result<String, StoreError> {
 fn copy_tree(source: &Path, destination: &Path) -> Result<(), StoreError> {
     let mut directories = vec![source.to_path_buf()];
     while let Some(directory) = directories.pop() {
-        for entry in std::fs::read_dir(&directory)? {
-            let entry = entry?;
-            let kind = entry.file_type()?;
+        let entries = std::fs::read_dir(&directory).map_err(|error| {
+            StoreError::Corruption(format!("read directory {}: {error}", directory.display()))
+        })?;
+        for entry in entries {
+            let entry = entry.map_err(|error| {
+                StoreError::Corruption(format!("read entry in {}: {error}", directory.display()))
+            })?;
+            let kind = entry.file_type().map_err(|error| {
+                StoreError::Corruption(format!("file type {}: {error}", entry.path().display()))
+            })?;
             if kind.is_symlink() {
                 return Err(StoreError::BadPath(format!(
                     "symlink in source tree: {}",
@@ -493,10 +501,18 @@ fn copy_tree(source: &Path, destination: &Path) -> Result<(), StoreError> {
                 .to_path_buf();
             let target = destination.join(relative);
             if kind.is_dir() {
-                std::fs::create_dir_all(&target)?;
+                std::fs::create_dir_all(&target).map_err(|error| {
+                    StoreError::Corruption(format!("create {}: {error}", target.display()))
+                })?;
                 directories.push(entry.path());
             } else if kind.is_file() {
-                std::fs::copy(entry.path(), &target)?;
+                std::fs::copy(entry.path(), &target).map_err(|error| {
+                    StoreError::Corruption(format!(
+                        "copy {} to {}: {error}",
+                        entry.path().display(),
+                        target.display()
+                    ))
+                })?;
             }
         }
     }
@@ -1227,7 +1243,20 @@ pub fn restore_verified_store(
     if staging.exists() {
         std::fs::remove_dir_all(&staging)?;
     }
-    copy_tree(backup_dir, &staging).map_err(|error| {
+    // A backup is immutable once renamed into place, but some filesystems can
+    // briefly lag between metadata and content visibility across threads.
+    // Retry a vanished entry a bounded number of times before failing closed.
+    let mut copy_result = Ok(());
+    for attempt in 0..5_u64 {
+        let _ = std::fs::remove_dir_all(&staging);
+        std::fs::create_dir_all(&staging)?;
+        copy_result = copy_tree(backup_dir, &staging);
+        if copy_result.is_ok() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10 * (attempt + 1)));
+    }
+    copy_result.map_err(|error| {
         StoreError::Corruption(format!(
             "staging restore copy from {}: {error}",
             backup_dir.display()
