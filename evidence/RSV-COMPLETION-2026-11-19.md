@@ -59,8 +59,15 @@ the staged tree into the target with rollback of any previous target.
 | Restore verifies every revision, head, parent chain and source reference | `rsv11_restore_verifies_revisions_head_chain_and_sources` |
 | Tampered database or wrong declared head fails closed with no target | `rsv11_restore_fails_closed_without_publishing_a_target` |
 
-## Still deferred
+## RSV-12 measurement-only baseline
 
-RSV-12 (performance baseline) has no active implementation claim in these
-steps. RSV-08 remains an unresolved owner decision as recorded above. No
-capability or claim record is promoted.
+`evidence/RSV-PERFORMANCE-BASELINE-2026-11-19.md` records the first dated
+baseline from an ignored, measurement-only test: dataset hash, encoded payload
+size, write/reopen/query times and directory growth, with the exact command and
+raw transcript hash. There is no regression threshold, throughput certificate
+or capability claim.
+
+## Still open
+
+RSV-08 remains an unresolved owner decision as recorded above. No capability or
+claim record is promoted by any promotion step.

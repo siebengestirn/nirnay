@@ -56,8 +56,9 @@ covered by PR3; see `evidence/RSV-COMPLETION-2026-11-19.md`. RSV-08 crash
 boundaries are **not passed**: the frozen protocol's archive-write and
 manifest-append boundaries do not exist in the active design, and an owner
 decision is required to supersede them. RSV-11 is covered by PR4 (see
-`evidence/RSV-COMPLETION-2026-11-19.md`). RSV-12 performance baseline remains
-uncovered. No capability or claim record is promoted by these steps.
+`evidence/RSV-COMPLETION-2026-11-19.md`). RSV-12 has a dated measurement-only
+baseline in `evidence/RSV-PERFORMANCE-BASELINE-2026-11-19.md`, with no threshold
+or capability claim. No capability or claim record is promoted by these steps.
 
 ## Nirnay-owned decisions (not copied from the predecessor)
 

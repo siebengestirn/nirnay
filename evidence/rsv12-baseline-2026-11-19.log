@@ -1,0 +1,9 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.16s
+     Running tests/durability.rs (target/debug/deps/durability-0bc274cedec03445)
+
+running 1 test
+RSV12-BASELINE dataset_sha256=40c90988b91fec0e23e09c73a8fa6d733b6de8ec41c41fa4c6d1066272ae5c92 payload_bytes=3127 revisions=1 write_ms=6.960 reopen_ms=0.506 query_ms=0.849 disk_before=160 disk_after=53408 disk_growth=53248
+test rsv12_performance_baseline_records_sizes_and_timings ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 36 filtered out; finished in 0.02s
+
