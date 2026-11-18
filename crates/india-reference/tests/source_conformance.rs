@@ -41,26 +41,23 @@ struct FixtureSet {
 
 fn verify_fixture(root: &Path, fixture: &Fixture) -> Vec<u8> {
     let path = root.join(&fixture.file);
-    assert!(path.is_file(), "fixture {} is missing", fixture.file);
+    assert!(path.is_file(), "fixture file must exist");
     let bytes = std::fs::read(&path).unwrap();
     assert_eq!(
         bytes.len() as u64,
         fixture.size_bytes,
-        "fixture {} size matches provenance",
-        fixture.file
+        "fixture size must match provenance"
     );
     let digest = format!("{:x}", sha2::Sha256::digest(&bytes));
     assert_eq!(
         digest, fixture.sha256,
-        "fixture {} bytes match provenance hash",
-        fixture.file
+        "fixture bytes must match provenance hash"
     );
     assert!(
         !fixture.source_url.is_empty()
             && !fixture.retrieved_at_utc.is_empty()
             && !fixture.declared_coverage.is_empty(),
-        "fixture {} records source URL, retrieval time and coverage",
-        fixture.file
+        "fixture must record source URL, retrieval time and coverage"
     );
     bytes
 }
