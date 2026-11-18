@@ -1121,10 +1121,14 @@ name = "paper-engine"
 version = "0.1.0"
 dependencies = [
  "account-journal",
+ "anyhow",
+ "clap",
  "cost-model",
+ "market-types",
  "risk-engine",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tempfile",
  "thiserror",
  "trading-core",
