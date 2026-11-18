@@ -4,10 +4,17 @@
 //! and provider identity are aliases used for matching. No identity is ever
 //! derived from ISIN or symbol text.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{
+    BTreeMap, //
+    BTreeSet,
+};
 
 use thiserror::Error;
-use trading_core::{InstrumentId, Isin, Venue};
+use trading_core::{
+    InstrumentId, //
+    Isin,
+    Venue,
+};
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum IdentityError {

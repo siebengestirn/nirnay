@@ -4,10 +4,23 @@
 //! classification is selected by the declared source version and must be
 //! validated against actual dated files before that version is supported.
 
-use trading_core::{Isin, ListingStatus, SettlementRegime};
+use trading_core::{
+    Isin, //
+    ListingStatus,
+    SettlementRegime,
+};
 
-use crate::csv::{Limits, column, parse_document};
-use crate::observation::{Exclusion, Rejection, SnapshotScope, SourceBatch};
+use crate::csv::{
+    Limits, //
+    column,
+    parse_document,
+};
+use crate::observation::{
+    Exclusion, //
+    Rejection,
+    SnapshotScope,
+    SourceBatch,
+};
 
 /// Settlement classification for a BSE group in one source version.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

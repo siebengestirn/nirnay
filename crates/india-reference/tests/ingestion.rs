@@ -5,8 +5,18 @@
 //! grammar and rule behavior only; they are not evidence that a dated exchange
 //! source file has any particular layout.
 
-use india_reference::{IdentityRegistry, Limits, SnapshotScope, csv, source::bse, source::nse};
-use trading_core::{Isin, Venue};
+use india_reference::{
+    IdentityRegistry, //
+    Limits,
+    SnapshotScope,
+    csv,
+    source::bse,
+    source::nse,
+};
+use trading_core::{
+    Isin, //
+    Venue,
+};
 
 const ISIN_A: &str = "INE848E01016";
 const ISIN_B: &str = "INE002A01018";
@@ -48,12 +58,16 @@ fn nse_rows_have_explicit_outcomes_and_no_silent_skips() {
         2,
         "duplicate ISIN and empty ISIN rejected"
     );
-    assert!(batch.excluded[0].rule.contains("outside nse_cash_equity"));
+    assert!(
+        batch.excluded[0].rule.contains("outside nse_cash_equity"),
+        "scope rule is named"
+    );
     assert!(
         batch
             .rejected
             .iter()
-            .any(|item| item.reason.contains("duplicate"))
+            .any(|item| item.reason.contains("duplicate")),
+        "duplicate ISIN is rejected with a reason"
     );
 }
 
@@ -130,8 +144,14 @@ fn csv_parser_handles_logical_records_and_bom() {
         1,
         "quoted newline is one logical record"
     );
-    assert_eq!(document.rows[0].fields[0], "multi\r\nline");
-    assert_eq!(document.rows[0].fields[1], "quoted,comma");
+    assert_eq!(
+        document.rows[0].fields[0], "multi\r\nline",
+        "embedded newline preserved"
+    );
+    assert_eq!(
+        document.rows[0].fields[1], "quoted,comma",
+        "quoted comma preserved"
+    );
 }
 
 #[test]
@@ -158,7 +178,8 @@ fn csv_limits_are_enforced() {
     };
     assert_eq!(
         csv::parse_document(b"A,B\n1,2\n", limits),
-        Err(csv::CsvError::FileTooLarge { limit: 7 })
+        Err(csv::CsvError::FileTooLarge { limit: 7 }),
+        "file byte limit is enforced"
     );
     let limits = Limits {
         max_rows: 1,

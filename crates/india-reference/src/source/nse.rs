@@ -4,10 +4,24 @@
 //! source facts are rejected rather than defaulted; series outside the cash
 //! equity contract are excluded with a named rule.
 
-use trading_core::{Isin, ListingStatus, SettlementRegime};
+use trading_core::{
+    Isin, //
+    ListingStatus,
+    SettlementRegime,
+};
 
-use crate::csv::{Limits, column, optional_column, parse_document};
-use crate::observation::{Exclusion, Rejection, SnapshotScope, SourceBatch};
+use crate::csv::{
+    Limits, //
+    column,
+    optional_column,
+    parse_document,
+};
+use crate::observation::{
+    Exclusion, //
+    Rejection,
+    SnapshotScope,
+    SourceBatch,
+};
 
 /// One accepted NSE cash-equity master record.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -81,7 +95,7 @@ pub fn parse_nse_cash_master(
             other => {
                 batch.excluded.push(Exclusion {
                     line,
-                    rule: format!("series {other} outside nse_cash_equity scope"),
+                    rule: format!("{source_version}: series {other} outside nse_cash_equity scope"),
                 });
                 continue;
             }
