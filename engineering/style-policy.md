@@ -12,13 +12,13 @@ and `scripts/check_source_style.py` for every other language, and is wired into
 - **Rust**: Linux kernel Rust coding guidelines and Google Rust style guide,
   with the repository's resolution (one `use` per module, kernel vertical
   import layout with a trailing empty comment). No exceptions.
-- **Python**: Google Python Style Guide. We keep its import, exception,
+- **Python**: Google Python Style Guide. This policy keeps its import, exception,
   semicolon, backslash-continuation and mutable-default rules. The repository
   uses a 100-column limit (`.editorconfig`, `.ruff.toml`) rather than Google's
   80; the 100-column convention is already established here.
 - **C/C++**: Google C++ Style Guide, expressed by the pinned `.clang-format`
   (LLVM base, two-space indent, 100 columns, `nullptr`, regioned includes).
-  The Linux kernel C style (eight-space tabs) is deliberately **not** used for
+  The Linux kernel C style (eight-space tabs) is **not** used for
   application C++; it is a kernel constraint, not a repository convention.
 - **Shell**: Google Shell Style Guide. Executable scripts start with
   `#!/bin/bash`, use two-space indentation, stay within 80 columns, prefer
@@ -42,8 +42,8 @@ and `scripts/check_source_style.py` for every other language, and is wired into
 A web search for published style guides from leading HFT/quantitative trading
 firms (Jane Street, Citadel, Two Sigma, HRT, Optiver) found no authoritative
 public coding-style documents; results were interview-preparation material.
-We therefore do not attribute any rule to those firms. The low-latency
-discipline in our own ADRs (allocation control, no filesystem durability on a
+No rule is attributed to those firms. The low-latency
+discipline in the repository's ADRs (allocation control, no filesystem durability on a
 hot path, exact financial types) remains the binding domain constraint and is
 enforced by code and tests, not by a formatter.
 
