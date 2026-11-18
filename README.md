@@ -5,10 +5,10 @@
 **Release status:** research/paper engineering candidate. This repository is not a certified broker-connected trading system, not a SEBI/exchange-approved algo product, and not evidence of profitable alpha. Live order routing is hard-disabled. Every capability statement below distinguishes code present from external verification still required.
 
 <!-- CURRENT-STATE
-commit: c91ad3f
-verified_on: 2026-11-18
-ci_run: 44199935228
-scope: local make check and hosted CI on c91ad3f; not a claim for later commits
+commit: 30ee424b62217a4b40680a9843f130af76c4a0bf
+verified_on: 2026-11-19
+ci_run: 44366085320
+scope: make check + hosted CI 44366085320 on 30ee424 (11/11); no later-commit claim
 -->
 
 ## What is actually implemented
@@ -290,8 +290,8 @@ C++ numeric/book code is promoted as an isolated oracle; corporate-action and
 provenance concepts are reimplemented behind current bitemporal contracts.
 `cargo test --manifest-path extras/Cargo.toml` and the extras C++ probes are
 part of the active gates. Historical counts from 2026-11-13 and 2026-11-17 are
-retained in the dated verification documents; the current result is the
-2026-11-18 gate run recorded above. See `engineering/extras-promotion-audit.md`,
+retained in the dated verification documents; the current baseline is the
+2026-11-19 state note below. See `engineering/extras-audit.md`,
 `engineering/legacy-audit-2026-11-13.md` and `engineering/migration-map.csv`.
 Promotion of the retained India code into the active workspace still requires a
 new crate, ADR, owner and tests.
@@ -323,7 +323,7 @@ or add a dated file under `evidence/`.
 tests and external evidence—not by a successful demo, strategy backtest,
 architecture diagram or a green check from a different commit.
 
-### 2026-11-18 current-state note
+### Historical 2026-11-18 state note (superseded)
 
 The verification for commit `c91ad3f` is recorded in hosted CI run
 `44199935228`, which passed 11/11 jobs; the pinned-toolchain local `make
@@ -333,3 +333,26 @@ historical records. These results verify the named commit only and do not
 grant M1 exit approval, M2 authorization, platform readiness or live trading.
 Capture-session verification is implemented; the canonical-event, dataset,
 replay and paper stages of the vertical slice are still outstanding.
+
+### 2026-11-19 current-state note
+
+The reviewed baseline is merge commit
+`30ee424b62217a4b40680a9843f130af76c4a0bf` (PR #33, real-source conformance).
+Hosted CI run `44366085320` on that merge commit passed 11/11 jobs; local
+`make check` passed all project gates (455 Rust test cases, 162 Python tests,
+2 subtests). Details and the evidence boundary are recorded in
+`evidence/STATE-2026-11-19.md`.
+
+These results verify the named commit only and do not grant M1 exit approval,
+M2 authorization, platform readiness or live trading. PR #33 is complete for
+the declared `nse-cash-equity-v1` and `bse-security-master-v2` versions and the
+two dated source files only; it is not a claim for every exchange product.
+
+The earlier "stages outstanding" sentence described the 2026-11-18 baseline
+and no longer holds: capture-session verification, canonical-event
+normalization, point-in-time dataset building and the paper backtest/OMS
+stages are implemented (`engineering/capabilities.json` CAP-004, CAP-005,
+CAP-008, CAP-013, CAP-016). Dataset/build replay and raw-frame lineage
+verification are implemented for synthetic/internal fixtures; replay of real
+archived provider sessions remains unverified. Independently sourced
+market-data streams do not yet share one common ingress and replay path.
