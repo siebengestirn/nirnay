@@ -141,7 +141,16 @@ class DocsTest(unittest.TestCase):
 
     def test_parses_current_state(self) -> None:
         """Extract all four fields from a well-formed block."""
-        text = "<!-- CURRENT-STATE\ncommit: abc1234\nverified_on: 2026-11-18\nci_run: none\nscope: local\n-->"
+        text = "\n".join(
+            [
+                "<!-- CURRENT-STATE",
+                "commit: abc1234",
+                "verified_on: 2026-11-18",
+                "ci_run: none",
+                "scope: local",
+                "-->",
+            ]
+        )
         state = parse_state(text)
         self.assertEqual(state["commit"], "abc1234")
         self.assertEqual(state["scope"], "local")
