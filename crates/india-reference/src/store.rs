@@ -1187,7 +1187,13 @@ pub fn restore_verified_store(
             "backup inputs contain a symlink".to_owned(),
         ));
     }
-    let manifest_text = std::fs::read_to_string(backup_dir.join("backup.json"))?;
+    let manifest_text =
+        std::fs::read_to_string(backup_dir.join("backup.json")).map_err(|error| {
+            StoreError::Corruption(format!(
+                "backup manifest at {}: {error}",
+                backup_dir.join("backup.json").display()
+            ))
+        })?;
     let manifest: BackupManifest = serde_json::from_str(&manifest_text)
         .map_err(|error| StoreError::Corruption(format!("backup manifest is invalid: {error}")))?;
     if manifest.format_version != BACKUP_FORMAT_VERSION
@@ -1199,9 +1205,10 @@ pub fn restore_verified_store(
             expected: STORE_SCHEMA_VERSION,
         });
     }
-    if hash_file(&backup_dir.join("reference.sqlite3"))? != manifest.database_sha256
-        || hash_file(&backup_dir.join("archive").join("manifest.jsonl"))?
-            != manifest.archive_manifest_sha256
+    let backup_database = backup_dir.join("reference.sqlite3");
+    let backup_archive_manifest = backup_dir.join("archive").join("manifest.jsonl");
+    if hash_file(&backup_database)? != manifest.database_sha256
+        || hash_file(&backup_archive_manifest)? != manifest.archive_manifest_sha256
     {
         return Err(StoreError::Corruption(
             "backup file hashes do not match the manifest".to_owned(),
@@ -1220,9 +1227,19 @@ pub fn restore_verified_store(
     if staging.exists() {
         std::fs::remove_dir_all(&staging)?;
     }
-    copy_tree(backup_dir, &staging)?;
+    copy_tree(backup_dir, &staging).map_err(|error| {
+        StoreError::Corruption(format!(
+            "staging restore copy from {}: {error}",
+            backup_dir.display()
+        ))
+    })?;
     let verified = (|| -> Result<RestoreVerification, StoreError> {
-        let store = DurableReferenceStore::open(&staging)?;
+        let store = DurableReferenceStore::open(&staging).map_err(|error| {
+            StoreError::Corruption(format!(
+                "opening staged restore at {}: {error}",
+                staging.display()
+            ))
+        })?;
         let report = store.verify_full()?;
         if report.head_revision_id != manifest.head_revision_id {
             return Err(StoreError::Corruption(
