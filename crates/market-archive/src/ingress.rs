@@ -311,6 +311,32 @@ impl DurableIngestor {
         self.recent.push_back(digest);
     }
 
+    /// Replay committed frames with a deterministic ordinal fence. Frames whose
+    /// ordinal is below this ingestor's committed count are already durable and
+    /// are skipped, regardless of how old they are relative to the bounded hash
+    /// window. Frames at or above the fence are ingested normally.
+    pub fn replay(&mut self, source: &mut JournalReplaySource) -> Result<RunSummary, IngressError> {
+        if source.source_id() != self.source_id {
+            return Err(IngressError::SourceMismatch {
+                expected: self.source_id.clone(),
+                actual: source.source_id().to_owned(),
+            });
+        }
+        let mut summary = RunSummary::default();
+        while let Some((ordinal, frame)) = source.next_indexed_frame()? {
+            if ordinal < self.checkpoint.committed_frames {
+                summary.duplicates += 1;
+                continue;
+            }
+            match self.ingest_one(frame)? {
+                IngestOutcome::Committed { .. } => summary.committed += 1,
+                IngestOutcome::DuplicateSkipped => summary.duplicates += 1,
+                IngestOutcome::MalformedRejected => summary.malformed += 1,
+            }
+        }
+        Ok(summary)
+    }
+
     /// Drain a source into the journal, preserving the checkpoint at the last
     /// durable frame. A disconnect is a clean stop, not a failure.
     pub fn run(
@@ -458,12 +484,17 @@ impl IngressSource for FyersCallbackAdapter {
 /// replay is independent of provider decoding and canonical resolution.
 pub struct JournalReplaySource {
     source_id: String,
-    frames: VecDeque<SourceFrame>,
+    /// Ordinal among committed frames of this source, paired with the frame.
+    /// The ordinal is the replay fence: a target that has already committed
+    /// `committed_frames` frames skips all ordinals below that count, without
+    /// relying on a bounded in-memory hash window.
+    frames: VecDeque<(u64, SourceFrame)>,
 }
 
 impl JournalReplaySource {
     pub fn open(path: impl AsRef<std::path::Path>, source_id: &str) -> Result<Self, IngressError> {
         let mut frames = VecDeque::new();
+        let mut ordinal = 0_u64;
         for raw in scan_journal(path).map_err(IngressError::Archive)?.frames {
             if raw.source != source_id {
                 continue;
@@ -471,16 +502,20 @@ impl JournalReplaySource {
             let payload = STANDARD.decode(&raw.payload_base64).map_err(|_| {
                 IngressError::Malformed("replayed payload is not valid base64".to_owned())
             })?;
-            frames.push_back(SourceFrame {
-                source_id: raw.source,
-                provider_instrument_id: raw.provider_instrument_id,
-                entitlement_ref: raw.entitlement_ref,
-                received_utc_nanos: raw.received_utc_nanos,
-                received_monotonic_nanos: raw.received_monotonic_nanos,
-                exchange_utc_nanos: raw.exchange_utc_nanos,
-                provider_sequence: raw.capture_sequence,
-                payload,
-            });
+            frames.push_back((
+                ordinal,
+                SourceFrame {
+                    source_id: raw.source,
+                    provider_instrument_id: raw.provider_instrument_id,
+                    entitlement_ref: raw.entitlement_ref,
+                    received_utc_nanos: raw.received_utc_nanos,
+                    received_monotonic_nanos: raw.received_monotonic_nanos,
+                    exchange_utc_nanos: raw.exchange_utc_nanos,
+                    provider_sequence: raw.capture_sequence,
+                    payload,
+                },
+            ));
+            ordinal += 1;
         }
         Ok(Self {
             source_id: source_id.to_owned(),
@@ -500,6 +535,13 @@ impl IngressSource for JournalReplaySource {
     }
 
     fn next_frame(&mut self) -> Result<Option<SourceFrame>, IngressError> {
+        Ok(self.frames.pop_front().map(|(_, frame)| frame))
+    }
+}
+
+impl JournalReplaySource {
+    /// Next frame together with its ordinal among the source's committed frames.
+    pub fn next_indexed_frame(&mut self) -> Result<Option<(u64, SourceFrame)>, IngressError> {
         Ok(self.frames.pop_front())
     }
 }

@@ -498,7 +498,7 @@ fn replay_into_a_resumed_journal_is_idempotent() {
     }
     let mut source = JournalReplaySource::open(&path, UPSTOX_SOURCE_ID).expect("replay source");
     let mut ingestor = DurableIngestor::resume(&path, UPSTOX_SOURCE_ID).expect("resume");
-    let summary = ingestor.run(&mut source, 10).expect("replay run");
+    let summary = ingestor.replay(&mut source).expect("replay run");
     assert_eq!(summary.committed, 0, "no captured frame is re-committed");
     assert_eq!(summary.duplicates, 2, "both frames resolve as duplicates");
     assert_eq!(
@@ -548,5 +548,40 @@ fn replay_preserves_fyers_bytes_and_source_boundary() {
             Err(IngressError::SourceMismatch { .. })
         ),
         "a FYERS replay cannot cross into an Upstox-bound ingestor"
+    );
+}
+
+#[test]
+fn replay_is_idempotent_beyond_the_hash_window() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let path = directory.path().join("large-replay.jsonl");
+    let count = 5000_u64;
+    {
+        let frames: Vec<_> = (0..count)
+            .map(|index| frame(index, format!("payload-{index}").as_bytes()))
+            .collect();
+        let mut source = UpstoxV3Adapter::new(frames);
+        let mut ingestor = DurableIngestor::create_new(&path, UPSTOX_SOURCE_ID).expect("ingestor");
+        ingestor
+            .run(&mut source, count as usize + 1)
+            .expect("capture");
+    }
+    assert_eq!(
+        scan_journal(&path).expect("scan").frames.len(),
+        count as usize,
+        "the captured journal has more frames than the bounded hash window"
+    );
+    let mut source = JournalReplaySource::open(&path, UPSTOX_SOURCE_ID).expect("replay source");
+    let mut ingestor = DurableIngestor::resume(&path, UPSTOX_SOURCE_ID).expect("resume");
+    let summary = ingestor.replay(&mut source).expect("replay");
+    assert_eq!(
+        summary.committed, 0,
+        "no frame outside the hash window is re-committed"
+    );
+    assert_eq!(summary.duplicates, count, "every captured frame is fenced");
+    assert_eq!(
+        scan_journal(&path).expect("scan").frames.len(),
+        count as usize,
+        "the journal length is unchanged by a large replay"
     );
 }
