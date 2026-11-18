@@ -10,6 +10,10 @@ name = "domain"
 crates = ["trading-core", "market-book"]
 
 [[layer]]
+name = "reference"
+crates = ["india-reference"]
+
+[[layer]]
 name = "storage"
 crates = ["account-journal", "market-archive"]
 

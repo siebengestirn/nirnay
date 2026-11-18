@@ -922,6 +922,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "india-reference"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "india-domain",
+ "market-types",
+ "thiserror",
+ "trading-core",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
