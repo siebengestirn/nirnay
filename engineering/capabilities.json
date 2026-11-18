@@ -170,7 +170,7 @@
     },
     {
       "id": "CAP-021",
-      "name": "Shared raw ingress port with Upstox V3 adapter",
+      "name": "Shared raw ingress port with Upstox and FYERS adapters",
       "status": "implemented",
       "evidence_status": "Market-archive ingress module routes original Upstox V3 protobuf bytes and FYERS SDK-decoded callback JSON bytes, each with source-specific metadata, through the durable raw-frame journal. Source binding, duplicate/sequence/malformed accounting, disconnect stops and journal-rebuilt checkpoints are shared by both adapters. Thirteen dedicated tests cover replay-after-restart dedup, post-commit continuity advancement, bounded continuity state and cross-source isolation; no provider decoding or canonical instrument resolution is performed here, and no live entitlement or network path is certified.",
       "owner": "market-data",

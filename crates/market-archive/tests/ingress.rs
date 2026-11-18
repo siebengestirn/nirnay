@@ -354,6 +354,19 @@ fn fyers_callbacks_keep_exact_json_bytes_and_local_sequence() {
         Some(1),
         "the recorder's local sequence is preserved as metadata"
     );
+    assert_eq!(
+        frames[0].entitlement_ref, "entitlement:operator:fyers",
+        "the FYERS entitlement reference round-trips"
+    );
+    assert_eq!(
+        frames[0].received_utc_nanos, 1_760_000_000_000_000_001,
+        "FYERS receipt time round-trips"
+    );
+    assert_eq!(
+        frames[0].exchange_utc_nanos,
+        Some(1_760_000_000_000_000_000),
+        "FYERS exchange time round-trips"
+    );
 }
 
 #[test]
@@ -387,6 +400,11 @@ fn fyers_gap_duplicate_disconnect_and_restart_are_accounted() {
         resumed.checkpoint().committed_frames,
         2,
         "the FYERS checkpoint survives restart"
+    );
+    assert_eq!(
+        resumed.checkpoint().gaps_observed,
+        1,
+        "the FYERS gap accounting survives restart"
     );
     assert_eq!(
         resumed.checkpoint().last_capture_sequence,
