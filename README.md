@@ -37,8 +37,10 @@ python3 -m pip install -e 'apps/fyers-recorder[test]'
 python3 -m pip install -e 'apps/kite-ops[test]'
 ```
 
-Run the complete local gate (formatting, style checks, Rust and Python tests,
-Clippy, dependency policy and contract validation):
+Run the complete local gate (documentation lifecycle, tool isolation,
+generated-path audit, ShellCheck where shell scripts exist, formatting, style
+checks, Rust and Python tests, Clippy, dependency policy and contract
+validation):
 
 ```bash
 make check

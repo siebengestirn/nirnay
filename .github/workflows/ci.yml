@@ -96,6 +96,11 @@ jobs:
         run: python3 scripts/check_rust_style.py
       - name: Python/C++/Shell/Makefile/JSON/Markdown style on added lines
         run: python3 scripts/check_source_style.py
+      - name: ShellCheck and tool isolation
+        run: |
+          python3 scripts/check_shellcheck.py
+          python3 scripts/check_generated_paths.py
+          python3 scripts/check_no_cross_pollution.py
       - name: Documentation lifecycle
         run: |
           python3 scripts/check_docs.py --self-test
