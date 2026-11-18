@@ -68,7 +68,9 @@ fn verify_fixture(root: &Path, fixture: &Fixture) -> Vec<u8> {
 
 /// Parse structured coverage from the provenance declaration.
 ///
-/// Accepted forms: `full:NSE`, `full:BSE`, `full:NSE+BSE` and `partial`.
+/// Parsed forms: `full:NSE`, `full:BSE`, `full:NSE+BSE` and `partial`.
+/// The dated gate then requires exactly the source's own venue, so combined
+/// and partial declarations are rejected for a per-source fixture.
 fn declared_scope(text: &str, expected: Venue) -> SnapshotScope {
     let scope = match text {
         "partial" => SnapshotScope::Partial,
