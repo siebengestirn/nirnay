@@ -227,3 +227,79 @@ fn foreign_source_frames_are_rejected_before_any_write() {
         "the rejected frame left no journal record"
     );
 }
+
+#[test]
+fn replaying_a_committed_frame_after_restart_is_skipped() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let path = directory.path().join("replay.jsonl");
+    let original = frame(7, b"committed-once");
+    {
+        let mut ingestor = DurableIngestor::create_new(&path, UPSTOX_SOURCE_ID).expect("ingestor");
+        ingestor.ingest_one(original.clone()).expect("first commit");
+    }
+    let mut resumed = DurableIngestor::resume(&path, UPSTOX_SOURCE_ID).expect("resume");
+    assert_eq!(
+        resumed.ingest_one(original).expect("replayed delivery"),
+        IngestOutcome::DuplicateSkipped,
+        "an exact replay after restart is recognised"
+    );
+    assert_eq!(
+        scan_journal(&path).expect("scan").frames.len(),
+        1,
+        "the replay adds no second journal record"
+    );
+    assert_eq!(
+        resumed.checkpoint().committed_frames,
+        1,
+        "the checkpoint does not advance on replay"
+    );
+}
+
+#[test]
+fn metadata_failure_does_not_advance_continuity() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let path = directory.path().join("metadata.jsonl");
+    let mut ingestor = DurableIngestor::create_new(&path, UPSTOX_SOURCE_ID).expect("ingestor");
+    let mut invalid = frame(5, b"valid-payload");
+    invalid.provider_instrument_id = "x".repeat(1024 * 1024);
+    assert_eq!(
+        ingestor.ingest_one(invalid).expect("invalid metadata"),
+        IngestOutcome::MalformedRejected,
+        "an unrepresentable metadata field is rejected"
+    );
+    assert_eq!(
+        ingestor.checkpoint().last_capture_sequence,
+        None,
+        "the failed frame left no phantom sequence"
+    );
+    assert_eq!(
+        ingestor.checkpoint().gaps_observed,
+        0,
+        "the failed frame recorded no phantom gap"
+    );
+    assert!(
+        scan_journal(&path).expect("scan").frames.is_empty(),
+        "the rejected frame wrote nothing"
+    );
+}
+
+#[test]
+fn continuity_stream_map_is_bounded_by_source_supplied_ids() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let path = directory.path().join("streams.jsonl");
+    let mut ingestor = DurableIngestor::create_new(&path, UPSTOX_SOURCE_ID).expect("ingestor");
+    for index in 0..1200_u64 {
+        let mut item = frame(index, format!("payload-{index}").as_bytes());
+        item.provider_instrument_id = format!("provider.instrument.{index}");
+        ingestor.ingest_one(item).expect("commit stream frame");
+    }
+    assert!(
+        ingestor.tracked_streams() <= 1024,
+        "source-supplied instrument ids cannot grow the continuity map without bound"
+    );
+    assert_eq!(
+        ingestor.checkpoint().committed_frames,
+        1200,
+        "every valid frame is still committed"
+    );
+}

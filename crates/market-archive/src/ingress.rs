@@ -34,10 +34,15 @@ use crate::{
 /// Source identity used by the Upstox V3 raw protobuf adapter.
 pub const UPSTOX_SOURCE_ID: &str = "upstox.v3";
 
-/// Number of recent payload hashes retained for in-process deduplication.
-/// Older duplicates are detected by the sequence continuity tracker instead,
-/// so the in-memory set never grows without bound.
+/// Number of recent payload hashes retained for in-process deduplication and
+/// rebuilt from the journal on restart. The most recent hash additionally
+/// fences an exact replay of the last committed frame.
 const RECENT_HASHES: usize = 4096;
+
+/// Maximum number of per-instrument continuity trackers retained in memory.
+/// Least-recently-added streams are evicted; a returning stream is treated as
+/// a fresh one rather than allowing source-supplied ids to grow memory freely.
+const MAX_CONTINUITY_STREAMS: usize = 1024;
 
 /// An original provider frame plus the capture metadata needed to audit it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -107,6 +112,7 @@ pub struct DurableIngestor {
     writer: JournalWriter,
     checkpoint: IngressCheckpoint,
     continuity: BTreeMap<String, ContinuityTracker>,
+    stream_order: VecDeque<String>,
     recent: VecDeque<String>,
     seen: HashSet<String>,
 }
@@ -122,6 +128,7 @@ impl DurableIngestor {
             writer: JournalWriter::create_new(path)?,
             checkpoint: IngressCheckpoint::default(),
             continuity: BTreeMap::new(),
+            stream_order: VecDeque::new(),
             recent: VecDeque::new(),
             seen: HashSet::new(),
         })
@@ -138,6 +145,7 @@ impl DurableIngestor {
             writer: JournalWriter::open_append(&path)?,
             checkpoint: IngressCheckpoint::default(),
             continuity: BTreeMap::new(),
+            stream_order: VecDeque::new(),
             recent: VecDeque::new(),
             seen: HashSet::new(),
         };
@@ -147,14 +155,20 @@ impl DurableIngestor {
             }
             ingestor.checkpoint.committed_frames += 1;
             ingestor.checkpoint.last_payload_sha256 = Some(frame.payload_sha256.clone());
+            // Rebuild the bounded hash window so a replay of a recently
+            // committed frame is still recognised after restart.
+            ingestor.remember(frame.payload_sha256.clone());
             if let Some(sequence) = frame.capture_sequence {
-                ingestor.checkpoint.last_capture_sequence = Some(sequence);
-                match ingestor
-                    .continuity
-                    .entry(frame.provider_instrument_id.clone())
-                    .or_default()
-                    .observe(sequence)
-                {
+                ingestor.checkpoint.last_capture_sequence = Some(
+                    ingestor
+                        .checkpoint
+                        .last_capture_sequence
+                        .map_or(sequence, |last| last.max(sequence)),
+                );
+                let observation = ingestor
+                    .stream_tracker(&frame.provider_instrument_id)
+                    .observe(sequence);
+                match observation {
                     Observation::Gap { .. } => ingestor.checkpoint.gaps_observed += 1,
                     Observation::OutOfOrder { .. } => ingestor.checkpoint.out_of_order += 1,
                     Observation::Duplicate => ingestor.checkpoint.duplicates_skipped += 1,
@@ -175,6 +189,31 @@ impl DurableIngestor {
         &self.source_id
     }
 
+    #[must_use]
+    pub fn tracked_streams(&self) -> usize {
+        self.continuity.len()
+    }
+
+    fn stream_tracker(&mut self, instrument: &str) -> &mut ContinuityTracker {
+        if !self.continuity.contains_key(instrument) {
+            if self.continuity.len() >= MAX_CONTINUITY_STREAMS
+                && let Some(oldest) = self.stream_order.pop_front()
+            {
+                self.continuity.remove(&oldest);
+            }
+            self.stream_order.push_back(instrument.to_owned());
+        }
+        self.continuity.entry(instrument.to_owned()).or_default()
+    }
+
+    fn preview(&self, instrument: &str, sequence: u64) -> Observation {
+        self.continuity
+            .get(instrument)
+            .cloned()
+            .unwrap_or_default()
+            .observe(sequence)
+    }
+
     /// Validate and durably append one source frame.
     pub fn ingest_one(&mut self, frame: SourceFrame) -> Result<IngestOutcome, IngressError> {
         if frame.source_id != self.source_id {
@@ -192,27 +231,25 @@ impl DurableIngestor {
             return Ok(IngestOutcome::MalformedRejected);
         }
         let digest = format!("{:x}", Sha256::digest(&frame.payload));
-        if self.seen.contains(&digest) {
+        // The recovered last hash fences an exact replay of the most recent
+        // committed frame even when its hash has aged out of the window.
+        if self.checkpoint.last_payload_sha256.as_deref() == Some(digest.as_str())
+            || self.seen.contains(&digest)
+        {
             self.checkpoint.duplicates_skipped += 1;
             return Ok(IngestOutcome::DuplicateSkipped);
         }
-        if let Some(sequence) = frame.provider_sequence {
-            match self
-                .continuity
-                .entry(frame.provider_instrument_id.clone())
-                .or_default()
-                .observe(sequence)
-            {
-                Observation::Gap { .. } => self.checkpoint.gaps_observed += 1,
-                Observation::OutOfOrder { .. } => self.checkpoint.out_of_order += 1,
-                Observation::Duplicate => {
-                    self.checkpoint.duplicates_skipped += 1;
-                    return Ok(IngestOutcome::DuplicateSkipped);
-                }
-                Observation::Initial | Observation::InOrder => {}
-            }
+        let preview = frame.provider_sequence.map(|sequence| {
+            (
+                sequence,
+                self.preview(&frame.provider_instrument_id, sequence),
+            )
+        });
+        if let Some((_, Observation::Duplicate)) = preview {
+            self.checkpoint.duplicates_skipped += 1;
+            return Ok(IngestOutcome::DuplicateSkipped);
         }
-        let raw = RawFrame::new(
+        let raw = match RawFrame::new(
             &frame.source_id,
             &frame.provider_instrument_id,
             frame.received_utc_nanos,
@@ -221,13 +258,39 @@ impl DurableIngestor {
             frame.provider_sequence,
             &frame.entitlement_ref,
             &frame.payload,
-        )?;
+        ) {
+            Ok(raw) => raw,
+            Err(_) => {
+                self.checkpoint.malformed_rejected += 1;
+                return Ok(IngestOutcome::MalformedRejected);
+            }
+        };
         self.writer.append(&raw)?;
+        // Continuity advances only after the frame is durably committed, so a
+        // validation or write failure cannot create a phantom observation.
+        if let Some((sequence, observation)) = preview {
+            let applied = self
+                .stream_tracker(&frame.provider_instrument_id)
+                .observe(sequence);
+            debug_assert_eq!(
+                applied, observation,
+                "the previewed continuity observation must match the applied one"
+            );
+            match observation {
+                Observation::Gap { .. } => self.checkpoint.gaps_observed += 1,
+                Observation::OutOfOrder { .. } => self.checkpoint.out_of_order += 1,
+                Observation::Duplicate | Observation::Initial | Observation::InOrder => {}
+            }
+        }
         self.remember(digest.clone());
         self.checkpoint.committed_frames += 1;
         self.checkpoint.last_payload_sha256 = Some(digest);
         if let Some(sequence) = frame.provider_sequence {
-            self.checkpoint.last_capture_sequence = Some(sequence);
+            self.checkpoint.last_capture_sequence = Some(
+                self.checkpoint
+                    .last_capture_sequence
+                    .map_or(sequence, |last| last.max(sequence)),
+            );
         }
         Ok(IngestOutcome::Committed {
             capture_sequence: frame.provider_sequence.unwrap_or(0),
