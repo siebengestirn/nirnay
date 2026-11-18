@@ -390,10 +390,15 @@ def _cmd_build_dataset(args: argparse.Namespace) -> int:
     events = [market_event_from_dict(row) for row in event_rows]
     refs = _load_reference_data(args.reference_data)
     builder = PITDatasetBuilder(refs)
+    input_hash = hashlib.sha256()
+    with Path(args.events).open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            input_hash.update(chunk)
     rows, manifest = builder.build(events, dataset_id=args.dataset_id,
                                    created_at_utc_ns=args.created_at_utc_ns,
                                    max_event_age_ns=args.max_event_age_ns,
-                                   universe_id=args.universe_id)
+                                   universe_id=args.universe_id,
+                                   input_sha256=input_hash.hexdigest())
     if not rows:
         raise ValueError("no eligible rows remain after point-in-time mapping and time filters")
     signer = None
@@ -404,7 +409,11 @@ def _cmd_build_dataset(args: argparse.Namespace) -> int:
                                 signer=signer, signing_key_id=args.kms_key_id)
     print(json.dumps({"status": "published", "path": str(destination),
                       "dataset_id": manifest.dataset_id, "row_count": manifest.row_count,
-                      "data_sha256": manifest.data_sha256, "parquet": args.parquet,
+                      "data_sha256": manifest.data_sha256,
+                      "input_sha256": manifest.input_sha256,
+                      "code_digest": manifest.code_digest,
+                      "config_digest": manifest.config_digest,
+                      "parquet": args.parquet,
                       "signed": signer is not None,
                       "signing_key_id": args.kms_key_id,
                       "signing_public_key_b64": None if signer is None else signer.public_key_b64,
