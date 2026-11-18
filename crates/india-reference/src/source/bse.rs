@@ -120,6 +120,10 @@ fn layout_for_version(source_version: &str) -> Result<BseLayout, String> {
             symbol: "TCKRSYMB",
             name: "FININSTRMNM",
             isin: &["ISIN"],
+            // Field 58 (TickSz) is the authoritative tick size in BSE's
+            // standardised contract. Field 9 (BidIntrvl) is the semantic
+            // successor of v1's NEW TICK SIZE and is kept only as a fallback;
+            // in the dated fixture the two agree on every EQ row.
             tick: &["TICKSZ", "BIDINTRVL"],
             lot: "NEWBRDLOTQTY",
             type_flag: &["SCTYTPFLG"],

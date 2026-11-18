@@ -139,7 +139,8 @@ fn standardised_bse_csv() -> String {
          500002,BBB,Beta Limited,{ISIN_B},0.05,1,EQ,NS,A\n\
          500003,CCC,Gamma Limited,{ISIN_A},0.05,1,EQ,A,S\n\
          500004,DDD,Delta Mutual Fund,{ISIN_B},0.05,1,MF,A,A\n\
-         500005,EEE,Echo Limited,{ISIN_A},0.05,1,EQ,A,A\n"
+         500005,EEE,Echo Limited,{ISIN_A},0.05,1,EQ,A,A\n\
+         500006,FFF,Iota Limited,{ISIN_B},0.05,1,EQ,A,I\n"
     )
 }
 
@@ -159,8 +160,15 @@ fn standardised_bse_master_accounts_for_every_declared_state() {
     assert_eq!(batch.accepted.len(), 1, "active classified EQ row accepted");
     assert_eq!(
         batch.excluded.len(),
-        2,
-        "suspended status and non-EQ type are declared exclusions"
+        3,
+        "suspended, inactive and non-EQ type are declared exclusions"
+    );
+    assert!(
+        batch
+            .excluded
+            .iter()
+            .any(|item| item.rule.contains("status I")),
+        "the inactive status must be excluded by its declared rule"
     );
     assert_eq!(
         batch.rejected.len(),
