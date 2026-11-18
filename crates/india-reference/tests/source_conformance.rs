@@ -6,7 +6,6 @@
 //! provenance in `NIRNAY_SOURCE_FIXTURES_DIR`. Synthetic parser tests prove CSV
 //! grammar and rule behavior; they are not evidence of exchange compatibility.
 
-use std::collections::BTreeMap;
 use std::path::{
     Path, //
     PathBuf,
@@ -15,6 +14,7 @@ use std::path::{
 use india_reference::{
     Limits, //
     SnapshotScope,
+    SourceBatch,
     source,
 };
 use serde::Deserialize;
@@ -30,6 +30,9 @@ struct Fixture {
     size_bytes: u64,
     format_version: String,
     declared_coverage: String,
+    expected_accepted: Option<usize>,
+    expected_excluded: Option<usize>,
+    expected_rejected: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -74,6 +77,14 @@ fn dated_exchange_sources_conform() {
     )
     .expect("fixture provenance must match the active schema");
 
+    assert!(
+        manifest.nse.format_version == "nse-cash-equity-v1",
+        "unsupported NSE format version must fail closed"
+    );
+    assert!(
+        manifest.bse.format_version == "bse-security-master-v1",
+        "unsupported BSE format version must fail closed"
+    );
     let nse_bytes = verify_fixture(&root, &manifest.nse);
     let bse_bytes = verify_fixture(&root, &manifest.bse);
 
@@ -132,12 +143,30 @@ fn dated_exchange_sources_conform() {
         "rejections are deterministic across repeated ingestion"
     );
 
-    let mut seen = BTreeMap::new();
-    for row in &nse.accepted {
-        let key = row.isin.as_str().to_owned();
-        assert!(
-            seen.insert(key.clone(), row.line).is_none(),
-            "duplicate ISIN {key} in accepted NSE rows"
+    check_counts("NSE", &manifest.nse, &nse);
+    check_counts("BSE", &manifest.bse, &bse);
+}
+
+fn check_counts<T>(name: &str, fixture: &Fixture, batch: &SourceBatch<T>) {
+    if let Some(expected) = fixture.expected_accepted {
+        assert_eq!(
+            batch.accepted.len(),
+            expected,
+            "{name} accepted count must match provenance"
+        );
+    }
+    if let Some(expected) = fixture.expected_excluded {
+        assert_eq!(
+            batch.excluded.len(),
+            expected,
+            "{name} excluded count must match provenance"
+        );
+    }
+    if let Some(expected) = fixture.expected_rejected {
+        assert_eq!(
+            batch.rejected.len(),
+            expected,
+            "{name} rejected count must match provenance"
         );
     }
 }

@@ -531,6 +531,15 @@ fn restore_rejects_tampered_objects_without_publishing_a_target() {
             }
             _ => unreachable!("named cases only"),
         }
+        let tampered_archive = SourceArchive::open(tampered.join("source-archive"));
+        let archive_rejected = match &tampered_archive {
+            Ok(archive) => archive.verify().is_err(),
+            Err(_) => true,
+        };
+        assert!(
+            archive_rejected,
+            "tampering must be detected by archive-level verification"
+        );
         assert!(
             india_reference::restore_verified(&tampered, &target).is_err(),
             "{case} backup must be rejected"
