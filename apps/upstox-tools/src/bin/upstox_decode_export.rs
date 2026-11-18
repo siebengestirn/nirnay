@@ -6,7 +6,9 @@
 //!
 //! The journal is read through the shared bounded `JournalReader` so record
 //! limits, torn-tail detection and EOF semantics match the recorder and the
-//! rest of the archive. Output is published only after every record succeeds.
+//! rest of the archive. A completed, verified capture session is required:
+//! the manifest hash, frame count and terminal status are checked before and
+//! after decoding. Output is published only after every check succeeds.
 
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
@@ -28,7 +30,11 @@ use anyhow::{
     ensure,
 };
 use clap::Parser;
-use market_archive::JournalReader;
+use market_archive::{
+    JournalReader, //
+    verified_journal_path,
+    verify_capture_session,
+};
 use serde_json::{Value, json};
 use upstox_feed_proto::{
     decode::decode_feed_response,
@@ -50,6 +56,12 @@ struct Args {
     /// New output file containing full decoded message envelopes.
     #[arg(long)]
     output: PathBuf,
+    /// Completed capture session manifest required before decoding.
+    #[arg(long)]
+    manifest: PathBuf,
+    /// Provider the manifest must declare.
+    #[arg(long, default_value = "Upstox")]
+    provider: String,
 }
 
 fn ltpc_value(value: &Ltpc) -> Value {
@@ -149,9 +161,30 @@ fn response_value(response: &FeedResponse) -> Value {
     })
 }
 
-fn decode_journal(input: &Path, output: &Path) -> anyhow::Result<u64> {
+fn decode_journal(
+    input: &Path,
+    output: &Path,
+    manifest: &Path,
+    provider: &str,
+) -> anyhow::Result<u64> {
     ensure!(input.is_file(), "input raw frame journal does not exist");
     ensure!(input != output, "input and output paths must differ");
+    ensure!(
+        manifest.is_file(),
+        "capture session manifest does not exist"
+    );
+
+    let verified = verify_capture_session(manifest, provider)
+        .context("verifying the completed capture session")?;
+    let session_journal = verified_journal_path(manifest, provider)
+        .context("resolving the journal declared by the session manifest")?;
+    ensure!(
+        std::fs::canonicalize(input).context("canonicalizing input journal")?
+            == std::fs::canonicalize(&session_journal)
+                .context("canonicalizing manifest journal")?,
+        "input is not the journal declared by the capture session manifest"
+    );
+
     let parent = output
         .parent()
         .filter(|path| !path.as_os_str().is_empty())
@@ -221,6 +254,21 @@ fn decode_journal(input: &Path, output: &Path) -> anyhow::Result<u64> {
             return Err(error);
         }
     };
+
+    let recheck = (|| -> anyhow::Result<()> {
+        let after = verify_capture_session(manifest, provider)
+            .context("re-verifying the capture session after decoding")?;
+        ensure!(
+            after == verified,
+            "capture session changed while decoded output was being written"
+        );
+        Ok(())
+    })();
+    if let Err(error) = recheck {
+        let _ = std::fs::remove_file(&temp_path);
+        return Err(error);
+    }
+
     // Hard-link publication is atomic and fails rather than overwriting an
     // existing destination. Temp and destination are siblings on one filesystem.
     if let Err(error) = std::fs::hard_link(&temp_path, output) {
@@ -237,7 +285,7 @@ fn decode_journal(input: &Path, output: &Path) -> anyhow::Result<u64> {
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
-    let count = decode_journal(&args.input, &args.output)?;
+    let count = decode_journal(&args.input, &args.output, &args.manifest, &args.provider)?;
     eprintln!("decoded_frames={count}");
     Ok(())
 }
@@ -249,7 +297,14 @@ mod tests {
         PathBuf,
     };
 
-    use market_archive::RawFrame;
+    use market_archive::{
+        CaptureManifest, //
+        RawFrame,
+    };
+    use sha2::{
+        Digest, //
+        Sha256,
+    };
 
     use super::decode_journal;
 
@@ -291,6 +346,40 @@ mod tests {
         .unwrap()
     }
 
+    fn write_session(
+        dir: &Path,
+        journal: &Path,
+        frame_count: u64,
+        terminal_error: Option<&str>,
+    ) -> PathBuf {
+        let bytes = std::fs::read(journal).unwrap();
+        let digest = format!("{:x}", Sha256::digest(&bytes));
+        let manifest = CaptureManifest {
+            schema_version: 1,
+            provider: "Upstox".to_owned(),
+            feed_protocol: "Market Data Feed V3".to_owned(),
+            mode: "LTPC".to_owned(),
+            instrument_keys: Vec::new(),
+            entitlement_ref: "synthetic-fixture".to_owned(),
+            started_at_utc: "2026-11-18T00:00:00Z".to_owned(),
+            ended_at_utc: "2026-11-18T00:01:00Z".to_owned(),
+            duration_ns: 1,
+            connection_count: 1,
+            frame_count,
+            decode_error_count: 0,
+            terminal_error: terminal_error.map(str::to_owned),
+            raw_journal: journal.file_name().unwrap().to_string_lossy().into_owned(),
+            raw_journal_sha256: digest,
+            raw_journal_frame_count: frame_count,
+            provider_sequence_available: false,
+            capture_sequence_semantics: "local receive-order counter".to_owned(),
+            limitations: Vec::new(),
+        };
+        let path = dir.join("manifest.json");
+        std::fs::write(&path, serde_json::to_string(&manifest).unwrap()).unwrap();
+        path
+    }
+
     #[test]
     fn decode_succeeds_for_a_valid_journal() {
         let dir = TestDir::new("valid");
@@ -301,8 +390,9 @@ mod tests {
             frame(2, b"").to_json_line().unwrap(),
         ];
         std::fs::write(&input, format!("{}\n", lines.join("\n"))).unwrap();
+        let manifest = write_session(dir.path(), &input, 2, None);
 
-        let count = decode_journal(&input, &output).unwrap();
+        let count = decode_journal(&input, &output, &manifest, "Upstox").unwrap();
 
         assert_eq!(count, 2, "both frames decode");
         assert!(output.is_file(), "output is published");
@@ -320,9 +410,10 @@ mod tests {
         let input = dir.path().join("raw.jsonl");
         let output = dir.path().join("decoded.jsonl");
         std::fs::write(&input, b"").unwrap();
+        let manifest = write_session(dir.path(), &input, 0, None);
 
         assert!(
-            decode_journal(&input, &output).is_err(),
+            decode_journal(&input, &output, &manifest, "Upstox").is_err(),
             "empty input is rejected"
         );
         assert!(!output.exists(), "no output is published for empty input");
@@ -336,9 +427,10 @@ mod tests {
         let good = frame(1, b"").to_json_line().unwrap();
         let bad = frame(2, b"not protobuf at all").to_json_line().unwrap();
         std::fs::write(&input, format!("{good}\n{bad}\n")).unwrap();
+        let manifest = write_session(dir.path(), &input, 2, None);
 
         assert!(
-            decode_journal(&input, &output).is_err(),
+            decode_journal(&input, &output, &manifest, "Upstox").is_err(),
             "a late decode error aborts the run"
         );
         assert!(!output.exists(), "partial output is not published");
@@ -358,9 +450,10 @@ mod tests {
         let good = frame(1, b"").to_json_line().unwrap();
         let torn = frame(2, b"").to_json_line().unwrap();
         std::fs::write(&input, format!("{good}\n{torn}")).unwrap();
+        let manifest = write_session(dir.path(), &input, 2, None);
 
         assert!(
-            decode_journal(&input, &output).is_err(),
+            decode_journal(&input, &output, &manifest, "Upstox").is_err(),
             "a torn tail aborts decoding"
         );
         assert!(!output.exists(), "partial output is not published");
@@ -373,10 +466,11 @@ mod tests {
         let output = dir.path().join("decoded.jsonl");
         let line = frame(1, b"").to_json_line().unwrap();
         std::fs::write(&input, format!("{line}\n")).unwrap();
+        let manifest = write_session(dir.path(), &input, 1, None);
         std::fs::write(&output, b"existing immutable output").unwrap();
 
         assert!(
-            decode_journal(&input, &output).is_err(),
+            decode_journal(&input, &output, &manifest, "Upstox").is_err(),
             "reusing an output identity fails"
         );
         assert_eq!(
@@ -384,5 +478,74 @@ mod tests {
             b"existing immutable output",
             "the existing output is not overwritten"
         );
+    }
+
+    #[test]
+    fn decode_requires_a_session_manifest() {
+        let dir = TestDir::new("no-manifest");
+        let input = dir.path().join("raw.jsonl");
+        let output = dir.path().join("decoded.jsonl");
+        let line = frame(1, b"").to_json_line().unwrap();
+        std::fs::write(&input, format!("{line}\n")).unwrap();
+        let missing = dir.path().join("absent-manifest.json");
+
+        assert!(
+            decode_journal(&input, &output, &missing, "Upstox").is_err(),
+            "an unverified journal must not be decoded"
+        );
+        assert!(!output.exists(), "no output is published");
+    }
+
+    #[test]
+    fn decode_rejects_terminal_capture_error() {
+        let dir = TestDir::new("terminal-error");
+        let input = dir.path().join("raw.jsonl");
+        let output = dir.path().join("decoded.jsonl");
+        let line = frame(1, b"").to_json_line().unwrap();
+        std::fs::write(&input, format!("{line}\n")).unwrap();
+        let manifest = write_session(dir.path(), &input, 1, Some("socket closed"));
+
+        assert!(
+            decode_journal(&input, &output, &manifest, "Upstox").is_err(),
+            "an incomplete capture is not a research input"
+        );
+        assert!(!output.exists(), "no output is published");
+    }
+
+    #[test]
+    fn decode_rejects_a_journal_mutated_after_verification() {
+        let dir = TestDir::new("mutated");
+        let input = dir.path().join("raw.jsonl");
+        let output = dir.path().join("decoded.jsonl");
+        let line = frame(1, b"").to_json_line().unwrap();
+        std::fs::write(&input, format!("{line}\n")).unwrap();
+        let manifest = write_session(dir.path(), &input, 1, None);
+        let mutated =
+            format!("{line}\n").replacen("\"source\":\"upstox\"", "\"source\": \"upstox\"", 1);
+        std::fs::write(&input, mutated).unwrap();
+
+        assert!(
+            decode_journal(&input, &output, &manifest, "Upstox").is_err(),
+            "a mutated journal invalidates the session"
+        );
+        assert!(!output.exists(), "no output is published");
+    }
+
+    #[test]
+    fn decode_rejects_input_other_than_the_manifest_journal() {
+        let dir = TestDir::new("wrong-input");
+        let verified = dir.path().join("verified.jsonl");
+        let other = dir.path().join("other.jsonl");
+        let output = dir.path().join("decoded.jsonl");
+        let line = frame(1, b"").to_json_line().unwrap();
+        std::fs::write(&verified, format!("{line}\n")).unwrap();
+        std::fs::write(&other, format!("{line}\n")).unwrap();
+        let manifest = write_session(dir.path(), &verified, 1, None);
+
+        assert!(
+            decode_journal(&other, &output, &manifest, "Upstox").is_err(),
+            "the decoded file must be the verified journal"
+        );
+        assert!(!output.exists(), "no output is published");
     }
 }
