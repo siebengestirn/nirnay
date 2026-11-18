@@ -151,6 +151,19 @@
         ]
       },
       "falsifier": "An unpinned `uses:` reference, a declared dependency absent from its constraint file, or an advisory absent from the allowlist passes the gates, or two identical SBOM runs differ."
+    },
+    {
+      "id": "CLM-014",
+      "statement": "The versioned exchange reference parsers account for every physical row of a dated source file under a declared version, preserve that outcome on a repeat parse, and fail closed on an undeclared version; compatibility is limited to the tested source versions and categories.",
+      "status": "implemented",
+      "scope": {
+        "packages": [
+          "crates/india-reference/src/source/bse.rs",
+          "crates/india-reference/src/source/nse.rs",
+          "crates/india-reference/tests/source_conformance.rs"
+        ]
+      },
+      "falsifier": "A dated source file has a row with no accepted/excluded/rejected outcome, a repeat parse differs from the first, an undeclared format version parses successfully, or a passing run is presented as coverage of untested versions or products."
     }
   ]
 }

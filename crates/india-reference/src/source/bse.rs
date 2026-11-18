@@ -34,32 +34,37 @@ pub fn bse_group_classes(
     source_version: &str,
 ) -> Result<Vec<(&'static str, BseGroupClass)>, String> {
     match source_version {
-        "bse-security-master-v1" => {
-            let trade = ["T", "MT", "TS", "IT", "Z", "R", "ZP", "P", "Y", "ZY", "XT"];
-            let standard = ["A", "B", "M", "MS", "S", "X", "XC", "XD"];
-            let mut rows = Vec::new();
-            for group in trade {
-                rows.push((
-                    group,
-                    BseGroupClass {
-                        settlement_regime: SettlementRegime::TradeForTrade,
-                        z_category: matches!(group, "Z" | "ZP" | "ZY"),
-                    },
-                ));
-            }
-            for group in standard {
-                rows.push((
-                    group,
-                    BseGroupClass {
-                        settlement_regime: SettlementRegime::Standard,
-                        z_category: false,
-                    },
-                ));
-            }
-            Ok(rows)
-        }
+        "bse-security-master-v1" | "bse-security-master-v2" => Ok(known_group_classes()),
         other => Err(format!("unsupported BSE source version {other}")),
     }
+}
+
+/// The group-to-regime mapping shared by both declared source versions.
+/// Groups outside this table are never inferred from a row: the caller records
+/// them as rejections so an unknown settlement regime cannot gain eligibility.
+fn known_group_classes() -> Vec<(&'static str, BseGroupClass)> {
+    let trade = ["T", "MT", "TS", "IT", "Z", "R", "ZP", "P", "Y", "ZY", "XT"];
+    let standard = ["A", "B", "M", "MS", "S", "X", "XC", "XD"];
+    let mut rows = Vec::new();
+    for group in trade {
+        rows.push((
+            group,
+            BseGroupClass {
+                settlement_regime: SettlementRegime::TradeForTrade,
+                z_category: matches!(group, "Z" | "ZP" | "ZY"),
+            },
+        ));
+    }
+    for group in standard {
+        rows.push((
+            group,
+            BseGroupClass {
+                settlement_regime: SettlementRegime::Standard,
+                z_category: false,
+            },
+        ));
+    }
+    rows
 }
 
 /// One accepted BSE cash-market record.
@@ -77,6 +82,59 @@ pub struct BseCashRow {
     pub status: ListingStatus,
 }
 
+/// Column layout for one declared BSE source version.
+///
+/// The standardised file replaces the legacy names with ISO 20022 tags. The
+/// mapping is fixed by BSE's `SCRIP_STANDARDISED_FORMAT.docx` shipped with the
+/// dated source; no column is guessed from its position or sample value.
+struct BseLayout {
+    scrip: &'static str,
+    symbol: &'static str,
+    name: &'static str,
+    isin: &'static [&'static str],
+    tick: &'static [&'static str],
+    lot: &'static str,
+    type_flag: &'static [&'static str],
+    group: &'static str,
+    status: &'static str,
+    /// Only the standardised contract declares suspend/inactive as exclusions.
+    standardised: bool,
+}
+
+fn layout_for_version(source_version: &str) -> Result<BseLayout, String> {
+    match source_version {
+        "bse-security-master-v1" => Ok(BseLayout {
+            scrip: "SCRIP CODE",
+            symbol: "INSTRUMENT CODE",
+            name: "SCRIP NAME",
+            isin: &["ISIN CODE", "ISIN"],
+            tick: &["NEW TICK SIZE"],
+            lot: "MARKET LOT",
+            type_flag: &["SECURITY TYPE FLAG", "SECURITY TYPE", "SECURITY_TYPE_FLAG"],
+            group: "GROUP NAME",
+            status: "STATUS",
+            standardised: false,
+        }),
+        "bse-security-master-v2" => Ok(BseLayout {
+            scrip: "FININSTRMID",
+            symbol: "TCKRSYMB",
+            name: "FININSTRMNM",
+            isin: &["ISIN"],
+            // Field 58 (TickSz) is the authoritative tick size in BSE's
+            // standardised contract. Field 9 (BidIntrvl) is the semantic
+            // successor of v1's NEW TICK SIZE and is kept only as a fallback;
+            // in the dated fixture the two agree on every EQ row.
+            tick: &["TICKSZ", "BIDINTRVL"],
+            lot: "NEWBRDLOTQTY",
+            type_flag: &["SCTYTPFLG"],
+            group: "SCTYSRS",
+            status: "STS",
+            standardised: true,
+        }),
+        other => Err(format!("unsupported BSE source version {other}")),
+    }
+}
+
 /// Parse BSE security-master bytes under a declared source version.
 pub fn parse_bse_master(
     bytes: &[u8],
@@ -85,19 +143,17 @@ pub fn parse_bse_master(
     limits: Limits,
 ) -> Result<SourceBatch<BseCashRow>, String> {
     let classes = bse_group_classes(source_version)?;
+    let layout = layout_for_version(source_version)?;
     let document = parse_document(bytes, limits).map_err(|error| error.to_string())?;
-    let scrip_column = column(&document.header, &["SCRIP CODE"])?;
-    let symbol_column = column(&document.header, &["INSTRUMENT CODE"])?;
-    let name_column = column(&document.header, &["SCRIP NAME"])?;
-    let isin_column = column(&document.header, &["ISIN CODE", "ISIN"])?;
-    let tick_column = column(&document.header, &["NEW TICK SIZE"])?;
-    let lot_column = column(&document.header, &["MARKET LOT"])?;
-    let type_column = column(
-        &document.header,
-        &["SECURITY TYPE FLAG", "SECURITY TYPE", "SECURITY_TYPE_FLAG"],
-    )?;
-    let group_column = column(&document.header, &["GROUP NAME"])?;
-    let status_column = column(&document.header, &["STATUS"])?;
+    let scrip_column = column(&document.header, &[layout.scrip])?;
+    let symbol_column = column(&document.header, &[layout.symbol])?;
+    let name_column = column(&document.header, &[layout.name])?;
+    let isin_column = column(&document.header, layout.isin)?;
+    let tick_column = column(&document.header, layout.tick)?;
+    let lot_column = column(&document.header, &[layout.lot])?;
+    let type_column = column(&document.header, layout.type_flag)?;
+    let group_column = column(&document.header, &[layout.group])?;
+    let status_column = column(&document.header, &[layout.status])?;
 
     let mut batch = SourceBatch {
         source_id: "bse.cash_security_master".to_owned(),
@@ -117,7 +173,7 @@ pub fn parse_bse_master(
         if scrip_code.is_empty() || symbol.is_empty() {
             batch.rejected.push(Rejection {
                 line,
-                reason: "empty SCRIP CODE or INSTRUMENT CODE".to_owned(),
+                reason: "empty scrip code or security id".to_owned(),
             });
             continue;
         }
@@ -157,7 +213,7 @@ pub fn parse_bse_master(
         if name.is_empty() {
             batch.rejected.push(Rejection {
                 line,
-                reason: "empty SCRIP NAME; no fallback identity is inferred".to_owned(),
+                reason: "empty security name; no fallback identity is inferred".to_owned(),
             });
             continue;
         }
@@ -167,7 +223,7 @@ pub fn parse_bse_master(
             _ => {
                 batch.rejected.push(Rejection {
                     line,
-                    reason: "NEW TICK SIZE is not a positive paise value".to_owned(),
+                    reason: "tick size is not a positive paise value".to_owned(),
                 });
                 continue;
             }
@@ -177,17 +233,28 @@ pub fn parse_bse_master(
             _ => {
                 batch.rejected.push(Rejection {
                     line,
-                    reason: "MARKET LOT is not a positive integer".to_owned(),
+                    reason: "market lot is not a positive integer".to_owned(),
                 });
                 continue;
             }
         };
-        let status = match row.fields[status_column].trim().to_uppercase().as_str() {
+        let status_text = row.fields[status_column].trim().to_uppercase();
+        let status = match status_text.as_str() {
             "A" | "ACTIVE" => ListingStatus::Active,
+            // BSE's standardised contract declares S (suspend) and I (inactive)
+            // as real, non-tradable states. They are excluded by that declared
+            // rule, not silently treated as active and never inferred as errors.
+            "S" | "SUSPEND" | "I" | "INACTIVE" if layout.standardised => {
+                batch.excluded.push(Exclusion {
+                    line,
+                    rule: format!("instrument status {status_text} is not active"),
+                });
+                continue;
+            }
             other => {
                 batch.rejected.push(Rejection {
                     line,
-                    reason: format!("unsupported STATUS {other}"),
+                    reason: format!("unsupported instrument status {other}"),
                 });
                 continue;
             }
