@@ -1,3 +1,7 @@
+[[bin]]
+name = "paper-run"
+path = "src/bin/paper_run.rs"
+
 [package]
 name = "paper-engine"
 version = "0.1.0"
@@ -9,14 +13,18 @@ description = "Deterministic paper-trading order lifecycle."
 
 [dependencies]
 account-journal.workspace = true
+anyhow.workspace = true
+clap.workspace = true
 cost-model.workspace = true
+market-types.workspace = true
 risk-engine.workspace = true
 serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
 trading-core.workspace = true
 
 [dev-dependencies]
-serde_json.workspace = true
 tempfile.workspace = true
 
 [lints]
