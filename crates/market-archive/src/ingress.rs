@@ -376,3 +376,75 @@ impl IngressSource for UpstoxV3Adapter {
         }
     }
 }
+
+/// Source identity used by the FYERS Data Socket callback adapter.
+pub const FYERS_SOURCE_ID: &str = "fyers.data_socket";
+
+/// One SDK-decoded callback observation. FYERS delivers decoded JSON, not
+/// original WebSocket bytes: `callback_json` is preserved exactly as supplied
+/// by the recorder and is never re-serialized in the ingress path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FyersCallback {
+    pub provider_instrument_id: String,
+    pub entitlement_ref: String,
+    pub received_utc_nanos: i64,
+    pub received_monotonic_nanos: u64,
+    pub exchange_utc_nanos: Option<i64>,
+    /// Local recorder sequence. It is not an exchange sequence and is stored
+    /// as continuity metadata only; no exchange ordering is inferred.
+    pub local_sequence: Option<u64>,
+    pub callback_json: Vec<u8>,
+}
+
+impl FyersCallback {
+    #[must_use]
+    pub fn into_source_frame(self) -> SourceFrame {
+        SourceFrame {
+            source_id: FYERS_SOURCE_ID.to_owned(),
+            provider_instrument_id: self.provider_instrument_id,
+            entitlement_ref: self.entitlement_ref,
+            received_utc_nanos: self.received_utc_nanos,
+            received_monotonic_nanos: self.received_monotonic_nanos,
+            exchange_utc_nanos: self.exchange_utc_nanos,
+            provider_sequence: self.local_sequence,
+            payload: self.callback_json,
+        }
+    }
+}
+
+/// FYERS adapter over a supplied callback queue. It performs no decoding and
+/// assigns no canonical instrument identity.
+pub struct FyersCallbackAdapter {
+    callbacks: VecDeque<Result<FyersCallback, IngressError>>,
+}
+
+impl FyersCallbackAdapter {
+    #[must_use]
+    pub fn new(callbacks: Vec<FyersCallback>) -> Self {
+        Self {
+            callbacks: callbacks.into_iter().map(Ok).collect(),
+        }
+    }
+
+    pub fn push(&mut self, callback: FyersCallback) {
+        self.callbacks.push_back(Ok(callback));
+    }
+
+    pub fn disconnect(&mut self) {
+        self.callbacks.push_back(Err(IngressError::Disconnected));
+    }
+}
+
+impl IngressSource for FyersCallbackAdapter {
+    fn source_id(&self) -> &str {
+        FYERS_SOURCE_ID
+    }
+
+    fn next_frame(&mut self) -> Result<Option<SourceFrame>, IngressError> {
+        match self.callbacks.pop_front() {
+            None => Ok(None),
+            Some(Ok(callback)) => Ok(Some(callback.into_source_frame())),
+            Some(Err(error)) => Err(error),
+        }
+    }
+}

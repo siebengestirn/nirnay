@@ -303,3 +303,148 @@ fn continuity_stream_map_is_bounded_by_source_supplied_ids() {
         "every valid frame is still committed"
     );
 }
+
+// ---------------------------------------------------------------------------
+// FYERS: second independent source implementation over the same ingress port.
+// ---------------------------------------------------------------------------
+
+use market_archive::{
+    FYERS_SOURCE_ID, //
+    FyersCallback,
+    FyersCallbackAdapter,
+};
+
+fn fyers_callback(sequence: u64, json: &[u8]) -> FyersCallback {
+    FyersCallback {
+        provider_instrument_id: "NSE_EQ|INE002A01018".to_owned(),
+        entitlement_ref: "entitlement:operator:fyers".to_owned(),
+        received_utc_nanos: 1_760_000_000_000_000_000 + i64::try_from(sequence).expect("sequence"),
+        received_monotonic_nanos: sequence,
+        exchange_utc_nanos: Some(1_760_000_000_000_000_000),
+        local_sequence: Some(sequence),
+        callback_json: json.to_vec(),
+    }
+}
+
+#[test]
+fn fyers_callbacks_keep_exact_json_bytes_and_local_sequence() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let path = directory.path().join("fyers.jsonl");
+    let first = br#"{"type":"sf","symbol":"SBIN-EQ","ltp":812.5}"#;
+    let second = br#"{"type":"dp","symbol":"SBIN-EQ","bid_price1":812.0}"#;
+    let mut source =
+        FyersCallbackAdapter::new(vec![fyers_callback(1, first), fyers_callback(2, second)]);
+    let mut ingestor = DurableIngestor::create_new(&path, FYERS_SOURCE_ID).expect("ingestor");
+    let summary = ingestor.run(&mut source, 10).expect("run");
+    assert_eq!(summary.committed, 2, "both callbacks are committed");
+
+    let frames = scan_journal(&path).expect("scan").frames;
+    assert_eq!(frames.len(), 2, "the journal has exactly two records");
+    assert!(
+        frames.iter().all(|item| item.source == FYERS_SOURCE_ID),
+        "records carry the FYERS source identity"
+    );
+    assert_eq!(
+        frames[0].payload_base64,
+        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, first),
+        "the original callback bytes survive unchanged"
+    );
+    assert_eq!(
+        frames[0].capture_sequence,
+        Some(1),
+        "the recorder's local sequence is preserved as metadata"
+    );
+    assert_eq!(
+        frames[0].entitlement_ref, "entitlement:operator:fyers",
+        "the FYERS entitlement reference round-trips"
+    );
+    assert_eq!(
+        frames[0].received_utc_nanos, 1_760_000_000_000_000_001,
+        "FYERS receipt time round-trips"
+    );
+    assert_eq!(
+        frames[0].exchange_utc_nanos,
+        Some(1_760_000_000_000_000_000),
+        "FYERS exchange time round-trips"
+    );
+}
+
+#[test]
+fn fyers_gap_duplicate_disconnect_and_restart_are_accounted() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let path = directory.path().join("fyers-recovery.jsonl");
+    {
+        let mut source = FyersCallbackAdapter::new(vec![
+            fyers_callback(1, b"{\"type\":\"sf\",\"ltp\":1}"),
+            fyers_callback(4, b"{\"type\":\"sf\",\"ltp\":4}"),
+        ]);
+        source.push(fyers_callback(4, b"{\"type\":\"sf\",\"ltp\":4}"));
+        source.disconnect();
+        source.push(fyers_callback(5, b"{\"type\":\"sf\",\"ltp\":5}"));
+        let mut ingestor = DurableIngestor::create_new(&path, FYERS_SOURCE_ID).expect("ingestor");
+        let summary = ingestor.run(&mut source, 10).expect("run");
+        assert!(summary.disconnected, "disconnect stops the FYERS run");
+        assert_eq!(
+            summary.committed, 2,
+            "no frame after disconnect is committed"
+        );
+        assert_eq!(summary.duplicates, 1, "the repeated callback is skipped");
+        assert_eq!(
+            ingestor.checkpoint().gaps_observed,
+            1,
+            "the missing local sequence is reported"
+        );
+    }
+    let resumed = DurableIngestor::resume(&path, FYERS_SOURCE_ID).expect("resume");
+    assert_eq!(
+        resumed.checkpoint().committed_frames,
+        2,
+        "the FYERS checkpoint survives restart"
+    );
+    assert_eq!(
+        resumed.checkpoint().gaps_observed,
+        1,
+        "the FYERS gap accounting survives restart"
+    );
+    assert_eq!(
+        resumed.checkpoint().last_capture_sequence,
+        Some(4),
+        "the last local sequence survives restart"
+    );
+}
+
+#[test]
+fn independent_sources_share_the_port_without_cross_contamination() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let upstox_path = directory.path().join("upstox.jsonl");
+    let fyers_path = directory.path().join("fyers.jsonl");
+    let mut upstox = DurableIngestor::create_new(&upstox_path, UPSTOX_SOURCE_ID).expect("upstox");
+    let mut fyers = DurableIngestor::create_new(&fyers_path, FYERS_SOURCE_ID).expect("fyers");
+
+    upstox
+        .ingest_one(frame(1, b"upstox-native"))
+        .expect("upstox commit");
+    fyers
+        .ingest_one(fyers_callback(1, b"{\"type\":\"sf\"}").into_source_frame())
+        .expect("fyers commit");
+
+    let mut foreign = frame(2, b"fyers-sent-to-upstox");
+    foreign.source_id = FYERS_SOURCE_ID.to_owned();
+    assert!(
+        matches!(
+            upstox.ingest_one(foreign),
+            Err(IngressError::SourceMismatch { .. })
+        ),
+        "a source cannot write through another source's ingestor"
+    );
+    assert_eq!(
+        scan_journal(&upstox_path).expect("scan").frames.len(),
+        1,
+        "the rejected frame left the first journal untouched"
+    );
+    assert_eq!(
+        scan_journal(&fyers_path).expect("scan").frames.len(),
+        1,
+        "the second source has one independent journal"
+    );
+}
