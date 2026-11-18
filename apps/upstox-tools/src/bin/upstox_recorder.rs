@@ -683,7 +683,9 @@ mod tests {
     #[test]
     fn oversized_frame_error_names_both_sizes() {
         let message = OversizedFrame { size: 9, limit: 8 }.to_string();
-        assert!(message.contains('9'), "reported size is present");
-        assert!(message.contains('8'), "archive limit is present");
+        assert_eq!(
+            message, "Upstox frame of 9 bytes exceeds the archive payload limit of 8 bytes",
+            "the diagnostic names both sizes exactly"
+        );
     }
 }

@@ -8,9 +8,9 @@ use crate::ArchiveError;
 ///
 /// This is an application-level contract for the v1 line-oriented journal, not
 /// a claim about any provider's maximum message size. Larger payloads require
-/// a chunked/object-payload path. The recorder's current 4 MiB WebSocket frame
-/// cap is not reconciled here; frames above this limit fail closed until that
-/// separate change is made.
+/// a chunked/object-payload path. The Upstox recorder uses the shared
+/// [`MAX_PAYLOAD_BYTES`] limit, so a frame rejected here is a terminal capture
+/// outcome rather than a retryable network error.
 pub const MAX_RAW_RECORD_BYTES: usize = 1024 * 1024;
 
 /// Maximum decoded payload bytes. Base64 expands this to at most
