@@ -1,0 +1,9 @@
+   Compiling india-reference v0.1.0 (/private/tmp/nirnay-bse-v2/crates/india-reference)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.94s
+     Running tests/source_conformance.rs (target/debug/deps/source_conformance-11b362d5ac4418c9)
+
+running 1 test
+test dated_exchange_sources_conform ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.68s
+

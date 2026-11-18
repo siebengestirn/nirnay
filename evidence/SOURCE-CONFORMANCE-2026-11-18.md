@@ -1,8 +1,11 @@
 # Real-source conformance record — 2026-11-18
 
 **Prepared:** 2026-11-18 (operator-supplied dated exchange files).
-**Revision:** `2ebacd7c6551621680636b643cd0bd60492caaff` (code commit; this
-record is added in a separate evidence commit).
+**Revision:** `0a9e48659e00ae2e1baa6f224db8c044c5deede7` (code commit for the
+retained transcript; the first conformance run was at `2ebacd7c…`, and the only
+later code changes were a justification comment and an added synthetic test
+row, with no parser behavior change). This record is added in a separate
+evidence commit.
 **Environment:** macOS 27.0.1 arm64; rustc/cargo 1.99.1.
 **Scope:** compatibility of the two declared source versions and categories
 listed below only. This is local engineering evidence, not a production,
@@ -15,10 +18,20 @@ NIRNAY_SOURCE_FIXTURES_DIR=/Users/tourist/Documents/nirnay-source-fixtures/2026-
   cargo test -p india-reference --test source_conformance --offline -- --ignored --nocapture
 ```
 
-Exit status: **0**. Result: `dated_exchange_sources_conform ... ok`
-(`1 passed; 0 failed; 0 ignored; 1 filtered out`).
-Output SHA-256:
-`94fc53c571451432f6bba002ec1b8ce127621bb3308e47c75d1b3cd8b7365c52`.
+Exit status: **0**. Verbatim result lines:
+
+```text
+test dated_exchange_sources_conform ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.68s
+```
+
+The complete raw transcript is retained at
+`evidence/source-conformance-2026-11-18-output.log` (413 bytes). Its SHA-256 is
+`7299236bc788d81b0e3211c3e54b853dc03593f5c188e33b30daffdd83a7f9ed`. That hash
+identifies the retained transcript bytes; a fresh rerun will differ because
+Cargo embeds wall-clock timings, so it is not presented as a reproducible
+identifier of any future run.
 
 The gate verifies each fixture's exact byte size and SHA-256 before parsing,
 declares an exact per-venue scope, asserts every physical row has exactly one
@@ -56,6 +69,17 @@ Rejections (1,290): unclassified settlement groups `NS`, `NT`, `IF`, `F`, `W`
 (751), duplicate scrip code or ISIN across BSE's legacy/new code ranges (516),
 and invalid or missing ISIN (23, including literal `NA` and `0`).
 
+Duplicate handling is deterministic and file-order first-wins: where one ISIN
+appears under both a legacy `100xxx` scrip code and a newer `500xxx` code, the
+first occurrence (the legacy `100xxx` code in this file) is retained and the
+later one is rejected. The accepted set therefore carries the legacy code for
+those securities; no identity is inferred or merged.
+
+The tick size is read from field 58 `TickSz`, the authoritative tick-size field
+in BSE's standardised contract. Field 9 `BidIntrvl` (the semantic successor of
+v1's `NEW TICK SIZE`) is a fallback only; the two columns agree on every EQ row
+in this fixture, so the choice does not affect these counts.
+
 These are explicit, versioned rules; no assertion was relaxed to obtain the
 pass. Unknown groups and undeclared source versions remain fail-closed.
 
@@ -65,4 +89,5 @@ Compatibility is established only for `nse-cash-equity-v1` and
 `bse-security-master-v2` over the categories present in these two dated files.
 It does not cover every exchange product, other dates, corporate-action
 feeds, derivatives, or live market-data rights. `make check` was green on the
-code commit; hosted CI on the evidence commit is recorded separately.
+code commit; hosted CI results for the pull-request head are recorded in that
+pull request's checks, not in this dated record.
