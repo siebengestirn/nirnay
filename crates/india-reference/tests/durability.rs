@@ -563,3 +563,388 @@ fn copy_directory(source: &std::path::Path, destination: &std::path::Path) {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Promoted P1-04 reference-store contract: RSV-01/02/03 foundation.
+// ---------------------------------------------------------------------------
+
+use india_domain::{
+    Instrument, //
+    InstrumentId,
+    Listing,
+    ListingStatus,
+    ListingTerms,
+    Segment,
+    SettlementRegime,
+    SourceProvenance,
+    TickAssignment,
+};
+use india_reference::{
+    DurableReferenceStore, //
+    ListingStateRecord,
+    Reconciliation,
+    ReferenceSnapshot,
+    STORE_SCHEMA_VERSION,
+    StoredRevision,
+    decode_payload,
+    durable_connection_for_test,
+};
+use jiff::{
+    Timestamp, //
+    civil::Date,
+};
+
+fn contract_provenance(digest: &str) -> SourceProvenance {
+    SourceProvenance {
+        schema_version: 1,
+        source_id: "nse.cash_equity_master".to_owned(),
+        venue: Venue::Nse,
+        segment: Segment::Cash,
+        retrieved_at: "2026-11-18T00:00:00Z"
+            .parse()
+            .expect("valid retrieval timestamp"),
+        sha256_hex: digest.to_owned(),
+        source_format_version: "nse-cash-equity-v1".to_owned(),
+        record_count: 1,
+        declared_by: "operator".to_owned(),
+    }
+}
+
+fn contract_tick() -> TickAssignment {
+    TickAssignment {
+        tick_paise: 5,
+        reference_close_paise: None,
+        reference_close_date: None,
+        reference_source: None,
+        reference_sha256_hex: None,
+        effective_month: None,
+        schedule_revision: "nse:tick-v1".to_owned(),
+        schedule_effective_from: None,
+        schedule_sha256_hex: None,
+        calendar_revision: None,
+        calendar_sha256_hex: None,
+    }
+}
+
+fn contract_instrument(id: &str, isin: &str, symbol: &str) -> Instrument {
+    let effective_from = Date::new(2026, 1, 1).expect("valid date");
+    Instrument {
+        instrument_id: InstrumentId::new(id).expect("valid id"),
+        instrument_type: india_domain::InstrumentType::Equity,
+        isin: Some(Isin::new(isin).expect("valid ISIN")),
+        name: format!("{symbol} Limited"),
+        underlying_instrument_id: None,
+        expiry_date: None,
+        strike_price_paise: None,
+        option_kind: None,
+        listings: vec![Listing {
+            venue: Venue::Nse,
+            segment: Segment::Cash,
+            venue_symbol: symbol.to_owned(),
+            token: None,
+            effective_from,
+            effective_to: None,
+            status: ListingStatus::Active,
+            settlement_regime: SettlementRegime::Standard,
+            z_category: false,
+            settlement_group: None,
+            terms: vec![ListingTerms {
+                effective_from,
+                effective_to: None,
+                tick_assignment: contract_tick(),
+                market_lot: 1,
+                quantity_increment: 1,
+            }],
+        }],
+        corporate_actions: Vec::new(),
+    }
+}
+
+fn contract_snapshot(suffix: &str) -> ReferenceSnapshot {
+    let instrument_id = InstrumentId::new(format!("eq.{suffix}")).expect("valid id");
+    let recorded_at: Timestamp = "2026-11-18T12:00:00Z".parse().expect("valid timestamp");
+    ReferenceSnapshot {
+        valid_at: Date::new(2026, 11, 18).expect("valid date"),
+        recorded_at,
+        provenance: contract_provenance(DIGEST_A),
+        instruments: vec![contract_instrument(
+            instrument_id.as_str(),
+            "INE848E01016",
+            suffix,
+        )],
+        calendar: None,
+        reconciliation: Some(Reconciliation {
+            added: vec![instrument_id.clone()],
+            removed: Vec::new(),
+            changed: Vec::new(),
+        }),
+        listing_states: vec![ListingStateRecord {
+            instrument_id,
+            venue: Venue::Nse,
+            symbol: suffix.to_owned(),
+            token: None,
+            status: ListingStatus::Active,
+            settlement_regime: SettlementRegime::Standard,
+            z_category: false,
+            settlement_group: None,
+            market_lot: 1,
+            tick_assignment: contract_tick(),
+            valid_from: Date::new(2026, 1, 1).expect("valid date"),
+            valid_to: None,
+            recorded_at,
+            provenance: contract_provenance(DIGEST_A),
+        }],
+    }
+}
+
+fn contract_root(name: &str) -> PathBuf {
+    let root = std::env::temp_dir().join(format!(
+        "nirnay-rsv-{name}-{}-{}",
+        std::process::id(),
+        std::thread::current().name().unwrap_or("main")
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    root
+}
+
+fn published_meta(store: &DurableReferenceStore, id: u64) -> StoredRevision {
+    store
+        .revision_with_meta(id)
+        .expect("revision decodes")
+        .expect("revision exists")
+}
+
+#[test]
+fn rsv01_snapshot_persists_reopen_and_compares_all_fields() {
+    let root = contract_root("rsv01");
+    let original = contract_snapshot("alpha");
+    {
+        let mut store = DurableReferenceStore::open(&root).expect("store opens");
+        let outcome = store.publish(&original, None).expect("first publish");
+        assert_eq!(outcome.revision_id, 0, "genesis revision is zero");
+    }
+    let reopened = DurableReferenceStore::open(&root).expect("store reopens");
+    let restored = reopened
+        .revision(0)
+        .expect("revision verifies")
+        .expect("revision exists");
+    assert_eq!(restored, original, "every snapshot field survives reopen");
+}
+
+#[test]
+fn validation_rejects_noncanonical_and_unknown_fields() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let mut reversed = contract_snapshot("alpha");
+    reversed
+        .instruments
+        .insert(0, contract_instrument("eq.zeta", "INE002A01018", "zeta"));
+    assert!(
+        reversed.validate().is_err(),
+        "non-ascending instruments are refused"
+    );
+
+    let mut duplicate = contract_snapshot("alpha");
+    duplicate
+        .listing_states
+        .push(duplicate.listing_states[0].clone());
+    assert!(
+        duplicate.validate().is_err(),
+        "duplicate observation keys are refused"
+    );
+
+    let mut unknown = serde_json::to_value(contract_snapshot("alpha")).expect("snapshot value");
+    unknown
+        .as_object_mut()
+        .expect("snapshot object")
+        .insert("surprise".to_owned(), serde_json::json!(1));
+    assert!(
+        decode_payload(&serde_json::to_vec(&unknown).expect("bytes")).is_err(),
+        "unknown fields fail closed"
+    );
+
+    let root = directory.path().join("store");
+    let mut store = DurableReferenceStore::open(&root).expect("store opens");
+    assert!(
+        store.publish(&reversed, None).is_err(),
+        "invalid snapshots create no revision"
+    );
+    assert_eq!(store.head().expect("head"), None, "no head was published");
+}
+
+#[test]
+fn rsv02_revision_ids_contiguous_and_parent_chain_survive_restart() {
+    let root = contract_root("rsv02");
+    {
+        let mut store = DurableReferenceStore::open(&root).expect("store opens");
+        for (index, suffix) in ["alpha", "beta", "gamma"].iter().enumerate() {
+            let expected = if index == 0 {
+                None
+            } else {
+                Some(index as u64 - 1)
+            };
+            let outcome = store
+                .publish(&contract_snapshot(suffix), expected)
+                .expect("publish");
+            assert_eq!(
+                outcome.revision_id, index as u64,
+                "revision ids are contiguous from zero"
+            );
+        }
+    }
+    let store = DurableReferenceStore::open(&root).expect("store reopens");
+    let report = store.verify_full().expect("full verification");
+    assert_eq!(report.revision_count, 3, "all revisions are present");
+    assert_eq!(
+        report.head_revision_id,
+        Some(2),
+        "head is the last revision"
+    );
+    assert_eq!(
+        published_meta(&store, 0).parent_revision_id,
+        None,
+        "the genesis revision has no parent"
+    );
+    assert_eq!(
+        published_meta(&store, 1).parent_revision_id,
+        Some(0),
+        "the second revision points at genesis"
+    );
+    assert_eq!(
+        published_meta(&store, 2).parent_revision_id,
+        Some(1),
+        "the third revision points at its predecessor"
+    );
+}
+
+#[test]
+fn stale_expected_parent_rejects_and_publication_key_replay_resolves() {
+    let root = contract_root("rsv02-replay");
+    let mut first = DurableReferenceStore::open(&root).expect("store opens");
+    let snapshot = contract_snapshot("alpha");
+    assert!(
+        !first.publish(&snapshot, None).expect("first").replayed,
+        "the first publication is not a replay"
+    );
+
+    let mut stale = DurableReferenceStore::open(&root).expect("second store opens");
+    assert!(
+        matches!(
+            stale.publish(&contract_snapshot("beta"), None),
+            Err(StoreError::ParentMismatch { .. })
+        ),
+        "a stale parent is refused"
+    );
+
+    let mut retry = DurableReferenceStore::open(&root).expect("retry store opens");
+    let replay = retry.publish(&snapshot, None).expect("key replay");
+    assert!(
+        replay.replayed,
+        "an exact retry resolves by publication key"
+    );
+    assert_eq!(
+        replay.revision_id, 0,
+        "the replay points at the committed row"
+    );
+    assert_eq!(
+        retry.verify_full().expect("verification").revision_count,
+        1,
+        "replay inserted no duplicate"
+    );
+}
+
+#[test]
+fn rsv03_hashes_stable_across_restart_and_detect_tamper() {
+    let root = contract_root("rsv03");
+    let original = contract_snapshot("alpha");
+    let before = {
+        let mut store = DurableReferenceStore::open(&root).expect("store opens");
+        store.publish(&original, None).expect("publish");
+        published_meta(&store, 0)
+    };
+    let after = {
+        let store = DurableReferenceStore::open(&root).expect("store reopens");
+        published_meta(&store, 0)
+    };
+    assert_eq!(
+        before.snapshot_hash, after.snapshot_hash,
+        "semantic hash is stable across restart"
+    );
+    assert_eq!(
+        before.payload_sha256, after.payload_sha256,
+        "payload checksum is stable across restart"
+    );
+
+    let mut semantic_change = original.clone();
+    semantic_change.instruments[0].name = "Changed Limited".to_owned();
+    assert_ne!(
+        semantic_change.snapshot_hash().expect("hash"),
+        original.snapshot_hash().expect("hash"),
+        "a semantic field change changes the semantic hash"
+    );
+
+    let mut metadata_change = original.clone();
+    metadata_change.reconciliation = Some(Reconciliation::default());
+    assert_eq!(
+        metadata_change.snapshot_hash().expect("hash"),
+        original.snapshot_hash().expect("hash"),
+        "capture metadata is outside the semantic hash"
+    );
+    assert_ne!(
+        india_reference::encode_payload(&metadata_change).expect("bytes"),
+        india_reference::encode_payload(&original).expect("bytes"),
+        "capture metadata still changes the payload checksum"
+    );
+
+    let store = DurableReferenceStore::open(&root).expect("store reopens");
+    let connection = durable_connection_for_test(&store);
+    connection
+        .execute_batch("DROP TRIGGER reference_revision_no_update;")
+        .expect("simulate on-disk corruption bypassing the app trigger");
+    connection
+        .execute(
+            "UPDATE reference_revision SET payload = ?1 WHERE revision_id = 0",
+            rusqlite::params![b"not-a-valid-envelope".to_vec()],
+        )
+        .expect("corrupt stored bytes");
+    assert!(
+        store.revision_with_meta(0).is_err(),
+        "a flipped payload fails closed even with the checksum column intact"
+    );
+}
+
+#[test]
+fn reference_revisions_and_head_are_immutable() {
+    let root = contract_root("immutable");
+    let mut store = DurableReferenceStore::open(&root).expect("store opens");
+    store
+        .publish(&contract_snapshot("alpha"), None)
+        .expect("publish");
+    let connection = durable_connection_for_test(&store);
+    assert!(
+        connection
+            .execute("UPDATE reference_revision SET valid_at = '2000-01-01'", [])
+            .is_err(),
+        "revision rows cannot be updated"
+    );
+    assert!(
+        connection
+            .execute("DELETE FROM reference_revision", [])
+            .is_err(),
+        "revision rows cannot be deleted"
+    );
+    assert!(
+        connection
+            .execute("DELETE FROM reference_head", [])
+            .is_err(),
+        "the head row cannot be deleted"
+    );
+    assert_eq!(
+        store.verify_full().expect("verification").revision_count,
+        1,
+        "negative controls left the store intact"
+    );
+    assert_eq!(
+        STORE_SCHEMA_VERSION, 1,
+        "the contract schema version is pinned"
+    );
+}

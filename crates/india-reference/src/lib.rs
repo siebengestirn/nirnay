@@ -10,6 +10,7 @@ pub mod archive;
 pub mod csv;
 pub mod identity;
 pub mod observation;
+pub mod snapshot;
 pub mod source;
 pub mod store;
 
@@ -17,12 +18,26 @@ pub use archive::{ArchiveError, RecoveryReport, SourceArchive, SourceRecord, rec
 pub use csv::{CsvDocument, CsvError, CsvRow, Limits};
 pub use identity::{IdentityError, IdentityRegistry};
 pub use observation::{Exclusion, Rejection, RowOutcome, SnapshotScope, SourceBatch};
-#[cfg(debug_assertions)]
-pub use store::set_fail_point;
+pub use snapshot::{
+    ListingStateRecord, //
+    PayloadEnvelope,
+    Reconciliation,
+    ReferenceSnapshot,
+    SnapshotError,
+    decode_payload,
+    encode_payload,
+};
 pub use store::{
-    Publication, //
+    DurableReferenceStore, //
+    Publication,
+    PublishOutcome,
     ReferenceStore,
     RestoreOutcome,
+    STORE_SCHEMA_VERSION,
     StoreError,
+    StoredRevision,
+    VerificationReport,
     restore_verified,
 };
+#[cfg(debug_assertions)]
+pub use store::{durable_connection_for_test, set_fail_point};
