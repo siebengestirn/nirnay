@@ -62,7 +62,8 @@ in `make check` and CI.
 Owner work is excluded from agent edits: `.github/workflows/release.yml`,
 `BUILD-RESULTS.md`, `engineering/supply-chain.md` and `scripts/make_bundle.py`.
 Do not stage, reformat, revert or publish those files without an explicit
-owner task. Preserve `.local/recovery/`.
+owner task. Audit and recovery records are retained in the external verified
+archive; the working tree has no `.local/` directory.
 
 ## Authorization state
 
