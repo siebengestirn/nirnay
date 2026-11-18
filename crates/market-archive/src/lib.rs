@@ -12,7 +12,12 @@ mod frame;
 mod journal;
 mod manifest;
 
-pub use capture::{CaptureManifest, SessionVerification, verify_capture_session};
+pub use capture::{
+    CaptureManifest, //
+    SessionVerification,
+    verified_journal_path,
+    verify_capture_session,
+};
 pub use continuity::{ContinuityTracker, Observation, StreamQuality};
 pub use error::ArchiveError;
 pub use frame::RawFrame;

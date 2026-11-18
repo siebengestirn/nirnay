@@ -176,6 +176,22 @@ fn read_bounded_manifest(path: &Path) -> Result<Vec<u8>, ArchiveError> {
     Ok(bytes)
 }
 
+/// Resolve the journal referenced by a validated session manifest.
+///
+/// Use this before decoding so the decoded file cannot differ from the file
+/// that was verified. It performs the same bounded parse and basic validation
+/// as [`verify_capture_session`], but does not read the journal itself.
+pub fn verified_journal_path(
+    manifest_path: impl AsRef<Path>,
+    expected_provider: &str,
+) -> Result<PathBuf, ArchiveError> {
+    let manifest_path = manifest_path.as_ref();
+    let bytes = read_bounded_manifest(manifest_path)?;
+    let manifest = CaptureManifest::from_json(&bytes)?;
+    manifest.validate_basics(expected_provider)?;
+    manifest.journal_path(manifest_path)
+}
+
 /// Hash bytes as they are consumed from the underlying reader.
 struct HashingReader<R> {
     inner: R,

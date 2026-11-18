@@ -9,7 +9,7 @@
 | Capability | Active implementation | Boundary / non-claim |
 |---|---|---|
 | Durable raw journal | `crates/market-archive` | A single-writer, newline-delimited journal with `sync_data()` per append, poisoned-writer behaviour after an uncertain commit, and a bounded incremental scanner. Serialized records are capped at 1 MiB (512 KiB decoded payload); oversized, torn or corrupt records fail closed. |
-| Raw Upstox V3 capture and Protobuf decode | `crates/upstox-feed-proto`, `apps/upstox-tools`, `schemas/upstox/v3/` | `upstox-decode-export` verifies raw-frame hashes and exports full decoded message envelopes. It now reads the journal through the shared bounded `JournalReader`, so record limits, torn-tail detection and EOF semantics match the archive; a failure after several records publishes no output. The current local gate passes 410 Rust test cases on pinned Rust 1.99.1; live provider capture remains unverified. |
+| Raw Upstox V3 capture and Protobuf decode | `crates/upstox-feed-proto`, `apps/upstox-tools`, `schemas/upstox/v3/` | `upstox-decode-export` verifies raw-frame hashes and exports full decoded message envelopes. It now reads the journal through the shared bounded `JournalReader`, so record limits, torn-tail detection and EOF semantics match the archive. It requires a verified session manifest, rechecks it after decoding, and publishes no output on any failure. Live provider capture remains unverified. |
 | FYERS Data Socket capture | `apps/fyers-recorder` | Captures decoded SDK callback JSON, not original wire packets. Local sequence/gap detection does not establish exchange sequence continuity. |
 | Canonical Upstox/FYERS market events | `research/python/src/quantlab/market.py`, `providers.py` | Preserves provider IDs, timestamp semantics, local sequence, source payload and capture-frame hashes. LTP changes are observations, not invented trade prints or aggressor-side labels. |
 | Cross-feed reconciliation | `quantlab/reconcile.py` | Compares fresh, comparable provider state for one canonical instrument. It never merges/sums duplicate liquidity or constructs an authoritative consolidated tape. |
@@ -94,14 +94,19 @@ Upstox V3 captures original binary Protobuf payloads in `raw-frames.jsonl`. The
 companion diagnostic projection is useful for inspection but is not treated as
 complete depth/quote data. The decoder uses the bounded `JournalReader` from
 `market-archive`; a record without a final newline is a torn tail and a failure
-anywhere in the journal prevents publication of decoded output. Capture-manifest
-verification against the decoded journal is not yet implemented, so this path
-establishes file-to-record integrity but not that the archive matches a
-completed capture session. Decode the raw frame journal before normalization:
+anywhere in the journal prevents publication of decoded output. Verify the
+completed session before decoding; the decoder checks the manifest hash, frame
+count and terminal status before and after reading, and rejects a journal that
+differs from the one the manifest names. This establishes file-to-manifest
+consistency, not source authenticity or data rights. Verify, then decode:
 
 ```bash
+cargo run --release -p upstox-tools --bin upstox-verify-session -- \
+  --manifest data/market-sessions/upstox/<session>/manifest.json
+
 cargo run --release -p upstox-tools --bin upstox-decode-export -- \
   --input data/market-sessions/upstox/<session>/raw-frames.jsonl \
+  --manifest data/market-sessions/upstox/<session>/manifest.json \
   --output data/market-sessions/upstox/<session>/decoded-full.jsonl
 ```
 
@@ -308,5 +313,5 @@ cases, 156 Python tests, 2 subtests). `VERIFICATION.md` still contains the
 older dated 2026-11-17 record; older counts and commit hashes in dated
 documents are historical. These results verify the named commit only and do
 not grant M1 exit approval, M2 authorization, platform readiness or live
-trading. Capture-session verification and the raw-to-paper vertical slice are
-still outstanding.
+trading. Capture-session verification is implemented; the canonical-event,
+dataset, replay and paper stages of the vertical slice are still outstanding.
