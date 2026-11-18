@@ -9,6 +9,7 @@ mod capture;
 mod continuity;
 mod error;
 mod frame;
+mod ingress;
 mod journal;
 mod manifest;
 
@@ -23,6 +24,17 @@ pub use error::ArchiveError;
 pub use frame::{
     MAX_PAYLOAD_BYTES, //
     RawFrame,
+};
+pub use ingress::{
+    DurableIngestor, //
+    IngestOutcome,
+    IngressCheckpoint,
+    IngressError,
+    IngressSource,
+    RunSummary,
+    SourceFrame,
+    UPSTOX_SOURCE_ID,
+    UpstoxV3Adapter,
 };
 pub use journal::{
     JournalReader, //
