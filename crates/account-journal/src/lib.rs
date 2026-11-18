@@ -6,7 +6,7 @@
 //!
 //! This is the **account/execution** journal. The repository's existing
 //! `src/journal.rs` remains the raw market-data frame journal; the two serve
-//! serve separate purposes and remain separate.
+//! separate purposes and remain separate.
 //!
 //! The on-disk frame format (`NRJ1`, 84-byte header, BLAKE3 chain over the
 //! sequence, previous hash and body) is preserved. Bodies are validated

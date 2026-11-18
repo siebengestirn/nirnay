@@ -32,7 +32,7 @@ The problem: decide the port question and dependency rules coherently, without a
 |---|---|---|
 | A | Implement ports now (define inner traits, inject adapters, move network code out of apps) | Rejected. Amendment A3/A5: no port implementation in M0/M1; ADR-0001 forbids new infra without a measured requirement; no second Rust feed/store or perf budget exists. M1 is design-only. |
 | B | Adopt R1 Q1b fully: ports are not programme-required; only reword the doc | Rejected. Amendment A3 explicitly rejects the premise — the charter requires hexagonal ports/adapters. R1's valid nuance (not a current ADR-0001 violation; no build now) is adopted; its "no requirement" claim is not. |
-| C | Rename the `adapters` layer to `codecs` and leave network I/O in apps permanently | Partially adopted (§3.3 taxonomy) but not a full solution: it documents current reality yet would erase the *target* port concept the charter requires. We keep the target direction and fix the taxonomy without deleting the goal. |
+| C | Rename the `adapters` layer to `codecs` and leave network I/O in apps permanently | Partially adopted (§3.3 taxonomy) but not a full solution: it documents current reality yet would erase the *target* port concept the charter requires. The target direction is kept and the taxonomy fixed without deleting the goal. |
 | D | Let each instrument own a partition with its own risk/limit check | Rejected (R1 Q3 / Amendment A4.4): breaks aggregate cash/exposure/daily-loss semantics and conflicts with unkeyable multi-instrument frames. Forbidden by dependency rule §3.5. |
 | E | Make `check_repo.py` enforce full transitive/Python/filesystem boundaries now | Not authorized as implementation; recorded as a measured requirement / gate in §9 and deferred to Verification (ADR-M1-011). This ADR states the rule, not the tooling change. |
 
@@ -162,6 +162,11 @@ These are **future gate specifications, not delivered properties and not execute
 - **A-5 / Section D (charter-fit) — ACCEPTED.** Exact text changes: header and §3.1 now state explicitly that this ADR (and ADR-M1-001) authorize **no port, service, schema file, crate, optimization, feature, broker connection or live-routing change** and make no readiness claim; §3.1 and §8.7 record the ADR-M1-005 field-surface question as an **owner ruling**, not this group's decision.
 - **A-0 (invariant collisions) — RESOLVED by coordinator renumbering (2026-11-17).** Exact text changes: §5 no longer implies global uniqueness; §3.2/§5 remove the "aliases" claim; §8.8 records resolution. The coordinator assigned `M1-ARCH-INV-*` / `M1-RUN-INV-*` namespaces across all 11 ADRs and verified zero duplicate definitions (`INVARIANT-REGISTRY.md`). No IDs from other groups' ADRs are cited.
 - **Section C (untestable §9) — ACCEPTED.** §9 gained `Owner (role)`, `Target milestone`, `Status` columns; AC-004-4's "marked future" escape hatch is closed by requiring future-marked patterns be excluded from the active-enforcement count; AC-004-3 is scheduled at M3 with the D9 owner.
-- **CONTEST (out of scope, with reason):** challenger Section D.2 flags optimization design intent (pinned threads, pre-allocated pools, SBE) in ADR-M1-007 (Runtime group). That text is not in this ADR; I neither accept nor reject it, and record no contest — it requires the Runtime group's and the owner's disposition (Section D.2 itself calls it acceptable with a caveat). A-1 (single vs separate authority) and A-3/B-2 (OMS reconciliation) are likewise not in this ADR's scope; they are resolved in ADR-M1-002 and ADR-M1-003 respectively.
+- **CONTEST (out of scope, with reason):** challenger Section D.2 flags optimization design intent
+  (pinned threads, pre-allocated pools, SBE) in ADR-M1-007 (Runtime group). That text is not in this
+  ADR; this ADR neither accepts nor rejects it, and record no contest — it requires the Runtime
+  group's and the owner's disposition (Section D.2 itself calls it acceptable with a caveat). A-1
+  (single vs separate authority) and A-3/B-2 (OMS reconciliation) are likewise not in this ADR's
+  scope; they are resolved in ADR-M1-002 and ADR-M1-003 respectively.
 
 *End of ADR-M1-004.*

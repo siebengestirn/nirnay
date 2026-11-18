@@ -148,6 +148,11 @@ These are **future gate specifications, not delivered properties and not execute
 - **A-1 (single vs separate process) — ACCEPTED, coordinator ruling recorded.** Exact text changes: §3 item 4 rewritten as "M1 design posture — single in-process authority" with no remote dependency; new §3.4a labels separate-process isolation an "explicitly UNIMPLEMENTED DEPLOYMENT PRECONDITION, not a current control and not built by M1", to be decided under a future measured-requirement ADR; §8.7 records the owner-reversal condition. No remote service is presented as the answer. The ruling is cited, not the other group's file.
 - **B-1 (residual bypass) — ACCEPTED.** Exact text changes: new §3.7 "Residual bypass — explicit statement" says the closure token does not close the bypass and any same-process code can still forge; §5 M1-ARCH-INV-010/011 now say "future gate, not delivered" / "residual bypass remains"; §6 case 1 states the bypass is not closed by M1; §9 AC-002-1 threshold reworded as a FUTURE gate spec with a ≥1-test-executed assertion. The original honest CLM-010 disclosure is retained, not weakened.
 - **Section C (untestable §9) — ACCEPTED.** §9 table gained `Owner (role)`, `Target milestone`, `Status` columns; AC-002-5 labelled PRECONDITION.
-- **CONTEST (narrow):** challenger B-1 says the enforcement claim is false, not the disclosure. I agree with that distinction and have kept the disclosure intact; I contest only any reading that ADR-002 ever *claimed* the bypass was closed — §3.2 of the original ADR already called closure hardening "defence in depth, not a security boundary", and §3.4 already recorded CLM-010 as a deployment property. No text is retracted; the change is an explicit restatement (§3.7), not a correction of a false claim.
+- **CONTEST (narrow):** challenger B-1 says the enforcement claim is false, not the disclosure. This
+  position agrees with that distinction and keeps the disclosure intact; it contests only any
+  reading that ADR-002 ever *claimed* the bypass was closed — §3.2 of the original ADR already
+  called closure hardening "defence in depth, not a security boundary", and §3.4 already recorded
+  CLM-010 as a deployment property. No text is retracted; the change is an explicit restatement
+  (§3.7), not a correction of a false claim.
 
 *End of ADR-M1-002.*

@@ -19,7 +19,7 @@
 
 ## Documentation and evidence
 
-The documentation set is intentionally small. `README.md` is the single
+The documentation set is small. `README.md` is the single
 current-state entry point; `AGENTS.md`, `CONTRIBUTING.md` and `SECURITY.md`
 are canonical policy files. Everything else is dated evidence under
 `evidence/` or `BUILD-RESULTS.md`.

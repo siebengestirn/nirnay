@@ -5,7 +5,7 @@ Binding sources (see AGENTS.md):
   - Linux kernel Rust coding guidelines: https://docs.kernel.org/rust/coding-guidelines.html
   - Google Rust style guide: https://google.github.io/styleguide/rustguide.html
 
-The check is deliberately limited to added lines relative to a base ref so
+The check is limited to added lines relative to a base ref so
 existing code is not churned. Run from the repository root. Set
 NIRNAY_STYLE_BASE to compare against a different ref (default: main).
 

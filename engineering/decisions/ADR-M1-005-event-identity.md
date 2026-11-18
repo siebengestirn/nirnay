@@ -22,7 +22,15 @@ M0 established an E-reproduced identity defect and three structural gaps, all pi
 
 4. **The canonical envelope omits per-event availability/record time.** `MarketEvent` carries receive/source/last-trade times (`market.py:86-112`) but no availability-time or record/knowledge-time field; those exist only in the dataset manifest (`manifest.rs:14-38`) and PIT rows, and in a Rust-only `EventTimes` (`engine.rs:904-916`). Freshness is computed from receive time (`reconcile.py:48-54`). Amendment A rules this S2 (target doc is "destination, not current implementation"), but replay/freshness labelling depends on it.
 
-5. **Origin classification has no first-class field.** The system is deliberately conservative in prose and flags — `provider` enum, `source_timestamp_semantics`, `not_a_confirmed_trade_print`, `aggressor_side_unknown` (`providers.py:161,254`), quality-limitation strings (`cli.py:210-214`), refusal to treat SDK callbacks as exchange ticks (`market.py:1-5`; `providers.py:1-9`; `reconcile.py:33-34`). But there is **no structured origin field**: "exchange event", "SDK callback", "raw wire frame", "local receive", and "reconstructed" are encoded in free-form strings and field naming (A2 Critical Question: "Partial yes"). Upstox `currentTs` is a feed envelope time, not exchange time (`providers.py:108-110`); FYERS `exch_feed_time` is a callback value preserved verbatim (`:205,233`).
+5. **Origin classification has no first-class field.** The system is conservative in prose and flags
+   — `provider` enum, `source_timestamp_semantics`, `not_a_confirmed_trade_print`,
+   `aggressor_side_unknown` (`providers.py:161,254`), quality-limitation strings (`cli.py:210-214`),
+   refusal to treat SDK callbacks as exchange ticks (`market.py:1-5`; `providers.py:1-9`;
+   `reconcile.py:33-34`). But there is **no structured origin field**: "exchange event", "SDK
+   callback", "raw wire frame", "local receive", and "reconstructed" are encoded in free-form
+   strings and field naming (A2 Critical Question: "Partial yes"). Upstox `currentTs` is a feed
+   envelope time, not exchange time (`providers.py:108-110`); FYERS `exch_feed_time` is a callback
+   value preserved verbatim (`:205,233`).
 
 No single identity contract currently lets a consumer (a) deduplicate across reconnect, (b) join an inferred observation to its source payload without collapsing them, (c) tell what kind of thing produced an event, or (d) reproduce a replay without re-deriving identity. This ADR decides that contract at the semantic level.
 
@@ -104,7 +112,13 @@ Define a constrained `origin_class` with the vocabulary: `exchange_event` | `sdk
 
 ## 5. Invariants (explicit IDs)
 
-- **M1-RUN-INV-001 (identity stability, scoped — amended per challenger A-2):** For identical `(provider, source_scope, provider_instrument_id, canonical payload bytes)`, `observation_id` is identical regardless of `local_sequence`, `capture_sequence`, `connection_epoch`, receive time, or availability/record time. **This asserts ID stability, not safe collapse.** Downstream collapse is authorized only under the dedup-sufficiency condition in D-005.2 (known re-delivery/replay of a captured payload); equal IDs from two genuine distinct observations are a recorded residual risk, not a guaranteed-safe dedup.
+- **M1-RUN-INV-001 (identity stability, scoped — amended per challenger A-2):** For identical
+  `(provider, source_scope, provider_instrument_id, canonical payload bytes)`, `observation_id` is
+  identical regardless of `local_sequence`, `capture_sequence`, `connection_epoch`, receive time, or
+  availability/record time. **This asserts ID stability, not safe collapse.** Downstream collapse is
+  authorized only under the dedup-sufficiency condition in D-005.2 (known re-delivery/replay of a
+  captured payload); equal IDs from two genuine distinct observations are a recorded residual risk,
+  not evidence that dedup is safe.
 - **M1-RUN-INV-002 (no local counter in identity):** No identity component is derived from a reset-prone local counter or from any wall-clock/monotonic receive timestamp.
 - **M1-RUN-INV-003 (observation/business separation):** One observation may yield N ≥ 1 business events; all share `observation_id`; all `business_event_id` values are distinct; each business event back-references its observation.
 - **M1-RUN-INV-004 (no hash-prefix identity):** Identity uses full 256-bit digests; the truncated `digest[:16]` prefix (`providers.py:130`) is not an identity authority.
@@ -117,7 +131,11 @@ Define a constrained `origin_class` with the vocabulary: `exchange_event` | `sdk
 
 ## 6. Failure cases (concrete, including adversarial)
 
-1. **Recorder restart / sequence reset (the E-proven case).** `frame_count` resets to 0 (`upstox_recorder.rs:232-235`); the same payload is replayed with `local_sequence` 7 then 8. Baseline emits two IDs (A2 F-01) and double-counts. Under D-005.1/005.2 both map to one `observation_id` → deduplicated. **Adversarial:** an attacker deliberately resets the counter to flood research data with duplicates; content-addressing makes the flood collapse to one observation.
+1. **Recorder restart / sequence reset (the E-proven case).** `frame_count` resets to 0
+   (`upstox_recorder.rs:232-235`); the same payload is replayed with `local_sequence` 7 then 8.
+   Baseline emits two IDs (A2 F-01) and double-counts. Under D-005.1/005.2 both map to one
+   `observation_id` → deduplicated. **Adversarial:** an attacker resets the counter to flood
+   research data with duplicates; content-addressing makes the flood collapse to one observation.
 
 2. **Frame hash vs per-instrument hash confusion.** A two-instrument frame has one `payload_sha256` (`frame.rs:71`) but two per-instrument `raw_sha256` values (`providers.py:130`). A consumer using the frame hash as observation identity would merge both instruments. D-005.1 keeps the levels separate.
 
@@ -135,7 +153,9 @@ Define a constrained `origin_class` with the vocabulary: `exchange_event` | `sdk
 
 ## 7. Dependencies
 
-- **ADR-M1-006 (Ordering and partitions):** supplies `connection_epoch`/`receive_seq` fence semantics and gap/duplicate vocabulary; identity deliberately excludes them. Must stay consistent (no epoch in identity).
+- **ADR-M1-006 (Ordering and partitions):** supplies `connection_epoch`/`receive_seq` fence
+  semantics and gap/duplicate vocabulary; identity excludes them. Must stay consistent (no epoch in
+  identity).
 - **ADR-M1-009 (Replay contract):** consumes stable identity; owns the "recompute P&L from fills+marks or exclude" rule that this ADR cannot enforce.
 - **ADR-M1-008 / ADR-M1-010 (Durability / provenance anchor):** consume `capture_frame_id`, `source_frame_sha256`, `observation_id` as the fields ACKs and anchors reference; envelope implication only.
 - **Evidence dependencies:** A2 F-01/F-02/F-03/F-04 (F-01 E-reproduced); R1 Q2 (universal-schema restraint affirmed, F-04 downgraded S2); Amendment A §A3 (F-03→S2, F-04→S2); R1-C Q3 (multi-instrument frame constraint).
