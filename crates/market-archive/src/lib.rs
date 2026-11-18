@@ -27,6 +27,9 @@ pub use frame::{
 };
 pub use ingress::{
     DurableIngestor, //
+    FYERS_SOURCE_ID,
+    FyersCallback,
+    FyersCallbackAdapter,
     IngestOutcome,
     IngressCheckpoint,
     IngressError,

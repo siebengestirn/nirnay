@@ -172,7 +172,7 @@
       "id": "CAP-021",
       "name": "Shared raw ingress port with Upstox V3 adapter",
       "status": "implemented",
-      "evidence_status": "Market-archive ingress module routes original Upstox V3 protobuf bytes and capture metadata through the durable raw-frame journal with source binding, duplicate/sequence/malformed accounting, disconnect stops and a checkpoint rebuilt from the journal on restart. Ten dedicated tests cover replay-after-restart dedup, post-commit continuity advancement and bounded continuity state; no provider decoding or canonical instrument resolution is performed here, and no live entitlement or network path is certified.",
+      "evidence_status": "Market-archive ingress module routes original Upstox V3 protobuf bytes and FYERS SDK-decoded callback JSON bytes, each with source-specific metadata, through the durable raw-frame journal. Source binding, duplicate/sequence/malformed accounting, disconnect stops and journal-rebuilt checkpoints are shared by both adapters. Thirteen dedicated tests cover replay-after-restart dedup, post-commit continuity advancement, bounded continuity state and cross-source isolation; no provider decoding or canonical instrument resolution is performed here, and no live entitlement or network path is certified.",
       "owner": "market-data",
       "scope": "crates/market-archive/src/ingress.rs; crates/market-archive/tests/ingress.rs"
     }

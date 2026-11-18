@@ -167,7 +167,7 @@
     },
     {
       "id": "CLM-015",
-      "statement": "The shared ingress port preserves original provider bytes and capture metadata, refuses foreign-source or malformed frames, accounts for duplicates and sequence gaps, and rebuilds a consumer checkpoint from the durable journal after restart without inventing canonical identities.",
+      "statement": "The shared ingress port preserves original provider bytes and capture metadata for both Upstox raw protobuf frames and FYERS SDK-decoded callback observations, refuses foreign-source or malformed frames, accounts for duplicates and sequence gaps, and rebuilds a consumer checkpoint from the durable journal after restart without inventing canonical identities.",
       "status": "implemented",
       "scope": {
         "packages": [
