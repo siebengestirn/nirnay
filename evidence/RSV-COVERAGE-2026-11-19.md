@@ -37,8 +37,10 @@ All test paths below are relative to `crates/india-reference/tests/durability.rs
   embedded provenance plus tick reference/schedule/calendar hashes;
   `SourceArchive::fetch/resolve` require a manifest entry and verify object
   bytes. Every hash resolves before a revision is written and on every
-  `verify_full`. Test:
-  `rsv06_lineage_resolves_after_restart_and_missing_source_fails_closed`.
+  `verify_full`. Tests:
+  `rsv06_lineage_resolves_after_restart_and_missing_source_fails_closed` and
+  `rsv06_tick_lineage_hashes_resolve_and_fail_closed`, which archives three
+  distinct tick hashes and exercises every hash branch.
 
 The exact publication key is `sha256_hex` of a JSON array containing the
 marker `p1-04-publication-v1`, the expected parent (or null), the payload

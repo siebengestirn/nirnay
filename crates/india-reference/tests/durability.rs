@@ -1235,3 +1235,54 @@ fn rsv06_lineage_resolves_after_restart_and_missing_source_fails_closed() {
         "no new revision was published"
     );
 }
+
+#[test]
+fn rsv06_tick_lineage_hashes_resolve_and_fail_closed() {
+    let root = contract_root("rsv06-tick");
+    let reference_bytes = b"nirnay-reference-close-bytes";
+    let schedule_bytes = b"nirnay-tick-schedule-bytes";
+    let calendar_bytes = b"nirnay-calendar-bytes";
+    let reference_hash = format!("{:x}", sha2::Sha256::digest(reference_bytes));
+    let schedule_hash = format!("{:x}", sha2::Sha256::digest(schedule_bytes));
+    let calendar_hash = format!("{:x}", sha2::Sha256::digest(calendar_bytes));
+    let mut archive = SourceArchive::open(root.join("archive")).expect("archive opens");
+    archive
+        .put_source(reference_bytes, "nse.eod", "v1")
+        .expect("archive reference close");
+    archive
+        .put_source(schedule_bytes, "nse.tick", "v1")
+        .expect("archive tick schedule");
+    archive
+        .put_source(calendar_bytes, "nse.calendar", "v1")
+        .expect("archive calendar");
+
+    let mut snapshot = contract_snapshot("alpha");
+    let tick = &mut snapshot.listing_states[0].tick_assignment;
+    tick.reference_sha256_hex = Some(reference_hash.clone());
+    tick.schedule_sha256_hex = Some(schedule_hash.clone());
+    tick.calendar_sha256_hex = Some(calendar_hash.clone());
+    let lineage = india_reference::collect_lineage_hashes(&snapshot);
+    assert!(
+        lineage.contains(&reference_hash)
+            && lineage.contains(&schedule_hash)
+            && lineage.contains(&calendar_hash),
+        "all three tick lineage hashes are collected"
+    );
+
+    {
+        let mut store = DurableReferenceStore::open(&root).expect("store opens");
+        store.publish(&snapshot, None).expect("all hashes resolve");
+    }
+    let store = DurableReferenceStore::open(&root).expect("store reopens");
+    assert_eq!(
+        store.verify_full().expect("verification").revision_count,
+        1,
+        "tick lineage resolves after restart"
+    );
+    let object = root.join("archive").join("objects").join(&schedule_hash);
+    std::fs::remove_file(&object).expect("remove schedule object");
+    assert!(
+        store.verify_full().is_err(),
+        "a missing schedule source fails full verification"
+    );
+}
