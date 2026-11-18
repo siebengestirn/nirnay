@@ -438,15 +438,25 @@ fn restore_sync_failure_is_uncertain_not_clean_rollback() {
     );
 }
 
-/// Child-only process-termination worker: commits an identity, then aborts.
+/// Child-only process-termination worker: commits an identity and a revision,
+/// emits proof of both, then aborts before any output publication.
 #[test]
 #[ignore = "child-only crash worker invoked by parent with --ignored"]
 fn child_abort_after_commit() {
     let path = std::env::var_os("NIRNAY_ABORT_DB").expect("child requires NIRNAY_ABORT_DB");
     let mut store = ReferenceStore::open(PathBuf::from(path)).unwrap();
-    store
+    let identity = store
         .resolve_identity(&Isin::new(ISIN_A).unwrap(), Venue::Nse, "AAA", "in.ref")
         .unwrap();
+    store
+        .publish_revision(None, DIGEST_1, Path::new("revision.json"), "crash-key")
+        .unwrap();
+    let proof_path = std::env::var_os("NIRNAY_PROOF_FILE").expect("child requires proof file");
+    std::fs::write(
+        PathBuf::from(proof_path),
+        format!("COMMITTED:{}:{}", identity.as_str(), DIGEST_1),
+    )
+    .expect("proof must be on disk before abort");
     std::process::abort();
 }
 
@@ -454,15 +464,28 @@ fn child_abort_after_commit() {
 fn process_termination_after_commit_does_not_duplicate_identity() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("abort.sqlite3");
+    let proof_path = directory.path().join("proof.txt");
     let child = Command::new(std::env::current_exe().unwrap())
         .arg("--ignored")
         .arg("child_abort_after_commit")
         .env("NIRNAY_ABORT_DB", &path)
+        .env("NIRNAY_PROOF_FILE", &proof_path)
         .output()
         .unwrap();
     assert!(!child.status.success(), "child process was terminated");
+    assert!(proof_path.is_file(), "child wrote proof before termination");
+    let proof = std::fs::read_to_string(&proof_path).unwrap();
+    assert!(
+        proof == format!("COMMITTED:in.ref00000000:{DIGEST_1}"),
+        "child emitted proof of a committed identity and revision before abort"
+    );
 
     let mut store = ReferenceStore::open(&path).unwrap();
+    assert_eq!(
+        store.head().unwrap().as_deref(),
+        Some(DIGEST_1),
+        "fresh process verifies the committed revision"
+    );
     let identity = store
         .resolve_identity(&Isin::new(ISIN_A).unwrap(), Venue::Nse, "AAA", "in.ref")
         .unwrap();
@@ -471,4 +494,72 @@ fn process_termination_after_commit_does_not_duplicate_identity() {
         "in.ref00000000",
         "committed identity is recovered once, without reuse"
     );
+}
+
+#[test]
+fn restore_rejects_tampered_objects_without_publishing_a_target() {
+    let directory = tempfile::tempdir().unwrap();
+    let store_path = directory.path().join("tamper.sqlite3");
+    let store = ReferenceStore::open(&store_path).unwrap();
+    let archive_root = directory.path().join("archive");
+    let mut archive = SourceArchive::create_new(&archive_root).unwrap();
+    let record = archive.put_source(b"original-bytes", "nse", "v1").unwrap();
+    let backup = directory.path().join("backup");
+    store.backup_with_source(&backup, &archive_root).unwrap();
+
+    let cases = [
+        ("altered", directory.path().join("target-altered")),
+        ("removed", directory.path().join("target-removed")),
+        ("mismatch", directory.path().join("target-mismatch")),
+    ];
+    for (case, target) in cases {
+        let tampered = directory.path().join(format!("tampered-{case}"));
+        copy_directory(&backup, &tampered);
+        let object = tampered
+            .join("source-archive/objects")
+            .join(&record.hash_hex);
+        match case {
+            "altered" => std::fs::write(&object, b"changed-bytes").unwrap(),
+            "removed" => std::fs::remove_file(&object).unwrap(),
+            "mismatch" => {
+                let manifest = tampered.join("source-archive/manifest.jsonl");
+                let mut bytes = std::fs::read(&manifest).unwrap();
+                if let Some(byte) = bytes.iter_mut().find(|byte| byte.is_ascii_hexdigit()) {
+                    *byte = if *byte == b'0' { b'1' } else { b'0' };
+                }
+                std::fs::write(&manifest, bytes).unwrap();
+            }
+            _ => unreachable!("named cases only"),
+        }
+        let tampered_archive = SourceArchive::open(tampered.join("source-archive"));
+        let archive_rejected = match &tampered_archive {
+            Ok(archive) => archive.verify().is_err(),
+            Err(_) => true,
+        };
+        assert!(
+            archive_rejected,
+            "tampering must be detected by archive-level verification"
+        );
+        assert!(
+            india_reference::restore_verified(&tampered, &target).is_err(),
+            "{case} backup must be rejected"
+        );
+        assert!(
+            !target.exists(),
+            "{case} rejection must not publish a partial target"
+        );
+    }
+}
+
+fn copy_directory(source: &std::path::Path, destination: &std::path::Path) {
+    std::fs::create_dir_all(destination).unwrap();
+    for entry in std::fs::read_dir(source).unwrap() {
+        let entry = entry.unwrap();
+        let target = destination.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_directory(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), target).unwrap();
+        }
+    }
 }
