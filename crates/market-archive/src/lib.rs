@@ -34,6 +34,7 @@ pub use ingress::{
     IngressCheckpoint,
     IngressError,
     IngressSource,
+    JournalReplaySource,
     RunSummary,
     SourceFrame,
     UPSTOX_SOURCE_ID,

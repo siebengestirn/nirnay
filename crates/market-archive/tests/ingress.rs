@@ -448,3 +448,140 @@ fn independent_sources_share_the_port_without_cross_contamination() {
         "the second source has one independent journal"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Replay from captured source bytes through the same ingress contract.
+// ---------------------------------------------------------------------------
+
+use market_archive::{
+    IngressSource, //
+    JournalReplaySource,
+};
+
+#[test]
+fn replay_reproduces_identical_journal_frames() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let captured = directory.path().join("captured.jsonl");
+    let replayed = directory.path().join("replayed.jsonl");
+    {
+        let mut source = UpstoxV3Adapter::new(vec![
+            frame(1, b"first-original-bytes"),
+            frame(2, b"second-original-bytes"),
+        ]);
+        let mut ingestor =
+            DurableIngestor::create_new(&captured, UPSTOX_SOURCE_ID).expect("capturing ingestor");
+        ingestor.run(&mut source, 10).expect("capture run");
+    }
+    let mut source = JournalReplaySource::open(&captured, UPSTOX_SOURCE_ID).expect("replay source");
+    assert_eq!(source.remaining(), 2, "both captured frames are replayable");
+    let mut ingestor =
+        DurableIngestor::create_new(&replayed, UPSTOX_SOURCE_ID).expect("replay ingestor");
+    let summary = ingestor.run(&mut source, 10).expect("replay run");
+    assert_eq!(summary.committed, 2, "replay commits both frames");
+
+    let original = scan_journal(&captured).expect("original scan").frames;
+    let restored = scan_journal(&replayed).expect("replay scan").frames;
+    assert_eq!(
+        original, restored,
+        "replay reproduces bytes and metadata exactly"
+    );
+}
+
+#[test]
+fn replay_into_a_resumed_journal_is_idempotent() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let path = directory.path().join("idempotent.jsonl");
+    {
+        let mut source = UpstoxV3Adapter::new(vec![frame(1, b"one"), frame(2, b"two")]);
+        let mut ingestor = DurableIngestor::create_new(&path, UPSTOX_SOURCE_ID).expect("ingestor");
+        ingestor.run(&mut source, 10).expect("capture");
+    }
+    let mut source = JournalReplaySource::open(&path, UPSTOX_SOURCE_ID).expect("replay source");
+    let mut ingestor = DurableIngestor::resume(&path, UPSTOX_SOURCE_ID).expect("resume");
+    let summary = ingestor.replay(&mut source).expect("replay run");
+    assert_eq!(summary.committed, 0, "no captured frame is re-committed");
+    assert_eq!(summary.duplicates, 2, "both frames resolve as duplicates");
+    assert_eq!(
+        scan_journal(&path).expect("scan").frames.len(),
+        2,
+        "the journal is unchanged by replay"
+    );
+}
+
+#[test]
+fn replay_preserves_fyers_bytes_and_source_boundary() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let captured = directory.path().join("fyers-captured.jsonl");
+    let replayed = directory.path().join("fyers-replayed.jsonl");
+    {
+        let mut source = FyersCallbackAdapter::new(vec![fyers_callback(
+            9,
+            b"{\"type\":\"sf\",\"symbol\":\"SBIN-EQ\"}",
+        )]);
+        let mut ingestor =
+            DurableIngestor::create_new(&captured, FYERS_SOURCE_ID).expect("ingestor");
+        ingestor.run(&mut source, 10).expect("capture");
+    }
+    let mut source = JournalReplaySource::open(&captured, FYERS_SOURCE_ID).expect("replay source");
+    assert_eq!(
+        source.source_id(),
+        FYERS_SOURCE_ID,
+        "source identity survives replay"
+    );
+    let mut ingestor = DurableIngestor::create_new(&replayed, FYERS_SOURCE_ID).expect("replay");
+    ingestor.run(&mut source, 10).expect("replay");
+    assert_eq!(
+        scan_journal(&replayed).expect("scan").frames,
+        scan_journal(&captured).expect("scan").frames,
+        "FYERS callback bytes survive replay"
+    );
+
+    let mut wrong = DurableIngestor::create_new(
+        directory.path().join("wrong-source.jsonl"),
+        UPSTOX_SOURCE_ID,
+    )
+    .expect("upstox ingestor");
+    let mut replay = JournalReplaySource::open(&captured, FYERS_SOURCE_ID).expect("replay source");
+    assert!(
+        matches!(
+            wrong.run(&mut replay, 10),
+            Err(IngressError::SourceMismatch { .. })
+        ),
+        "a FYERS replay cannot cross into an Upstox-bound ingestor"
+    );
+}
+
+#[test]
+fn replay_is_idempotent_beyond_the_hash_window() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let path = directory.path().join("large-replay.jsonl");
+    let count = 5000_u64;
+    {
+        let frames: Vec<_> = (0..count)
+            .map(|index| frame(index, format!("payload-{index}").as_bytes()))
+            .collect();
+        let mut source = UpstoxV3Adapter::new(frames);
+        let mut ingestor = DurableIngestor::create_new(&path, UPSTOX_SOURCE_ID).expect("ingestor");
+        ingestor
+            .run(&mut source, count as usize + 1)
+            .expect("capture");
+    }
+    assert_eq!(
+        scan_journal(&path).expect("scan").frames.len(),
+        count as usize,
+        "the captured journal has more frames than the bounded hash window"
+    );
+    let mut source = JournalReplaySource::open(&path, UPSTOX_SOURCE_ID).expect("replay source");
+    let mut ingestor = DurableIngestor::resume(&path, UPSTOX_SOURCE_ID).expect("resume");
+    let summary = ingestor.replay(&mut source).expect("replay");
+    assert_eq!(
+        summary.committed, 0,
+        "no frame outside the hash window is re-committed"
+    );
+    assert_eq!(summary.duplicates, count, "every captured frame is fenced");
+    assert_eq!(
+        scan_journal(&path).expect("scan").frames.len(),
+        count as usize,
+        "the journal length is unchanged by a large replay"
+    );
+}
