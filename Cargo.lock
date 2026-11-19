@@ -1643,6 +1643,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "risk-authority"
+version = "0.1.0"
+dependencies = [
+ "risk-engine",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "trading-core",
+]
+
+[[package]]
 name = "risk-engine"
 version = "0.1.0"
 dependencies = [
