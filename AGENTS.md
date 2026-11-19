@@ -67,10 +67,12 @@ archive; the working tree has no `.local/` directory.
 
 ## Authorization state
 
-M0 is complete and the M1 design record is accepted with amendments. M1 formal
-exit acceptance requires the owner's signature; no agent may sign or imply
-it. M2 implementation, platform readiness and live trading are not
-authorized. Only the owner can authorize a new milestone.
+M0 is complete. The owner accepted the M1 exit and signed bounded M2
+implementation authority on 2026-11-20; the controlling decision is
+`evidence/M2-AUTHORIZATION-2026-11-20.md`. M2 covers one NSE cash-equity
+vertical in paper and shadow modes. Live trading, platform-readiness claims,
+multi-asset expansion and R5/R6 promotion remain unauthorized and require a
+separate owner decision. No agent may sign or imply a further milestone.
 
 ## Mandatory workflow
 

@@ -1,9 +1,10 @@
 # M2 authorization — Nirnay trading kernel — 2026-11-20
 
 **Status: SIGNED — owner authorization recorded.** Baseline
-`f016ad4170912eb8fbca9705b994d003f4a99a82` (verified main, CI 12/12).
-This record is the controlling M2 decision; it supersedes the earlier draft
-that listed both signatures as pending.
+`f016ad4170912eb8fbca9705b994d003f4a99a82` (verified main, hosted CI run
+`44591312481`, 12/12 success; local `make check` exit 0). This record is the
+controlling M2 decision. The earlier draft that listed both signatures as
+pending was a proposal, not a signed record.
 
 ## Owner decisions
 
