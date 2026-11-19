@@ -140,10 +140,8 @@ fn shared_contract_vectors_match_the_rust_domain_validator() {
             };
             let expected = path.file_stem().and_then(|value| value.to_str()) == Some("valid");
             assert_eq!(
-                accepted,
-                expected,
-                "{type_name} vector {} disagrees with the schema",
-                path.display()
+                accepted, expected,
+                "shared contract vectors must agree between schema and domain"
             );
             checked += 1;
         }
