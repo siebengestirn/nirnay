@@ -274,6 +274,10 @@ fn more_than_1024_instruments_have_no_silent_continuity_loss() {
         ingestor.checkpoint().unknown_continuity_streams > 0,
         "eviction is recorded as unknown continuity, never as a fresh clean stream"
     );
+    assert!(
+        ingestor.continuity_degraded(),
+        "one bounded flag records degraded continuity instead of an unbounded eviction set"
+    );
     assert_eq!(
         ingestor.checkpoint().committed_frames,
         1100,
@@ -550,4 +554,48 @@ fn replay_benchmark_large_generated_journal() {
         streamed as f64 / elapsed.as_secs_f64()
     );
     assert_eq!(streamed, count, "contract assertion");
+}
+
+#[test]
+fn replay_fence_holds_beyond_the_delivery_window() {
+    let path = temp_path("fence-beyond-window");
+    let count = 5_000_u64;
+    {
+        let mut output = String::new();
+        for index in 0..count {
+            let item = frame(index, format!("payload-{index}").as_bytes());
+            let raw = market_archive::RawFrame::new(
+                &item.source_id,
+                &item.provider_instrument_id,
+                item.received_utc_nanos,
+                item.received_monotonic_nanos,
+                item.exchange_utc_nanos,
+                item.sequence.map(|value| value.value),
+                &item.entitlement_ref,
+                &item.payload,
+            )
+            .expect("raw frame");
+            output.push_str(&raw.to_json_line().expect("journal line"));
+            output.push('\n');
+        }
+        std::fs::write(&path, output).expect("generated journal");
+    }
+    let mut source = JournalReplaySource::open(&path, UPSTOX_SOURCE_ID).expect("replay source");
+    let mut ingestor =
+        DurableIngestor::resume(&path, UPSTOX_SOURCE_ID, SequencePolicy::CaptureSession)
+            .expect("resume");
+    assert!(
+        ingestor.known_deliveries() <= 4096,
+        "the delivery window stays bounded"
+    );
+    let summary = ingestor.replay(&mut source).expect("replay");
+    assert_eq!(
+        summary.committed, 0,
+        "frames older than the delivery window are fenced by ordinal"
+    );
+    assert_eq!(summary.duplicates, count, "contract assertion");
+    assert_eq!(
+        scan_journal(&path).expect("scan").frames.len(),
+        count as usize
+    );
 }

@@ -9,7 +9,6 @@
 use std::{
     collections::{
         BTreeMap, //
-        BTreeSet,
         VecDeque,
     },
     fs::File,
@@ -197,7 +196,7 @@ pub struct DurableIngestor {
     stream_order: VecDeque<String>,
     deliveries: BTreeMap<DeliveryKey, String>,
     delivery_order: VecDeque<DeliveryKey>,
-    unknown_streams: BTreeSet<String>,
+    continuity_degraded: bool,
     committed_ordinal: u64,
 }
 
@@ -221,7 +220,7 @@ impl DurableIngestor {
             stream_order: VecDeque::new(),
             deliveries: BTreeMap::new(),
             delivery_order: VecDeque::new(),
-            unknown_streams: BTreeSet::new(),
+            continuity_degraded: false,
             committed_ordinal: 0,
         })
     }
@@ -243,7 +242,7 @@ impl DurableIngestor {
             stream_order: VecDeque::new(),
             deliveries: BTreeMap::new(),
             delivery_order: VecDeque::new(),
-            unknown_streams: BTreeSet::new(),
+            continuity_degraded: false,
             committed_ordinal: 0,
         };
         let file = File::open(path).map_err(ArchiveError::from)?;
@@ -256,14 +255,22 @@ impl DurableIngestor {
             ingestor.checkpoint.committed_frames += 1;
             ingestor.committed_ordinal += 1;
             ingestor.checkpoint.last_payload_sha256 = Some(frame.payload_sha256.clone());
-            let key = DeliveryKey::Sequenced {
-                source: frame.source.clone(),
-                scope: match policy {
-                    SequencePolicy::ProviderPerInstrument => SequenceScope::Provider,
-                    _ => SequenceScope::CaptureSession,
+            let key = match raw_sequence {
+                Some(value) => DeliveryKey::Sequenced {
+                    source: frame.source.clone(),
+                    scope: match policy {
+                        SequencePolicy::ProviderPerInstrument => SequenceScope::Provider,
+                        _ => SequenceScope::CaptureSession,
+                    },
+                    value,
+                    instrument: frame.provider_instrument_id.clone(),
                 },
-                value: raw_sequence.unwrap_or(0),
-                instrument: frame.provider_instrument_id.clone(),
+                None => DeliveryKey::Timed {
+                    source: frame.source.clone(),
+                    instrument: frame.provider_instrument_id.clone(),
+                    received_utc: frame.received_utc_nanos,
+                    received_monotonic: frame.received_monotonic_nanos,
+                },
             };
             ingestor.remember(key, frame.payload_sha256.clone());
             if let Some(sequence) = raw_sequence {
@@ -295,6 +302,11 @@ impl DurableIngestor {
     }
 
     #[must_use]
+    pub const fn continuity_degraded(&self) -> bool {
+        self.continuity_degraded
+    }
+
+    #[must_use]
     pub fn tracked_streams(&self) -> usize {
         self.continuity.len()
     }
@@ -318,7 +330,7 @@ impl DurableIngestor {
         let observation = match self.policy {
             SequencePolicy::CaptureSession => self.session_tracker.observe(sequence),
             SequencePolicy::ProviderPerInstrument => {
-                if self.unknown_streams.contains(instrument) {
+                if self.continuity_degraded {
                     return;
                 }
                 if !self.continuity.contains_key(instrument)
@@ -326,11 +338,11 @@ impl DurableIngestor {
                     && let Some(oldest) = self.stream_order.pop_front()
                 {
                     self.continuity.remove(&oldest);
-                    self.unknown_streams.insert(oldest);
+                    // One bounded flag records that continuity is no longer
+                    // authoritative; remembering every evicted id would grow
+                    // memory with archive size.
+                    self.continuity_degraded = true;
                     self.checkpoint.unknown_continuity_streams += 1;
-                }
-                if self.unknown_streams.contains(instrument) {
-                    return;
                 }
                 if !self.continuity.contains_key(instrument) {
                     self.stream_order.push_back(instrument.to_owned());
@@ -352,7 +364,9 @@ impl DurableIngestor {
 
     fn preview_continuity(&self, instrument: &str, sequence: u64) -> Observation {
         match self.policy {
-            SequencePolicy::CaptureSession => self.session_tracker.clone().observe(sequence),
+            // A capture-session sequence is session-wide: distinct delivery
+            // identities sharing a value are not continuity duplicates.
+            SequencePolicy::CaptureSession => Observation::InOrder,
             SequencePolicy::ProviderPerInstrument => self
                 .continuity
                 .get(instrument)
