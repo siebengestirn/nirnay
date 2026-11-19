@@ -14,7 +14,15 @@ There is **no source-to-replay driver** at baseline. The CLI registers only `dem
 
 The experiment-record contract is orphaned: `experiments.py:16-160` defines fields but no producer exists, `code_revision` is free-form, two mutually incompatible schemas coexist (`schemas/research/experiment-record.v1.schema.json` and `...v1.json`), and `scripts/validate_contracts.py:44-58` only self-validates schema documents (A4-002). Float statistics carry **no runtime fingerprint** — no Python version, dependency lock digest, platform or libm field (A4-006).
 
-Most importantly for this ADR, the P&L compare is **tautological** (R1-C / R1 D1, Amendment A §A4 item 3 and §A5 row 3): `observe_risk_state` copies `daily_pnl` verbatim into a journal event (`crates/paper-engine/src/engine.rs:354-368`), the projection stores it unchanged (`state.rs:573-577` → `RiskStateObserved { daily_pnl, ... }`), it is read back into the risk context (`engine.rs:971`, `daily_pnl: self.projection.daily_pnl`), and feeds the daily-loss check (`risk-engine/src/lib.rs:282`). A replay that "compares" P&L against the recorded value merely re-reads the copied figure and reports equality; a caller can report `daily_pnl=0` while fills imply a large loss and the compare stays green. A P&L-inclusive `verified-equal` field set is therefore not evidence of correctness (Amendment A §A5 rejected §14 #8 "as written").
+Most importantly for this ADR, the P&L compare is **tautological** (R1-C / R1 D1, Amendment A §A4
+  item 3 and §A5 row 3): `observe_risk_state` copies `daily_pnl` verbatim into a journal event
+  (`crates/paper-engine/src/engine.rs:354-368`), the projection stores it unchanged
+  (`state.rs:573-577` → `RiskStateObserved { daily_pnl, ... }`), it is read back into the risk
+  context (`engine.rs:971`, `daily_pnl: self.projection.daily_pnl`), and feeds the daily-loss
+  check (`risk-engine/src/lib.rs:282`). A replay that "compares" P&L against the recorded value
+  re-reads the copied figure and reports equality; a caller can report `daily_pnl=0` while fills
+  imply a large loss and the compare stays green. A P&L-inclusive `verified-equal` field set is
+  therefore not evidence of correctness (Amendment A §A5 rejected §14 #8 "as written").
 
 ---
 
@@ -38,7 +46,9 @@ Most importantly for this ADR, the P&L compare is **tautological** (R1-C / R1 D1
 **Copied-forward P&L must never qualify as verified equality.** A replay comparison may treat P&L as `verified-equal` only in one of two admissible modes:
 
 - **(A) Recompute mode** — P&L is recomputed *inside the replay* from the fill stream and marks that the replay itself derives (fills + marks, with an explicit unmarked-residual policy), and the recomputed value is compared to an independently recorded reference. The externally supplied `RiskStateObserved.daily_pnl` (`state.rs:573-577`, `engine.rs:354-368`) is **not** that reference.
-- **(B) Exclusion mode** — P&L is excluded from the `verified-equal` field set entirely and recorded as an *external observation* with its own provenance; the compare attests only fields the replay actually re-derived.
+- **(B) Exclusion mode** — P&L is excluded from the `verified-equal` field set entirely and
+  recorded as an *external observation* with its own provenance; the compare attests only fields
+  the replay re-derived.
 
 Default for M1 design: **mode (B) for any value sourced from `RiskStateObserved`**, with mode (A) permitted only when the recomputation and its mark policy are explicitly defined and evidenced. No compare may silently include an observed P&L as equal.
 
@@ -64,7 +74,8 @@ A replay record must make the following information classes explicit and content
 3. **Versions** — one authoritative git commit SHA (not a free-form `code_revision`), schema versions, and config/strategy artifact hashes; the two experiment-record schemas are unified into one record identity (A4-002).
 4. **Initial state** — the starting state hash and the state from which the replay begins.
 5. **External observations** — `RiskStateObserved`, broker-report observations and any caller-supplied risk context, tagged as *observed/attested* and excluded from verified-equal unless recomputed (§3.1).
-6. **Random seeds** — all seeds actually consulted (e.g. `PYTHONHASHSEED`, queue-sensitivity seed from `backtest.py:334-336`), recorded and controlled.
+6. **Random seeds** — all seeds consulted (e.g. `PYTHONHASHSEED`, queue-sensitivity seed from
+  `backtest.py:334-336`), recorded and controlled.
 7. **Numerical environment (runtime fingerprint)** — Python version, dependency/constraints digest, platform/OS, libm and float mode; required because float statistics (`alpha_search.py:80-177`, `metrics.py`, `validation.py`, A4-006) are environment-relative.
 8. **Outputs** — decisions, fills, fees, cash, positions, and P&L, plus an unmarked-residual validity signal (A4-003/Amendment A §A2: every nonzero position must have a mark or be flagged). Any `pnl_basis` value is **verifier-derived per §3.1.1**, never a producer assertion carried as evidence.
 9. **State hashes** — canonical hashes of each stage's output state for byte-compare.
@@ -84,10 +95,17 @@ Replay/experiment records are append-only and content-addressed; rejected trials
 
 Challenge 5 (replay) is primary here.
 
-1. **Authorization.** A replay record must not treat a signed runtime-evidence artifact as verified merely because it is present in the record: the importable token (`risk_service.py:24-26,192-204`) can forge it in-process. The record stores the authorization precondition evidence (Architecture ADR-M1-002) separately; replay equality never upgrades an authority claim.
+1. **Authorization.** A replay record must not treat a signed runtime-evidence artifact as
+  verified because it is present in the record: the importable token
+  (`risk_service.py:24-26,192-204`) can forge it in-process. The record stores the authorization
+  precondition evidence (Architecture ADR-M1-002) separately; replay equality never upgrades an
+  authority claim.
 2. **OMS.** An UNKNOWN order (`durable_oms.py:397-421`) is an observed state, not a recomputable output; replay may verify the *state-transition trace* but cannot verify a broker outcome that was never observed. Reconciliation evidence (F-A5-04) must be an external observation class in the record.
 3. **Events and partitions.** The one-frame→two-event identity problem (`__multi_instrument_frame__`, `upstox_recorder.rs:238`) means the replay record keys source hashes at the frame boundary, not only per derived event. Account-global P&L/exposure (`state.rs:113-116`, `engine.rs:955-971`) must be recomputed/verified at the aggregate level; partition-local replays cannot each claim verified equality for a global figure (R1-Q3, R1-C). Primary decisions: Runtime ADR-005/006.
-4. **Durability.** The replay checkpoint inherits the ACK boundary of ADR-M1-008: an ACK at `journal.rs:51` proves a frame was persisted, not that the session was complete (R2 C2: manifest written only at `finish()`, dataset id caller-supplied). Coverage claims need the capture manifest, not just frame ACKs.
+4. **Durability.** The replay checkpoint inherits the ACK boundary of ADR-M1-008: an ACK at
+  `journal.rs:51` proves a frame was persisted, not that the session was complete (R2 C2: manifest
+  written only at `finish()`, dataset id caller-supplied). Coverage claims need the capture
+  manifest, not frame ACKs.
 5. **Replay (primary here).** §3.1 prohibits copied-forward P&L as verified equality (M1-REP-INV-001/002); §3.2–3.4 define the record, fresh-process determinism and no-overwrite persistence; this is the full contract of this ADR.
 6. **Evidence.** A replay claim only becomes `verified` under ADR-M1-011 with a named fresh-process command, environment and limitations; a recorded `verified_internal_integrity` dataset (point_in_time.py:726-762) is not that.
 

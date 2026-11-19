@@ -118,3 +118,11 @@ conformance driver, `scripts/conformance.py` and four remaining India helper
 modules have no demonstrated active home or abandonment decision. The shared
 temporal goldens and India fixtures do have active homes; see the re-audit
 record for the corrected classification.
+
+## Prose sweep disposition 2026-11-19
+
+The full-tree prose sweep recorded one finding in `extras/README.md:91`
+(PROSE-002). It is left unchanged to preserve predecessor provenance; active
+repositories and canonical documents carry no rewritten predecessor text.
+The finding remains visible in `evidence/PROSE-SWEEP-2026-11-19.md` and is not
+counted as resolved.

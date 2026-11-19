@@ -28,7 +28,14 @@ If more than one provider appears for the same replay and no `source_provider` i
 - L2 queue-ahead is conservative: displayed quantity at the limit is ahead; additions increase the high-water estimate; only qualifying prints consume that estimate. The seeded sensitivity model is deterministic per seed/order ID, not a calibrated probability distribution.
 - Time-in-force includes cancel latency. Orders can still fill until modeled cancel effectiveness.
 
-The engine does not claim FIFO. Aggregate depth does not expose all order IDs, hidden size, priority or exact queue position. FYERS Data Socket is five levels; its separate 50-level Protobuf TBT socket is not implemented by the current recorder. Upstox V3 documents five-level Full and 30-level Full D30 (Plus) modes; this active recorder path does not claim D30 support. Their update callbacks are not proof of a complete exchange event tape. Current normalizers emit last-trade *observations*, not aggressor-tagged unique prints, so those observations do not advance a passive queue. Passive fills in tests require explicitly constructed trade fixtures from a source that actually provides prints and aggressor direction.
+The engine does not claim FIFO. Aggregate depth does not expose all order IDs, hidden size,
+  priority or exact queue position. FYERS Data Socket is five levels; its separate 50-level
+  Protobuf TBT socket is not implemented by the current recorder. Upstox V3 documents five-level
+  Full and 30-level Full D30 (Plus) modes; this active recorder path does not claim D30 support.
+  Their update callbacks are not proof of a complete exchange event tape. Current normalizers emit
+  last-trade *observations*, not aggressor-tagged unique prints, so those observations do not
+  advance a passive queue. Passive fills in tests require explicitly constructed trade fixtures
+  from a source that provides prints and aggressor direction.
 
 ### Model limitations
 

@@ -135,7 +135,8 @@ Rust is the default for:
 
 Anti-patterns:
 
-- `LANG-RUST-001` `B0 / REVIEW`: MUST NOT move an authoritative state machine into Python, q, SQL triggers, shell or an unreviewed native library merely because implementation is faster there.
+- `LANG-RUST-001` `B0 / REVIEW`: MUST NOT move an authoritative state machine into Python, q, SQL
+  triggers, shell or an unreviewed native library for speed alone.
 - `LANG-RUST-002` `H1 / REVIEW`: MUST NOT split one authoritative state across Rust and another language without a formal authority, transaction and reconciliation contract.
 - `LANG-RUST-003` `H1 / REVIEW`: MUST NOT introduce a new Rust crate to simulate modularity. Each crate needs a distinct domain/build/API boundary, an owner, a test plan and architecture registration.
 - `LANG-RUST-004` `H1 / REVIEW`: MUST NOT expose internal Rust implementation types as a cross-language wire contract without explicit versioning and compatibility policy.
@@ -274,7 +275,7 @@ Anti-patterns:
 - `ARC-004` `H1 / REVIEW`: MUST NOT duplicate a domain rule in adapters, clients, scripts and services. Put it at its authority boundary and test mappings.
 - `ARC-005` `H1 / REVIEW`: MUST NOT expose storage implementation details as the domain API unless storage is the contract.
 - `ARC-006` `H1 / REVIEW`: MUST NOT create generic repositories, caches, event buses or state stores without concrete implementations/use cases and semantics.
-- `ARC-007` `H1 / REVIEW`: MUST NOT use one type for distinct states just because fields match.
+- `ARC-007` `H1 / REVIEW`: MUST NOT use one type for distinct states when fields match.
 - `ARC-008` `H1 / REVIEW`: MUST separate transport, decode, normalization, validation, state transition and persistence.
 - `ARC-009` `B0 / REVIEW`: MUST keep trading-firm OMS/risk/accounting authority separate from venue-operator private order, matching, participant and surveillance state.
 - `ARC-010` `B0 / REVIEW`: MUST keep matching authority, clearing authority, settlement state, accounting state and broker order state distinct.
@@ -427,7 +428,8 @@ Any claimed low-latency optimisation must provide:
 - A decision explaining the extra complexity and regression budget.
 
 `HFT-009` `B0 / EVIDENCE`: A speedup claim is rejected if correctness, completeness, data quality or event loss has regressed.  
-`HFT-010` `H1 / EVIDENCE`: MUST benchmark under overload and recovery, not just steady-state low load.  
+`HFT-010` `H1 / EVIDENCE`: MUST benchmark under overload and recovery, not steady-state low load
+  alone.
 `HFT-011` `H1 / REVIEW`: MUST NOT use average throughput to hide queue growth or p99 latency collapse.  
 `HFT-012` `H1 / REVIEW`: MUST NOT call a system HFT because it uses Rust/C++, q, atomics, DPDK, a ring buffer or microsecond timers.
 
@@ -668,7 +670,8 @@ Pinned Rust toolchain is authoritative. Do not upgrade compiler or edition as a 
 - `PG-012` `H1 / TEST`: Test connection loss before, during and after commit; reconcile unknown commit outcomes by idempotency key or durable business identifier.
 - `PG-013` `H1 / REVIEW`: Schema migrations need lock duration, expand/contract compatibility, backfill strategy, rollback/forward-repair and concurrent application-version plan.
 - `PG-014` `H1 / REVIEW`: Do not assume `CREATE INDEX`, `ALTER TABLE`, vacuum or reindex are operationally free; account for lock and I/O impact.
-- `PG-015` `H1 / REVIEW`: Partitioning must match query and retention patterns; do not partition just because the dataset is large.
+- `PG-015` `H1 / REVIEW`: Partitioning must match query and retention patterns; do not partition
+  on size alone.
 - `PG-016` `H1 / REVIEW`: Do not use a generic JSONB blob for core typed order/ledger relations when constraints, joins and query semantics are required.
 - `PG-017` `H1 / REVIEW`: Do not assume MVCC eliminates locks, deadlocks, serialization failures or the need for consistent business-level conflict detection.
 - `PG-018` `H1 / EVIDENCE`: Capacity plans must include WAL generation, checkpoint spikes, autovacuum, backup bandwidth, restore time, replication lag and connection count.
@@ -750,7 +753,8 @@ Pinned Rust toolchain is authoritative. Do not upgrade compiler or edition as a 
 - `OPS-031` `H1 / REVIEW`: Do not use mutable tags (`latest`, floating image tags or overwritten package versions) as release identity. Deploy by immutable digest or an equivalently immutable, verified identifier.
 - `OPS-032` `B0 / REVIEW`: A deployment MUST NOT silently apply destructive database/schema changes before the new application version is compatible. Use expand/contract, staged backfills or an explicit forward-repair plan; define rollback compatibility before rollout.
 - `OPS-033` `H1 / TEST`: Exercise deployment rollback or forward recovery using the exact release artifact and realistic state. A documented command that has never been exercised is not a recovery capability.
-- `OPS-034` `H1 / REVIEW`: Use progressive rollout/canary only with explicit health signals, abort thresholds, an owner and a tested stop/rollback path. A canary is not safe merely because traffic is small.
+- `OPS-034` `H1 / REVIEW`: Use progressive rollout/canary only with explicit health signals, abort
+  thresholds, an owner and a tested stop/rollback path. A canary is not safe on low traffic alone.
 - `OPS-035` `H1 / REVIEW`: Release builds MUST NOT depend on undeclared workstation state, ambient credentials, mutable downloads, untracked generated files or an unpinned toolchain. Record build inputs that vary by design.
 - `OPS-036` `H1 / EVIDENCE`: Produce a machine-readable SBOM (SPDX or CycloneDX, as selected by policy) for each releasable artifact. Include direct and transitive dependencies, relevant base images/runtime components and exact versions; retain it with the artifact digest and scan results.
 - `OPS-037` `B0 / EVIDENCE`: Release artifacts and provenance attestations MUST be signed/attested by an approved build identity and independently verifiable before deployment. Signing keys MUST NOT be exposed to untrusted build steps; record verification identity, trust root and result.
@@ -778,19 +782,22 @@ A test is useful only if its oracle is correct and it would fail for the defect 
 - `TST-017` `H1 / REVIEW`: Do not set hard performance gates from one noisy run.
 - `TST-018` `B0 / REVIEW`: Do not claim production readiness from unit tests, synthetic benchmarks, mock venues or CI alone.
 - `TST-019` `B0 / TEST`: Architecture rules that can be checked from registries/graphs must have executable gates.
-- `TST-020` `H1 / REVIEW`: Test oracle must state expected contract, not just current output.
+- `TST-020` `H1 / REVIEW`: Test oracle must state expected contract, not current output alone.
 - `TST-021` `H1 / TEST`: Test deterministic replay across restart, code/schema version and process boundaries where replay is required.
 - `TST-022` `H1 / TEST`: Test graceful shutdown during active I/O, queued work, partial writes and in-flight transactions.
 - `TST-023` `H1 / TEST`: Test restore into a new location and over an existing location, failed swap and interruption.
 - `TST-024` `H1 / TEST`: Evidence artifacts must identify commit, toolchain, platform, task, gate and result.
-- `TST-025` `H1 / REVIEW`: Negative tests must prove the guard rejects bad input, not merely that a helper returns an error for a hand-picked string.
+- `TST-025` `H1 / REVIEW`: Negative tests must prove the guard rejects bad input, not that a
+  helper returns an error for a hand-picked string.
 - `TST-026` `H1 / REVIEW`: Fuzz corpus and regression fixtures must be retained when they identify a real bug.
 - `TST-027` `H1 / TEST`: Cross-language bindings require both directions where data can round-trip: Rust->C++/Python/q and consumer->Rust.
 - `TST-028` `H1 / TEST`: Test crash recovery at every durability boundary, including failure during recovery itself.
 - `TST-029` `H1 / REVIEW`: Test suites must not rely on test execution order or shared mutable global fixtures.
 - `TST-030` `H1 / EVIDENCE`: A claimed gate must run at the exact commit SHA. An earlier SHA or branch state is not evidence for a later commit.
 - `TST-031` `H1 / REVIEW`: Do not make flaky tests green by blind retries, increased timeouts or permanent quarantine. A retry may gather diagnostics, but the original failure remains visible until root cause, scope, owner and expiry are recorded.
-- `TST-032` `H1 / REVIEW`: Separate fast deterministic admission tests from slower integration/soak suites where useful, but do not move a required correctness/security/financial control out of the merge gate merely to shorten CI.
+- `TST-032` `H1 / REVIEW`: Separate fast deterministic admission tests from slower
+  integration/soak suites where useful, but do not move a required correctness/security/financial
+  control out of the merge gate to shorten CI.
 
 ### Required test ladder
 
@@ -844,7 +851,8 @@ A tiny change does not automatically require every layer. The task must identify
 - `OBS-007` `B0 / EVIDENCE`: No claim of continuity, HA, failover, DR, HFT, production readiness or venue operation without corresponding tests and measured evidence.
 - `OBS-008` `H1 / REVIEW`: Define operating envelope: supported scale, hardware, throughput, tail latency, recovery time, memory, disk and known limits.
 - `OBS-009` `H1 / REVIEW`: Never erase forensic evidence during repair/recovery. Preserve original state and record each repair.
-- `OBS-010` `H1 / TEST`: Test restore, not just backup. Record date, source, target and verification result.
+- `OBS-010` `H1 / TEST`: Test restore, not backup. Record date, source, target and verification
+  result.
 - `OBS-011` `H1 / REVIEW`: Before deployment, assign ownership for alert, runbook, upgrade, retention, incident and recovery.
 - `OBS-012` `B0 / REVIEW`: Do not enable live execution/venue operation because a feature flag exists. Require independent risk, entitlement, operational and human gates.
 - `OBS-013` `H1 / REVIEW`: Alerts must be actionable and tied to an owner/runbook; avoid alert storms and unbounded cardinality.
@@ -872,7 +880,8 @@ AI agents are untrusted contributors. They are not maintainers, risk authorities
 - `AI-014` `H1 / REVIEW`: Agents SHOULD flag destructive, financial, persistence, security and public-API risks before editing.
 - `AI-015` `B0 / REVIEW`: Agents MUST NOT alter this policy/enforcement in the same change whose compliance they are establishing.
 - `AI-016` `H1 / REVIEW`: Review AI tests for oracle quality and mutation sensitivity; do not accept tautological tests.
-- `AI-017` `H1 / REVIEW`: Handoff lists changed paths, base/head SHA, commands actually run, skips, failures, assumptions, risks and remote actions.
+- `AI-017` `H1 / REVIEW`: Handoff lists changed paths, base/head SHA, commands run, skips,
+  failures, assumptions, risks and remote actions.
 - `AI-018` `B0 / REVIEW`: Human approval required for live trading, risk policy, credentials, entitlement, destructive migration, remote deletion, merge and release promotion.
 - `AI-019` `B0 / REVIEW`: Agents MUST NOT create evidence for a test they did not execute or alter raw evidence after capture.
 - `AI-020` `H1 / REVIEW`: Agents MUST distinguish retrieved source evidence, repository-local evidence, inference and proposal.
@@ -930,7 +939,8 @@ The author must identify one coherent task, read its relevant source-of-truth co
 
 ### 22.2 During coding
 
-Keep commits scoped. Add tests with code. Preserve old contracts until approved migration. Stop when a frozen contract is contradicted. Do not change evidence or policy just to make work pass.
+Keep commits scoped. Add tests with code. Preserve old contracts until approved migration. Stop
+  when a frozen contract is contradicted. Do not change evidence or policy to make work pass.
 
 ### 22.3 Before PR
 
@@ -964,7 +974,8 @@ Configure GitHub rulesets/branch protection to:
 - Restrict direct push, force push and deletion.
 - Disable ordinary bypass for administrators, bots and automation.
 - Protect `.github/workflows/`, `engineering/`, persistence, risk, OMS, broker/venue adapters, compliance and live execution paths.
-- Ensure required checks actually run; obsolete-SHA checks and skipped required jobs do not satisfy admission.
+- Ensure required checks run; obsolete-SHA checks and skipped required jobs do not satisfy
+  admission.
 
 A green check from an earlier SHA is not evidence for the current head. A platform outage is not a code failure, but it is also not a pass. Keep required evidence blocked until it exists or a formally approved policy change changes the requirement.
 
@@ -1017,7 +1028,8 @@ This section maps the policy to tool families. It does **not** assert that every
 
 ### 25.1 Rust and Cargo
 
-- The pinned `rust-toolchain.toml`, `Cargo.lock`, workspace manifests and Clippy configuration are authoritative. Do not follow `stable`/`nightly` merely because a blog post uses it.
+- The pinned `rust-toolchain.toml`, `Cargo.lock`, workspace manifests and Clippy configuration are
+  authoritative. Do not follow `stable`/`nightly` because a blog post uses it.
 - Typical admission checks are `cargo fmt --all -- --check`, Clippy over the supported workspace/target/feature matrix with warnings denied, and `cargo test` over the required matrix. The exact flags and feature combinations must come from repository policy; `--all-features` is not automatically correct if features are mutually exclusive or change semantics.
 - Use `cargo deny check` or the repository's explicitly configured dependency scanner for licence, advisory, source and duplicate-dependency review. Keep the lockfile current with intentional dependency changes.
 - Use Miri for supported unsafe-code tests, Loom for small concurrency protocols and cargo-fuzz or an equivalent fuzzer for parsers. Treat these as targeted evidence, not universal proofs.
@@ -1045,7 +1057,10 @@ This section maps the policy to tool families. It does **not** assert that every
 
 - Use explicit migrations, named constraints, parameter binding and the target engine's real isolation/locking semantics. SQL dialect differences are part of the contract.
 - For SQLite, set and read back required connection pragmas rather than trusting defaults. In particular, verify foreign-key enforcement and the chosen journal/synchronous/busy policy on every connection where applicable. WAL requires participating processes on the same host and is not a network-filesystem protocol. Use the online backup API or `VACUUM INTO` for live backups, then restore-test the result.
-- For PostgreSQL, test the selected isolation level, serialization/deadlock retry behavior, transaction timeouts, connection-loss-at-commit reconciliation and replica lag/failover policy. Use representative `EXPLAIN (ANALYZE, BUFFERS)` plans. Test base backup plus WAL/PITR recovery, not just backup-job success.
+- For PostgreSQL, test the selected isolation level, serialization/deadlock retry behavior,
+  transaction timeouts, connection-loss-at-commit reconciliation and replica lag/failover policy.
+  Use representative `EXPLAIN (ANALYZE, BUFFERS)` plans. Test base backup plus WAL/PITR recovery,
+  not backup-job success.
 - Do not turn a successful local SQLite test into proof of PostgreSQL behavior, or a PostgreSQL benchmark into proof of SQLite semantics.
 
 ### 25.5 kdb+/q and time-series systems
@@ -1059,7 +1074,9 @@ This section maps the policy to tool families. It does **not** assert that every
 - Run ShellCheck on maintained shell scripts. Quote expansions, use arrays for argument vectors, avoid `eval`, and check pipeline failures explicitly. `set -e` has context-dependent exceptions in Bash and is not a substitute for explicit error handling. Test destructive and cleanup paths.
 - Use one canonical build entry point. Make targets must declare dependencies and outputs; CMake configuration must be target-scoped and reproducible. Build scripts should be safe to re-run.
 - Prefer GitHub Actions workflow dependency lockfiles that pin actions and transitive dependencies. Where unavailable, pin third-party actions by verified full commit SHA. Minimise each workflow/job's `permissions`, and keep secrets out of untrusted pull-request execution. A privileged `pull_request_target` job must not check out or execute attacker-controlled PR code with secrets.
-- Validate branch protection/rulesets actually enforce required review, exact-head checks, conversation resolution, restricted bypass and protected-path ownership. Configuration screenshots or a policy document are not proof; test the effective repository settings.
+- Validate branch protection/rulesets enforce required review, exact-head checks, conversation
+  resolution, restricted bypass and protected-path ownership. Configuration screenshots or a
+  policy document are not proof; test the effective repository settings.
 
 ### 25.7 Toolchain change policy
 

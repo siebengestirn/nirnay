@@ -58,7 +58,7 @@ what changed.
 
 The body explains why. It does not carry attribution to tools or agents. Tools
 are not authors or co-authors; a `Co-Authored-By:` trailer names a human who
-actually wrote the code. A subject line that reports a release identity states
+wrote the code. A subject line that reports a release identity states
 which release it is — `feat: nirnay r0 ...` for the initial import, not "r3 then
 r0".
 
