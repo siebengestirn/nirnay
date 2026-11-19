@@ -1,0 +1,9 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running tests/performance.rs (target/debug/deps/performance-d5fb87ae9ad89251)
+
+running 1 test
+BENCH-REPLAY frames=100000 seconds=1.351 frames_per_sec=74041.3 peak_frames_held=1 delivery_window=4096 continuity_streams=1024
+test replay_throughput_and_bounded_frames ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 3.80s
+
