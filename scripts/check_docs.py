@@ -6,8 +6,8 @@ published and is never edited to look current. This gate enforces that split:
 
 - every canonical and dated document exists;
 - stale root-level duplicates of dated evidence are absent;
-- README carries a machine-readable current-state block whose commit is an
-  ancestor of HEAD and whose verification date and CI reference are present;
+- README carries a machine-readable current-state block whose code_commit is
+  an ancestor of HEAD and whose verification date and CI reference are present;
 - the README document map names every dated evidence file; and
 - every local Markdown link in those documents resolves.
 
@@ -21,6 +21,7 @@ import re
 import subprocess
 import sys
 import unittest
+from collections.abc import Callable
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -62,6 +63,32 @@ def parse_state(readme: str) -> dict[str, str]:
         key, value = line.split(":", 1)
         fields[key.strip()] = value.strip()
     return fields
+
+
+def validate_current_state(
+    state: dict[str, str], ancestor_check: Callable[[str], bool]
+) -> list[str]:
+    """Validate the parsed current-state block against the code-commit contract."""
+    errors: list[str] = []
+    if not state:
+        errors.append("README has no <!-- CURRENT-STATE ... --> block")
+        return errors
+    code_commit = state.get("code_commit", "")
+    if not re.fullmatch(r"[0-9a-f]{7,40}", code_commit):
+        errors.append("CURRENT-STATE code_commit is not a hex SHA")
+    elif not ancestor_check(code_commit):
+        errors.append(
+            f"CURRENT-STATE code_commit {code_commit} is not an ancestor of HEAD"
+        )
+    try:
+        dt.date.fromisoformat(state.get("verified_on", ""))
+    except ValueError:
+        errors.append("CURRENT-STATE verified_on is not an ISO date")
+    if not state.get("ci_run"):
+        errors.append("CURRENT-STATE ci_run is empty (use 'none' with a reason)")
+    if not state.get("scope"):
+        errors.append("CURRENT-STATE scope is empty")
+    return errors
 
 
 def is_ancestor(commit: str) -> bool:
@@ -108,25 +135,7 @@ def check() -> list[str]:
         if Path(name).name not in readme and name not in readme:
             errors.append(f"README does not point to canonical document {name}")
 
-    state = parse_state(readme)
-    if not state:
-        errors.append("README has no <!-- CURRENT-STATE ... --> block")
-    else:
-        code_commit = state.get("code_commit", "")
-        if not re.fullmatch(r"[0-9a-f]{7,40}", code_commit):
-            errors.append("CURRENT-STATE code_commit is not a hex SHA")
-        elif not is_ancestor(code_commit):
-            errors.append(
-                f"CURRENT-STATE code_commit {code_commit} is not an ancestor of HEAD"
-            )
-        try:
-            dt.date.fromisoformat(state.get("verified_on", ""))
-        except ValueError:
-            errors.append("CURRENT-STATE verified_on is not an ISO date")
-        if not state.get("ci_run"):
-            errors.append("CURRENT-STATE ci_run is empty (use 'none' with a reason)")
-        if not state.get("scope"):
-            errors.append("CURRENT-STATE scope is empty")
+    errors.extend(validate_current_state(parse_state(readme), is_ancestor))
 
     for name in (*CANONICAL, *DATED):
         path = ROOT / name
@@ -156,6 +165,30 @@ class DocsTest(unittest.TestCase):
         state = parse_state(text)
         self.assertEqual(state["code_commit"], "abc1234")
         self.assertEqual(state["scope"], "local")
+
+    def test_old_commit_field_fails_the_code_commit_contract(self) -> None:
+        """A block using the former `commit` name is rejected."""
+        old_style = {
+            "commit": "abc1234",
+            "verified_on": "2026-11-18",
+            "ci_run": "none",
+            "scope": "local",
+        }
+        errors = validate_current_state(old_style, lambda _commit: True)
+        self.assertTrue(
+            any("code_commit is not a hex SHA" in error for error in errors),
+            "the old field name fails against the new contract",
+        )
+
+    def test_valid_code_commit_block_passes(self) -> None:
+        """The new field name passes when its value is an ancestor."""
+        current = {
+            "code_commit": "abc1234",
+            "verified_on": "2026-11-18",
+            "ci_run": "none",
+            "scope": "local",
+        }
+        self.assertEqual(validate_current_state(current, lambda _commit: True), [])
 
     def test_rejects_missing_block(self) -> None:
         """An absent block produces no fields."""
