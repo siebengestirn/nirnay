@@ -178,6 +178,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "broker-adapter"
+version = "0.1.0"
+dependencies = [
+ "authoritative-oms",
+ "tempfile",
+ "thiserror",
+ "trading-core",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
