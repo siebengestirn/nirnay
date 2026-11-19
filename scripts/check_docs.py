@@ -112,11 +112,13 @@ def check() -> list[str]:
     if not state:
         errors.append("README has no <!-- CURRENT-STATE ... --> block")
     else:
-        commit = state.get("commit", "")
-        if not re.fullmatch(r"[0-9a-f]{7,40}", commit):
-            errors.append("CURRENT-STATE commit is not a hex SHA")
-        elif not is_ancestor(commit):
-            errors.append(f"CURRENT-STATE commit {commit} is not an ancestor of HEAD")
+        code_commit = state.get("code_commit", "")
+        if not re.fullmatch(r"[0-9a-f]{7,40}", code_commit):
+            errors.append("CURRENT-STATE code_commit is not a hex SHA")
+        elif not is_ancestor(code_commit):
+            errors.append(
+                f"CURRENT-STATE code_commit {code_commit} is not an ancestor of HEAD"
+            )
         try:
             dt.date.fromisoformat(state.get("verified_on", ""))
         except ValueError:
@@ -144,7 +146,7 @@ class DocsTest(unittest.TestCase):
         text = "\n".join(
             [
                 "<!-- CURRENT-STATE",
-                "commit: abc1234",
+                "code_commit: abc1234",
                 "verified_on: 2026-11-18",
                 "ci_run: none",
                 "scope: local",
@@ -152,7 +154,7 @@ class DocsTest(unittest.TestCase):
             ]
         )
         state = parse_state(text)
-        self.assertEqual(state["commit"], "abc1234")
+        self.assertEqual(state["code_commit"], "abc1234")
         self.assertEqual(state["scope"], "local")
 
     def test_rejects_missing_block(self) -> None:
