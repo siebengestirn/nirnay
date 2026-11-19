@@ -23,8 +23,11 @@ ROOT = Path(__file__).resolve().parent.parent
 
 REQUIRED_TEXT: dict[str, tuple[str, ...]] = {
     "Makefile": (
-        "style: rust-style source-style style-gate",
+        "style: rust-style source-style prose-style style-gate",
         "$(MAKE) style",
+        "prose-style:",
+        "python3 scripts/check_prose_style.py --self-test",
+        "python3 scripts/check_prose_style.py",
         "python3 scripts/check_rust_style.py --self-test",
         "python3 scripts/check_source_style.py --self-test",
         "python3 scripts/check_style_gate.py",
@@ -35,6 +38,7 @@ REQUIRED_TEXT: dict[str, tuple[str, ...]] = {
         "NIRNAY_STYLE_BASE: origin/main",
         "python3 scripts/check_rust_style.py",
         "python3 scripts/check_source_style.py",
+        "python3 scripts/check_prose_style.py",
         "python3 scripts/check_style_gate.py",
     ),
     "scripts/check_rust_style.py": (
@@ -69,6 +73,7 @@ MIN_TESTS: dict[str, int] = {
     "scripts/check_rust_style.py": 13,
     "scripts/check_source_style.py": 26,
     "scripts/check_style_gate.py": 7,
+    "scripts/check_prose_style.py": 10,
 }
 
 
@@ -83,6 +88,7 @@ def behavioural_checks(root: Path = ROOT) -> list[str]:
     try:
         import check_rust_style as rust
         import check_source_style as source
+        import check_prose_style as prose
     except ImportError as error:
         return [f"cannot import style checker: {error}"]
 

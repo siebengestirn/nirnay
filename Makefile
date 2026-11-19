@@ -22,13 +22,16 @@ generated-paths-check:
 	python3 scripts/check_generated_paths.py
 pollution-check:
 	python3 scripts/check_no_cross_pollution.py
-style: rust-style source-style style-gate
+style: rust-style source-style prose-style style-gate
 rust-style:
 	python3 scripts/check_rust_style.py --self-test
 	python3 scripts/check_rust_style.py
 source-style:
 	python3 scripts/check_source_style.py --self-test
 	python3 scripts/check_source_style.py
+prose-style:
+	python3 scripts/check_prose_style.py --self-test
+	python3 scripts/check_prose_style.py
 style-gate:
 	python3 scripts/check_style_gate.py --self-test
 	python3 scripts/check_style_gate.py

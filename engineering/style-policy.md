@@ -96,6 +96,23 @@ independently from the CI `python-research` job. Removing or weakening a rule,
 a checker, a self-test or the wiring therefore fails the build. Adding a
 language or rule requires updating its expectations in the same PR.
 
+## Markdown prose rules
+
+`scripts/check_prose_style.py` enforces four rules on added Markdown lines and
+provides `--all` for remediation sweeps. Rule IDs are stable; changing a pattern
+requires style-policy review.
+
+| Rule | Rejects | Rationale |
+|---|---|---|
+| PROSE-001 | first-person pronouns | invariants, owners and dated records replace actors |
+| PROSE-002 | intent adverbs such as `clearly` and `simply` | evidence replaces posture |
+| PROSE-003 | promotional terms such as `black box` and `state of the art` | every layer stays explainable |
+| PROSE-004 | tautological filler such as `needless to say` | each sentence adds a checkable claim |
+
+Inline code spans, fenced blocks and indented code are excluded because
+identifiers and quoted source are not prose. The checker is wired into `make
+style`, the CI `source-style` job and the gate-integrity checker.
+
 ## Adding a rule
 
 Add the rule and an adversarial self-test to the relevant checker, document the
