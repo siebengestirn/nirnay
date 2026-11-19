@@ -5,10 +5,10 @@
 **Release status:** research/paper engineering candidate. This repository is not a certified broker-connected trading system, not a SEBI/exchange-approved algo product, and not evidence of profitable alpha. Live order routing is hard-disabled. Every capability statement below distinguishes code present from external verification still required.
 
 <!-- CURRENT-STATE
-commit: 30ee424b62217a4b40680a9843f130af76c4a0bf
+commit: ea877ab6d784356c2e852412f5c904fd0ca15cc4
 verified_on: 2026-11-19
-ci_run: 44366085320
-scope: make check + hosted CI 44366085320 on 30ee424 (11/11); no later-commit claim
+ci_run: 44420365008
+scope: make check + hosted CI 44420365008 on ea877ab (11/11); no later-commit claim
 -->
 
 ## What is actually implemented
@@ -354,5 +354,12 @@ normalization, point-in-time dataset building and the paper backtest/OMS
 stages are implemented (`engineering/capabilities.json` CAP-004, CAP-005,
 CAP-008, CAP-013, CAP-016). Dataset/build replay and raw-frame lineage
 verification are implemented for synthetic/internal fixtures; replay of real
-archived provider sessions remains unverified. Independently sourced
-market-data streams do not yet share one common ingress and replay path.
+archived provider sessions remains unverified.
+
+The shared ingress **library** (`crates/market-archive/src/ingress.rs`) is
+implemented with Upstox and FYERS adapters and streaming replay, but the
+provider **applications** are not yet connected to it: `upstox_recorder` still
+writes directly through `JournalWriter` and the FYERS recorder still writes its
+own Python hash-chain journal. No live provider integration or canonical event
+projection is claimed. PR #44 corrects delivery identity, sequence scope,
+continuity state and bounded replay before application wiring.
