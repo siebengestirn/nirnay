@@ -23,7 +23,7 @@ M0/R1 established that ordering and partitioning cannot be treated as a free, un
 
 5. **There is no measured scaling requirement.** No workload class, profile, budget, SLO or benchmark harness exists (`A6-08/09/11`; `target-architecture.md:66-69` excludes C4/C5). R1 downgraded A6-06 (no partitioning) to S4: the honest current-state contract is a single-node envelope, not horizontal scaling.
 
-The problem is therefore not "add partitioning." It is to define which ordering scopes actually matter, where, and to prevent a partition scheme from silently breaking account-level correctness or integrity.
+integrity.
 
 ---
 
@@ -55,7 +55,7 @@ The problem is therefore not "add partitioning." It is to define which ordering 
 | **Entity / account (per `account_id`)** | Total order of all events mutating one account's cash/positions/orders/P&L | Single account authority | All risk checks (`gross_exposure_paise`, `daily_pnl`, kill switch — `engine.rs:940-971`; `state.rs:108-119`) and OMS lifecycle (ADR-003). This is the correctness-critical scope. |
 | **Global (cross-source / cross-account)** | Single total order across all sources and accounts | None today | **Not required** for C0–C3. Only for excluded C4/C5 or future cross-account netting. Not free; gated (D-006.5). |
 
-**Rule:** the strongest scope actually required by a computation wins; weaker scopes may not silently substitute. In particular, an instrument-scoped order may never stand in for entity-scoped risk state.
+state.
 
 ### D-006.2 — Partition key decision (raw layer vs derived layer)
 

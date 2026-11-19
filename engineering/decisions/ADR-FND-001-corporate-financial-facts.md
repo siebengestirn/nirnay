@@ -62,7 +62,7 @@ an independently permitted process. It does not fetch or scrape MCA21, SEBI, NSE
 websites or data vendors. The committed fixture records and their document digests are synthetic
 conformance data, not evidence about actual companies or filings. The implementation does not
 establish data rights, publisher authenticity, completeness, legal identity or correctness of a fact
-merely because a supplied SHA-256 has valid syntax or matches separately supplied document bytes.
+because a supplied SHA-256 has valid syntax or matches separately supplied document bytes.
 
 The current validator holds decoded typed records in memory to validate cross-record revision and
 derivation graphs. Its limits bound line size and record count, not total memory to a production

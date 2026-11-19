@@ -53,7 +53,7 @@ The problem: decide the port question and dependency rules coherently, without a
 
 A port/adapter pair may be introduced **only** when all of the following are satisfied, each evidenced:
 
-1. **Measured requirement** that the current in-process contract cannot meet — e.g., a second concrete market-data feed or alternate durable store is actually demanded, with an acceptance test; or a test seam is required for a named negative test (e.g., the authenticated-reconciliation test of ADR-M1-003 AC-003-4). A hypothetical "future second feed" is not sufficient (A1 F-A1-01's failure scenario is explicitly hypothetical; R1 Q5).
+Q5).
 2. **Two implementations or a named test consumer** exist/will exist at introduction, so the abstraction is exercised, not speculative.
 3. **Owner and acceptance tests** for the port and its swap are defined (ADR-0001: "a crate boundary must correspond to a stable contract, independent ownership, meaningful dependency rule or separate verification need").
 4. **A new ADR** records the decision. No port is created by this ADR.

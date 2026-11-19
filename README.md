@@ -11,7 +11,7 @@ ci_run: 44420365008
 scope: make check + hosted CI 44420365008 on ea877ab (11/11); no later-commit claim
 -->
 
-## What is actually implemented
+## Implemented scope
 
 | Capability | Active implementation | Boundary / non-claim |
 |---|---|---|

@@ -40,7 +40,7 @@ A canonical event carries `provider`, `provider_instrument_id`, optional canonic
 
 Allowed kinds are `quote`, `depth`, `trade`, `last_trade_observation`, `index` and `status`.
 
-**A changing LTP snapshot is not emitted as a confirmed trade print.** Upstox/FYERS normalizers emit `last_trade_observation` only when the last-trade tuple advances. The event explicitly labels this as an observation, with no aggressor side. It cannot consume a passive simulated queue. Only a source that actually provides unique trade events can emit `event_kind=trade` and supply the fields needed for passive queue modeling.
+modeling.
 
 ## 3. Identity maps
 
