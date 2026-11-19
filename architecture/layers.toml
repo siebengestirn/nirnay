@@ -7,7 +7,7 @@ crates = ["market-types", "india-domain", "sbe-codec"]
 
 [[layer]]
 name = "domain"
-crates = ["trading-core", "market-book", "fundamental-domain"]
+crates = ["trading-core", "market-book", "fundamental-domain", "market-event"]
 
 [[layer]]
 name = "reference"

@@ -1,0 +1,218 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nirnay.dev/schemas/market-data/kernel-event.v1.schema.json",
+  "title": "Nirnay kernel event v1",
+  "description": "M2.1 kernel identity and continuity envelope. Canonical projection payloads stay in the research model; this schema is the wire/identity contract only.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "capture_frame_id",
+    "observation_id",
+    "origin_class",
+    "source_id",
+    "source_session_id",
+    "provider_instrument_id",
+    "receive_utc_ns",
+    "receive_monotonic_ns",
+    "raw_frame_hash",
+    "quality"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "capture_frame_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "observation_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "business_event_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source_observation_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "origin_class": {
+      "enum": [
+        "exchange_event",
+        "sdk_callback",
+        "raw_wire_frame",
+        "local_receive",
+        "reconstructed"
+      ]
+    },
+    "source_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "connection_epoch": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "receive_sequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "sequence": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "sequence_scope": {
+      "enum": [
+        "none",
+        "connection",
+        "provider_instrument",
+        "channel"
+      ]
+    },
+    "provider_instrument_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "instrument_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "venue_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "source_time_ns": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "source_clock_domain": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "receive_utc_ns": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "receive_monotonic_ns": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "raw_frame_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "reference_revision": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "quality": {
+      "enum": [
+        "clean",
+        "gap",
+        "recovering",
+        "recovered"
+      ]
+    },
+    "evidence_token": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "business_event_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "business_event_id"
+        ]
+      },
+      "then": {
+        "properties": {
+          "source_observation_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "source_observation_id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "origin_class": {
+            "const": "exchange_event"
+          }
+        },
+        "required": [
+          "origin_class"
+        ]
+      },
+      "then": {
+        "properties": {
+          "evidence_token": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "evidence_token"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "quality": {
+            "const": "recovered"
+          }
+        },
+        "required": [
+          "quality"
+        ]
+      },
+      "then": {
+        "properties": {
+          "evidence_token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "evidence_token"
+        ]
+      }
+    }
+  ]
+}
