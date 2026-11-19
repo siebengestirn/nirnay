@@ -1,0 +1,28 @@
+[package]
+name = "paper-runner"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+description = "Bounded end-to-end paper/shadow certification harness"
+
+[dependencies]
+authoritative-oms.workspace = true
+broker-adapter.workspace = true
+market-event.workspace = true
+market-kernel.workspace = true
+ops-runtime.workspace = true
+risk-authority.workspace = true
+risk-engine.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+strategy-runtime.workspace = true
+trading-core.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
