@@ -1,8 +1,9 @@
 # Canonical event projection evidence — 2026-11-19
 
 **Code commit:** `11a5a0d36c6d52e5f5ea85496b04c32fa7d5d1c2`.
-**Scope:** first offline projection from verified decoded Upstox frames using
-the existing `MarketEvent` model and `UpstoxV3Normalizer`. No competing Rust
+**Scope:** first offline projection from decoded Upstox frame-shaped test
+records using the existing `MarketEvent` model and `UpstoxV3Normalizer`. The
+fixture links a synthetic source-frame hash; it is not a live provider capture. No competing Rust
 event model, no instrument resolution by inference, no live provider path.
 
 ## Contract
@@ -12,7 +13,8 @@ event model, no instrument resolution by inference, no live provider path.
   binding field; instrument and venue maps used by the normalizer must match
   the bound revision exactly, or the command fails closed.
 - Unknown provider instruments stay `instrument_id: None`; no identity is
-  inferred from a symbol or CIN.
+  inferred from a symbol or CIN. The binding establishes consistency between a
+  revision file and the maps used, not authenticity of the revision source.
 - Every archived observation carries `source_frame_sha256`; when a reference
   revision is bound, a missing or malformed frame hash is rejected.
 - The quality report records `event_schema_version` (1), `normalizer_version`

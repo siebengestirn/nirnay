@@ -274,9 +274,10 @@ def _bind_reference_revision(path: Path, instrument_map: dict[str, str],
                              venue_map: dict[str, str]) -> str:
     """Bind the projection to an exact reference bytes revision.
 
-    The revision hash covers the original file bytes; the embedded maps must
-    match the maps used by the normalizer exactly. Unknown provider
-    instruments remain unresolved in the canonical events.
+    The revision hash covers the canonical object excluding the binding
+    field; the embedded maps must match the maps used by the normalizer
+    exactly. This is a self-attested consistency binding, not an
+    authenticated signature. Unknown instruments remain unresolved.
     """
     raw = path.read_bytes()
     declared = json.loads(raw.decode("utf-8"))
@@ -310,6 +311,9 @@ def _cmd_normalize(args: argparse.Namespace) -> int:
         venue_map = json.loads(args.venue_map.read_text(encoding="utf-8"))
         if not isinstance(venue_map, dict) or any(not isinstance(k, str) or not isinstance(v, str) or not v for k, v in venue_map.items()):
             raise ValueError("venue map must be a JSON object of provider instrument ID to canonical venue")
+    if args.reference_revision and args.provider == "fyers" and venue_map:
+        raise ValueError(
+            "FYERS venue map is not consumed by the normalizer; leave it empty when bound")
     reference_revision = (
         _bind_reference_revision(args.reference_revision, instrument_map, venue_map)
         if args.reference_revision else None

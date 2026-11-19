@@ -92,6 +92,7 @@ def test_fresh_process_replay_is_byte_identical(tmp_path):
     reference = tmp_path / "reference.json"
     _reference_revision(reference, {"NSE_EQ|X": "in.x"})
     outputs = []
+    sidecars = []
     for run in ("first", "second"):
         output = tmp_path / f"{run}.jsonl"
         env = dict(os.environ, PYTHONPATH=str(SRC))
@@ -101,4 +102,6 @@ def test_fresh_process_replay_is_byte_identical(tmp_path):
             env=env, capture_output=True, text=True, check=False)
         assert result.returncode == 0, result.stderr
         outputs.append(output.read_bytes())
+        sidecars.append(output.with_suffix(".jsonl.quality.json").read_bytes())
     assert outputs[0] == outputs[1], "replay in a fresh process is byte-identical"
+    assert sidecars[0] == sidecars[1], "quality reports are byte-identical too"
