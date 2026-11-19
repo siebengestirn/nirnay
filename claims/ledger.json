@@ -226,6 +226,19 @@
         ]
       },
       "falsifier": "A replay accepts unresolved instruments, unlinked events, a mismatched provider or reference binding, or produces different bytes in a fresh process."
+    },
+    {
+      "id": "CLM-020",
+      "statement": "The active SBE decoder reproduces the independent C++ SBE decoder canonical dump for the frozen golden capture byte for byte, re-encodes each message to its exact original bytes, and fails closed on seven malformed inputs.",
+      "status": "implemented",
+      "scope": {
+        "packages": [
+          "crates/sbe-codec/src/decode.rs",
+          "crates/sbe-codec/tests/differential.rs",
+          "crates/sbe-codec/tests/golden"
+        ]
+      },
+      "falsifier": "A golden message decodes to a different canonical line, a canonical re-encoding differs from the original bytes, or any of the seven malformed inputs is accepted."
     }
   ]
 }

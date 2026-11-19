@@ -3,7 +3,7 @@
 # code; they do not represent executable capabilities.
 [[layer]]
 name = "foundation"
-crates = ["market-types", "india-domain"]
+crates = ["market-types", "india-domain", "sbe-codec"]
 
 [[layer]]
 name = "domain"

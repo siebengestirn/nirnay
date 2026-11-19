@@ -31,3 +31,6 @@ extras/src/venue/india,extras/src/venue/india,retained-reference,unique India in
 extras/tests/fixtures,extras/tests/fixtures,retained-reference,differential conformance corpus
 extras/cpp,extras/cpp,retained-reference,SBE/conformance probes; C++ test passes 1/1
 extras/schemas/challenge,extras/schemas/challenge,retained-reference,synthetic SBE schema
+extras/cpp/src/sbe.cpp,crates/sbe-codec/src/decode.rs,promoted,self-contained challenge SBE decoder with typed fail-closed errors
+extras/tests/golden/sample_replay.sbe,crates/sbe-codec/tests/golden/sample_replay.sbe,promoted,verbatim golden with provenance digest af291b4050e14
+extras/LICENSE,crates/sbe-codec/LICENSE,promoted,MIT licence retained with the promoted decoder
