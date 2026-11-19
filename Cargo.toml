@@ -2,7 +2,7 @@
 # This is a virtual workspace; the separate extras/ reference workspace is excluded.
 [workspace]
 resolver = "3"
-members = ["crates/*", "apps/cost-cli", "apps/upstox-tools", "apps/fundamental-tools", "xtask"]
+members = ["crates/*", "apps/cost-cli", "apps/upstox-tools", "apps/fundamental-tools", "apps/fyers-importer", "xtask"]
 
 [workspace.package]
 edition = "2024"
