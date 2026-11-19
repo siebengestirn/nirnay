@@ -115,6 +115,7 @@ jobs:
         run: |
           python3 scripts/check_rust_style.py --self-test
           python3 scripts/check_source_style.py --self-test
+          python3 scripts/check_prose_style.py --self-test
           python3 scripts/check_style_gate.py --self-test
       - name: Style gate integrity
         run: python3 scripts/check_style_gate.py

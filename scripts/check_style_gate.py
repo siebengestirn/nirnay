@@ -99,6 +99,7 @@ def behavioural_checks(root: Path = ROOT) -> list[str]:
         if not any(needle in message for message in messages):  # type: ignore[union-attr]
             failures.append(f"rule behaviour lost: {needle!r} for {text!r}")
 
+    expect(prose.check_prose_line, "we require evidence", "PROSE-001")
     expect(source.check_python_line, "x = 1;", "semicolon")
     expect(source.check_cpp_line, "int *p = NULL;", "nullptr", header=False, cpp=True)
     expect(source.check_shell_line, "echo `date`", "backticks")

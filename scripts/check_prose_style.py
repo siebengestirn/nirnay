@@ -35,8 +35,7 @@ RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "PROSE-001",
         re.compile(
-            r"(?<![A-Za-z0-9_])(?:I|we|our|us)(?![A-Za-z0-9_/])",
-            re.IGNORECASE,
+            r"(?<![A-Za-z0-9_])(?:I(?!/)|[Ww]e|[Oo]ur|us)(?![A-Za-z0-9_])",
         ),
     ),
     (
@@ -73,6 +72,25 @@ def prose_text(line: str) -> str:
     if line.startswith("    ") or line.lstrip().startswith("```"):
         return ""
     return INLINE_CODE.sub(" ", line)
+
+
+def fenced_lines(text: str) -> set[int]:
+    """Return line numbers inside fenced code blocks."""
+    inside: set[int] = set()
+    marker = ""
+    for number, line in enumerate(text.splitlines(), 1):
+        stripped = line.lstrip()
+        if not marker and (stripped.startswith("```") or stripped.startswith("~~~")):
+            marker = stripped[:3]
+            inside.add(number)
+            continue
+        if marker and stripped.startswith(marker):
+            marker = ""
+            inside.add(number)
+            continue
+        if marker:
+            inside.add(number)
+    return inside
 
 
 def check_prose_line(line: str) -> list[str]:
@@ -128,14 +146,20 @@ def scan(scan_all: bool, base: str) -> list[str]:
     errors: list[str] = []
     if scan_all:
         for path in tracked_markdown():
-            for number, line in enumerate(
-                (ROOT / path).read_text(encoding="utf-8").splitlines(), 1
-            ):
+            text = (ROOT / path).read_text(encoding="utf-8")
+            fenced = fenced_lines(text)
+            for number, line in enumerate(text.splitlines(), 1):
+                if number in fenced:
+                    continue
                 for message in check_prose_line(line):
                     errors.append(f"{path}:{number}: {message}")
         return errors
     for path, lines in added_markdown(base).items():
+        text = (ROOT / path).read_text(encoding="utf-8")
+        fenced = fenced_lines(text)
         for number, line in lines:
+            if number in fenced:
+                continue
             for message in check_prose_line(line):
                 errors.append(f"{path}:{number}: {message}")
     return errors
@@ -163,6 +187,17 @@ class ProseCheckerTests(unittest.TestCase):
     def test_fence_and_indented_code_are_exempt(self) -> None:
         self.assertEqual(check_prose_line("```"), [])
         self.assertEqual(check_prose_line("    we write code"), [])
+
+    def test_fenced_content_is_excluded(self) -> None:
+        text = "# Title\n\n```text\nwe clearly use magic\n```\n\nwe remain guilty\n"
+        fenced = fenced_lines(text)
+        self.assertTrue({3, 4, 5}.issubset(fenced), "fence body and markers are excluded")
+        self.assertNotIn(7, fenced, "prose after the fence is not excluded")
+
+    def test_io_and_roman_enumeration_are_not_first_person(self) -> None:
+        self.assertEqual(check_prose_line("The I/O path is bounded."), [])
+        self.assertEqual(check_prose_line("Proof provided (i) and (ii) holds."), [])
+        self.assertEqual(check_prose_line("The US venue is distinct."), [])
 
     def test_safe_prose_passes(self) -> None:
         self.assertEqual(
