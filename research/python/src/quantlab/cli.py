@@ -167,7 +167,8 @@ def _publish_streamed_with_report(
         staged_report.unlink(missing_ok=True)
 
 
-def _normalize_upstox_bounded(args: argparse.Namespace, normalizer: UpstoxV3Normalizer) -> int:
+def _normalize_upstox_bounded(args: argparse.Namespace, normalizer: UpstoxV3Normalizer,
+                              reference_revision: str | None) -> int:
     """Stream decoded Upstox rows to canonical events with bounded memory.
 
     Ordering is defined by `capture_sequence`: the decoder emits journal records
@@ -238,6 +239,9 @@ def _normalize_upstox_bounded(args: argparse.Namespace, normalizer: UpstoxV3Norm
         report = {
             "schema_version": 1,
             "provider": "upstox",
+            "event_schema_version": CANONICAL_EVENT_SCHEMA_VERSION,
+            "normalizer_version": NORMALIZER_VERSIONS["upstox"],
+            "reference_revision_sha256": reference_revision,
             "input_rows": input_rows,
             "canonical_events": event_count,
             "ordering_contract": (
@@ -262,6 +266,41 @@ def _normalize_upstox_bounded(args: argparse.Namespace, normalizer: UpstoxV3Norm
     return 0
 
 
+CANONICAL_EVENT_SCHEMA_VERSION = 1
+NORMALIZER_VERSIONS = {"upstox": "upstox-v3-v1", "fyers": "fyers-v3-v1"}
+
+
+def _bind_reference_revision(path: Path, instrument_map: dict[str, str],
+                             venue_map: dict[str, str]) -> str:
+    """Bind the projection to an exact reference bytes revision.
+
+    The revision hash covers the original file bytes; the embedded maps must
+    match the maps used by the normalizer exactly. Unknown provider
+    instruments remain unresolved in the canonical events.
+    """
+    raw = path.read_bytes()
+    declared = json.loads(raw.decode("utf-8"))
+    if not isinstance(declared, dict) or declared.get("schema_version") != 1:
+        raise ValueError("reference revision must be a v1 object")
+    declared_digest = declared.get("revision_sha256")
+    if not isinstance(declared_digest, str):
+        raise ValueError("reference revision has no sha256 binding")
+    without_binding = dict(declared)
+    without_binding.pop("revision_sha256")
+    digest = hashlib.sha256(canonical_bytes(without_binding)).hexdigest()
+    if declared_digest != digest:
+        raise ValueError("reference revision sha256 does not match its exact content")
+    instruments = declared.get("instruments")
+    venues = declared.get("venues", {})
+    if not isinstance(instruments, dict) or not isinstance(venues, dict):
+        raise ValueError("reference revision maps must be objects")
+    if instruments != instrument_map:
+        raise ValueError("instrument map differs from the bound reference revision")
+    if venues != venue_map:
+        raise ValueError("venue map differs from the bound reference revision")
+    return digest
+
+
 def _cmd_normalize(args: argparse.Namespace) -> int:
     instrument_map = json.loads(args.instrument_map.read_text(encoding="utf-8"))
     if not isinstance(instrument_map, dict) or any(not isinstance(k, str) or not isinstance(v, str) or not v for k, v in instrument_map.items()):
@@ -271,10 +310,14 @@ def _cmd_normalize(args: argparse.Namespace) -> int:
         venue_map = json.loads(args.venue_map.read_text(encoding="utf-8"))
         if not isinstance(venue_map, dict) or any(not isinstance(k, str) or not isinstance(v, str) or not v for k, v in venue_map.items()):
             raise ValueError("venue map must be a JSON object of provider instrument ID to canonical venue")
+    reference_revision = (
+        _bind_reference_revision(args.reference_revision, instrument_map, venue_map)
+        if args.reference_revision else None
+    )
     normalizer = (UpstoxV3Normalizer(instrument_map, venue_map) if args.provider == "upstox"
                   else FyersV3Normalizer(instrument_map))
     if args.provider == "upstox":
-        return _normalize_upstox_bounded(args, normalizer)
+        return _normalize_upstox_bounded(args, normalizer, reference_revision)
     rows = _read_jsonl(args.input)
     events = []
     gaps = []
@@ -319,6 +362,10 @@ def _cmd_normalize(args: argparse.Namespace) -> int:
         frame_hash = row.get("payload_sha256") if args.provider == "upstox" else row.get("record_hash")
         if frame_hash is None:
             frame_hash = row.get("source_frame_sha256")
+        if reference_revision is not None and (
+                not isinstance(frame_hash, str) or len(frame_hash) != 64
+                or any(char not in "0123456789abcdef" for char in frame_hash)):
+            raise ValueError(f"row {idx} lacks a source_frame_sha256 for archived projection")
         kwargs = {"received_utc_ns": receive, "received_monotonic_ns": monotonic,
                   "local_sequence": sequence, "source_frame_sha256": frame_hash}
         normalized = (normalizer.normalize(payload, **kwargs) if args.provider == "upstox"
@@ -337,7 +384,11 @@ def _cmd_normalize(args: argparse.Namespace) -> int:
     events.sort(key=lambda e: (e.received_utc_ns, e.provider, e.local_sequence if e.local_sequence is not None else -1, e.event_id))
     content = b"".join(canonical_bytes(e.as_dict()) + b"\n" for e in events)
     report_path = args.output.with_suffix(args.output.suffix + ".quality.json")
-    report = {"schema_version": 1, "provider": args.provider, "input_rows": len(rows),
+    report = {"schema_version": 1, "provider": args.provider,
+              "event_schema_version": CANONICAL_EVENT_SCHEMA_VERSION,
+              "normalizer_version": NORMALIZER_VERSIONS[args.provider],
+              "reference_revision_sha256": reference_revision,
+              "input_rows": len(rows),
               "canonical_events": len(events), "explicit_capture_gaps": len(gaps),
               "source_hash_chain_present": chain_seen, "source_hash_chain_verified": chain_verified,
               "warnings": warnings, "output_sha256": hashlib.sha256(content).hexdigest(),
@@ -491,6 +542,9 @@ def build_parser() -> argparse.ArgumentParser:
     normalize.add_argument("--venue-map", type=Path)
     normalize.add_argument("--output", type=Path, required=True)
     normalize.add_argument("--allow-gaps", action="store_true", help="allow explicit FYERS gap records; output is marked non-research-grade")
+    normalize.add_argument(
+        "--reference-revision", type=Path,
+        help="exact reference snapshot revision binding instrument and venue maps")
     normalize.set_defaults(handler=_cmd_normalize)
 
     reconcile = sub.add_parser("reconcile", help="cross-check latest Upstox/FYERS canonical state observations")
