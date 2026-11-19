@@ -60,7 +60,7 @@ def main() -> int:
                 vector = json.loads(path.read_text(encoding="utf-8"))
                 schema_name = vector.get("schema")
                 if not schema_name:
-                    errors.append(f"VECTOR {path.relative_to(ROOT)}: missing schema field")
+                    # Plain Rust contract fixtures are not schema vectors.
                     continue
                 schema_path = ROOT / schema_name
                 schema = json.loads(schema_path.read_text(encoding="utf-8"))
