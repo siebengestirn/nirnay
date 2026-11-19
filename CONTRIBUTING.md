@@ -16,6 +16,10 @@
    status prose as a substitute for tests.
 8. Update `engineering/capabilities.json` and `claims/ledger.json` truthfully
    and cite executable evidence.
+9. Run `cargo xtask --help` to discover the repository policy gates. Each
+   subcommand (`check`, `arch`, `waivers`, `claims`) delegates to the matching
+   `scripts/check_repo.py` gate; `list` prints the registered task names. The
+   gate's own exit code is propagated, so a red gate fails CI.
 
 ## Documentation and evidence
 
