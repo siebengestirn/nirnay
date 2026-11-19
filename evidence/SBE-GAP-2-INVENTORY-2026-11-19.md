@@ -41,7 +41,8 @@ independent differential test. `extras/` retirement stays blocked until then.
 - `extras/tests/golden/sample_replay.sbe` and
   `baseline_pre_types_book.sbe` are byte-identical: 4,096 bytes, SHA-256
   `af291b403553b6e0d182f8001643e03a055e4d7e8b0dbbdfee54c3ad56f50e14`.
-- Provenance: frozen before the types/book extraction from source commit
+- Provenance: `baseline_pre_types_book.meta` pairs with
+  `baseline_pre_types_book.sbe` and records source commit
   `799b6b58545799fac387e1feb08a188cba0d6f44`, fixture
   `tests/fixtures/sample_replay.jsonl`. The metadata forbids regenerating the
   file to make a failing comparison pass.
@@ -71,11 +72,12 @@ independent differential test. `extras/` retirement stays blocked until then.
 - Registered CTest: **one** — `sbe_roundtrip` (`eng_sbe_test` over
   `tests/golden/sample_replay.sbe`, chunk 4096). `eng_conform` (order-book line
   driver) and `eng_sbe_dump` (SBE dump) are built but not registered as CTest.
-- The SBE test asserts ten messages, first snapshot, decoded symbol, bid price
-  400000, third message an update with buy side; per-message encode/decode
-  round-trip and consumed length; and seven malformed-input throw cases
-  (truncated header, unknown template, invalid side, unknown schema, bad group,
-  chunk < 1024, cross-chunk tear).
+- The SBE test asserts a non-empty capture, ten messages, first snapshot,
+  decoded symbol, one bid level with price 400000, third message an update with
+  a present price and buy side; per-message encode/decode round-trip and
+  consumed length; and seven malformed-input throw cases (truncated header,
+  unknown template, invalid side, unknown schema, bad group, chunk < 1024,
+  cross-chunk tear).
 - `scripts/conformance.py --require-sbe` is a separate gate requiring both SBE
   dump drivers and byte-identical output, with no skipped-comparison success
   path. The checked-in historical report records `gate_passed: false` and must
@@ -92,21 +94,26 @@ independent differential test. `extras/` retirement stays blocked until then.
 - The complete pre-cleanup snapshot is external at
   `../legacy-snapshot-2026-11-13/legacy-full-backup-2026-11-13.tar.gz`
   (SHA-256 `a49e864308a7e58d667a86049dd80e8ff2c631cd762e50a74aff60007464f9b1`).
+  The artifact is not present locally; the hash is corroborated across existing
+  records, not re-hashed here.
 
 ### 2.6 Predecessor type dependencies — the blocker
 
 - `extras/rust/sbe_dump.rs` imports
   `nirnay_extras::util::{AlignedSbeReader, OrderbookSchema,
-  dtos::challenge_orderbook::{AnyMessage, PriceLevelUpdateDomain, SnapshotDomain}}`
-  plus predecessor `OrderBook`/`Price`/`Quantity` types. None exist in the
-  trimmed `extras/src` (`lib.rs` exports only `util` and `venue`).
+  dtos::challenge_orderbook::{AnyMessage, PriceLevelUpdateDomain, SnapshotDomain}}`.
+  None of these exist in the trimmed `extras/src` (`lib.rs` exports only `util`
+  and `venue`; `util` exposes only `sha256_hex` and `hex_lower`).
 - `extras/rust/conform_driver.rs` imports `nirnay_extras::{Side,
   model::{Level, Price, Quantity, QuantityChange, QuantityDelta},
   orderbook::OrderBook}` — also absent from the trimmed crate.
 - The retained Rust drivers therefore cannot compile as-is; they are reference
-  material, not an active implementation. No crate in the root workspace
-  decodes SBE: `schemas/` holds the Upstox protobuf and research/execution JSON
-  schemas only.
+  material, not an active implementation. No crate in the root workspace decodes
+  SBE: `schemas/` holds protobuf and JSON schemas (upstox, india, market-data,
+  fundamentals, research and execution), none of them SBE.
+- `extras/cpp` also links the shared `verification/cpp-oracle/src` numeric and
+  market-book sources. That is the numeric/book oracle dependency; it is
+  distinct from the SBE obligation and must not be used as SBE evidence.
 
 ## 3. Promotion map: obligation → active home → independent differential test
 
