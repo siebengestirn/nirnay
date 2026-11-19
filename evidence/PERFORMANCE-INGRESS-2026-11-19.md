@@ -37,7 +37,7 @@ cargo test -p market-archive --test performance --offline recovery_after_process
 
 | Transcript | SHA-256 |
 |---|---|
-| `ingress-append_latency_and_throughput.log` | `1613bdb38ff89db64f460693d2fdbd10ffd777fe9cd0dc342f3c3664fa3aa` |
+| `ingress-append_latency_and_throughput.log` | `1613bdb38ff89db64f460693d2fdbd10ffd777fe9dc3cd0dc342f3c3664fa3aa` |
 | `ingress-replay_throughput_and_bounded_frames.log` | `5b737b5d562388d41db742f7f8cf0d61099a41a4dedf0dd3620bff56b3a475be` |
 | `ingress-recovery_after_process_termination.log` | `ec849b802cac5e2c9fcacd342ecf8b42c44a259c1dcf3baba7eee6786895f623` |
 | `ingress-replay-time.log` | `836174ef7b1962054528113ff48a31ee86b057499d7afd0d32acf7a8d23dd48a` |

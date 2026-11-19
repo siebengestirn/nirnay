@@ -70,7 +70,11 @@ fn append_latency_and_throughput() {
         percentile(&durations, 0.99) as f64 / 1000.0,
         percentile(&durations, 0.999) as f64 / 1000.0
     );
-    assert_eq!(ingestor.checkpoint().committed_frames, count);
+    assert_eq!(
+        ingestor.checkpoint().committed_frames,
+        count,
+        "every appended frame is committed"
+    );
 }
 
 #[test]
@@ -111,7 +115,7 @@ fn replay_throughput_and_bounded_frames() {
         elapsed.as_secs_f64(),
         streamed as f64 / elapsed.as_secs_f64()
     );
-    assert_eq!(streamed, count);
+    assert_eq!(streamed, count, "every generated frame is replayed");
 }
 
 #[test]
@@ -150,7 +154,10 @@ fn recovery_after_process_termination() {
         .env("NIRNAY_BENCH_RECOVERY_DB", &output)
         .output()
         .expect("spawn recovery child");
-    assert!(child.status.success());
+    assert!(
+        child.status.success(),
+        "fresh-process recovery worker succeeded"
+    );
     let elapsed = started.elapsed();
     eprintln!(
         "BENCH-RECOVERY seconds={:.3} evidence={}",
@@ -160,5 +167,9 @@ fn recovery_after_process_termination() {
     let ingestor =
         DurableIngestor::resume(&output, UPSTOX_SOURCE_ID, SequencePolicy::CaptureSession)
             .expect("parent resume");
-    assert_eq!(ingestor.checkpoint().committed_frames, 100);
+    assert_eq!(
+        ingestor.checkpoint().committed_frames,
+        100,
+        "the parent observes the same committed record count"
+    );
 }
