@@ -356,6 +356,7 @@ once published; a new run adds a new dated file instead of rewriting history.
 | Dated evidence | `evidence/VERIFICATION-2026-11-17.md` | executed checks and boundaries |
 | Dated evidence | `evidence/UPGRADE-VERIFICATION-2026-11-13.md` | implementation inventory and upgrade gates |
 | Dated evidence | `evidence/BUILD-INVENTORY-2026-11-13.json` | machine-readable release inventory |
+| Dated evidence | `evidence/M2-AUTHORIZATION-2026-11-20.md` | signed M1 exit and bounded M2 scope |
 
 The current-state block above names the verified commit, date, CI run and
 scope. Update it in the PR that changes the verified baseline. Do not add a
