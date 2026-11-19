@@ -1166,6 +1166,7 @@ pub fn select_point_in_time(
         if let Some(consumers) = dependents.get(excluded) {
             for consumer in consumers {
                 if known_ids.remove(consumer) {
+                    not_yet_available = not_yet_available.saturating_add(1);
                     queue.push_back(consumer);
                 }
             }
@@ -1777,6 +1778,28 @@ mod tests {
         assert!(
             select_company_identity_as_of(&effective, valid_at, ts(20)).is_err(),
             "a historically ambiguous CIN must fail explicitly even after a later correction"
+        );
+    }
+    #[test]
+    fn derived_fact_rejects_a_self_declared_derivation_digest() {
+        let input = reported_fact("fact-hash-input", "100", Some(ts(10)));
+        let mut output = derived_fact(
+            "fact-hash-output",
+            "DerivedHash",
+            vec![input.fact_id.clone()],
+            None,
+            ts(20),
+            ts(20),
+        );
+        if let FactOrigin::Derived {
+            derivation_sha256, ..
+        } = &mut output.origin
+        {
+            *derivation_sha256 = "d".repeat(64);
+        }
+        assert!(
+            matches!(output.validate(), Err(DomainError::InvalidEvidence(_))),
+            "a digest that does not match the derivation commitment is rejected"
         );
     }
 }

@@ -25,9 +25,9 @@ and three broken tests were corrected before the semantic fixes.
 
 - `cargo check --workspace --all-targets --locked`: PASS.
 - `cargo test --workspace --all-targets --locked`: PASS.
-  - `fundamental-domain`: 19 passed.
+  - `fundamental-domain`: 20 passed.
   - `fundamental-tools` contract suite: 6 passed.
-- `python3 scripts/check_fundamental_contract_vectors.py`: 7 vectors match
+- `python3 scripts/check_fundamental_contract_vectors.py`: 8 vectors match
   schema expectations.
 - `make check`: PASS, including Rust style, source style, docs, schemas,
   generated paths and 162 Python tests.
