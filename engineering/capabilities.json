@@ -198,7 +198,7 @@
       "status": "implemented",
       "evidence_status": "quantlab normalize binds both Upstox decoded frames and FYERS SDK callback journals to an exact reference revision, records normalizer and event-schema versions, requires source_frame_sha256 for archived observations, leaves unknown instruments unresolved, and replays byte-identically in a fresh process. Seven projection tests cover these properties; no competing Rust event model or live path is introduced.",
       "owner": "research-data",
-      "scope": "research/python/src/quantlab/cli.py; research/python/tests/test_canonical_projection.py"
+      "scope": "research/python/src/quantlab/cli.py; research/python/tests/test_canonical_projection.py; research/python/tests/test_fyers_projection.py"
     }
   ]
 }

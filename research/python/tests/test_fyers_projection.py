@@ -49,13 +49,24 @@ def test_fyers_projection_resolves_instruments_and_records_versions(tmp_path):
     assert events[0]["instrument_id"] == "in.sbin"
     assert events[0]["provider_instrument_id"] == "SBIN-EQ"
     assert events[1]["instrument_id"] is None, "an unknown instrument stays unresolved"
-    assert all(event["source_frame_sha256"] for event in events)
+    first_record = json.loads(JOURNAL.read_text().splitlines()[1])
+    assert events[0]["source_frame_sha256"] == first_record["record_hash"]
     report = json.loads(output.with_suffix(".jsonl.quality.json").read_text())
     assert report["reference_revision_sha256"] == digest
     assert report["normalizer_version"] == "fyers-v3-v1"
     assert report["event_schema_version"] == 1
     assert report["explicit_capture_gaps"] == 1
     assert report["source_hash_chain_verified"] is True
+    assert report["research_grade"] is False
+
+
+def test_fyers_gap_without_allow_flag_fails_closed(tmp_path):
+    reference, _ = _prepare(tmp_path, {"SBIN-EQ": "in.sbin"})
+    output = tmp_path / "events.jsonl"
+    args = _args(tmp_path, reference, output)
+    args.remove("--allow-gaps")
+    assert main(args) == 2
+    assert not output.exists()
 
 
 def test_fyers_reference_drift_fails_closed(tmp_path):
