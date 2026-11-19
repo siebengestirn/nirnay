@@ -111,10 +111,7 @@ pub fn verify_session(session_dir: &Path) -> anyhow::Result<(Value, Vec<Value>)>
         "session manifest does not claim a valid journal chain"
     );
     ensure!(
-        manifest
-            .get("writer_error")
-            .and_then(|value| value.as_str())
-            .is_none(),
+        manifest.get("writer_error").is_none_or(Value::is_null),
         "session ended with a writer error"
     );
     ensure!(
@@ -191,12 +188,17 @@ pub fn verify_session(session_dir: &Path) -> anyhow::Result<(Value, Vec<Value>)>
     Ok((manifest, records))
 }
 
-fn already_imported(output: &Path, session_id: &str) -> anyhow::Result<bool> {
+/// Highest capture sequence already committed for this session. Records are
+/// imported in ascending sequence order, so this is a resumable prefix fence:
+/// an interrupted import continues at the next record instead of being
+/// mistaken for a completed one.
+fn imported_high_water(output: &Path, session_id: &str) -> anyhow::Result<Option<u64>> {
     if !output.exists() {
-        return Ok(false);
+        return Ok(None);
     }
     let mut reader = JournalReader::new(BufReader::new(File::open(output)?));
     let marker = format!("fyers-session:{session_id}");
+    let mut highest = None;
     while let Some(frame) = reader.next_frame()? {
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(&frame.payload_base64)
@@ -205,12 +207,18 @@ fn already_imported(output: &Path, session_id: &str) -> anyhow::Result<bool> {
         if payload
             .get("session_marker")
             .and_then(|value| value.as_str())
-            == Some(marker.as_str())
+            != Some(marker.as_str())
         {
-            return Ok(true);
+            continue;
+        }
+        if let Some(sequence) = payload
+            .get("capture_sequence")
+            .and_then(|value| value.as_u64())
+        {
+            highest = Some(highest.map_or(sequence, |prior: u64| prior.max(sequence)));
         }
     }
-    Ok(false)
+    Ok(highest)
 }
 
 /// Import a verified session. Repeat imports are no-ops.
@@ -221,14 +229,7 @@ pub fn import_session(session_dir: &Path, output: &Path) -> anyhow::Result<Impor
         .and_then(|value| value.as_str())
         .context("manifest has no run_id")?
         .to_owned();
-    if already_imported(output, &session_id)? {
-        return Ok(ImportReport {
-            session_id,
-            records: records.len(),
-            imported: 0,
-            duplicates: records.len(),
-        });
-    }
+    let high_water = imported_high_water(output, &session_id)?;
     let mut ingestor = if output.exists() {
         DurableIngestor::resume(output, FYERS_SOURCE_ID, SequencePolicy::CaptureSession)
             .context("resuming shared journal")?
@@ -238,7 +239,7 @@ pub fn import_session(session_dir: &Path, output: &Path) -> anyhow::Result<Impor
     };
     let marker = format!("fyers-session:{session_id}");
     let mut report = ImportReport {
-        session_id,
+        session_id: session_id.clone(),
         records: records.len(),
         imported: 0,
         duplicates: 0,
@@ -248,6 +249,21 @@ pub fn import_session(session_dir: &Path, output: &Path) -> anyhow::Result<Impor
             .get("capture_sequence")
             .and_then(|value| value.as_u64())
             .context("journal record has no capture_sequence")?;
+        ensure!(
+            record
+                .get("event_type")
+                .and_then(|value| value.as_str())
+                .is_some_and(|value| !value.is_empty()),
+            "verified record has no event type"
+        );
+        ensure!(
+            record.get("payload").is_some_and(Value::is_object),
+            "verified record has no callback payload object"
+        );
+        if high_water.is_some_and(|committed| sequence <= committed) {
+            report.duplicates += 1;
+            continue;
+        }
         // Canonical re-encoding of the SDK-decoded callback record. The
         // original Python journal remains the authoritative capture artifact.
         let payload = canonical_json(&json!({
@@ -259,11 +275,16 @@ pub fn import_session(session_dir: &Path, output: &Path) -> anyhow::Result<Impor
         }))?;
         let frame = SourceFrame {
             source_id: FYERS_SOURCE_ID.to_owned(),
-            provider_instrument_id: record
-                .get("symbol")
-                .and_then(|value| value.as_str())
-                .unwrap_or("__fyers_session_event__")
-                .to_owned(),
+            // Scope delivery identity by session so two sessions with the
+            // same local sequence cannot collide in one shared journal.
+            provider_instrument_id: format!(
+                "{}:{}",
+                session_id,
+                record
+                    .get("symbol")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("__fyers_session_event__")
+            ),
             entitlement_ref: manifest
                 .get("entitlement_ref")
                 .and_then(|value| value.as_str())
@@ -312,7 +333,8 @@ mod tests {
         let (manifest, records) = verify_session(&fixture()).expect("verified session");
         assert_eq!(
             manifest.get("run_id").and_then(|value| value.as_str()),
-            Some("synthetic-fyers-session")
+            Some("synthetic-fyers-session"),
+            "the verified session keeps its run id"
         );
         assert_eq!(records.len(), 4, "all four records are verified");
         assert!(
@@ -355,7 +377,10 @@ mod tests {
         );
         let second = import_session(&fixture(), &output).expect("repeat import");
         assert_eq!(second.imported, 0, "a repeated session import adds nothing");
-        assert_eq!(second.duplicates, 4);
+        assert_eq!(
+            second.duplicates, 4,
+            "all four records are recognised as already imported"
+        );
         assert_eq!(
             market_archive::scan_journal(&output)
                 .expect("scan")
@@ -407,6 +432,63 @@ mod tests {
         assert!(
             verify_session(&session).is_err(),
             "a broken hash chain is refused"
+        );
+    }
+    #[test]
+    fn interrupted_import_resumes_without_dropping_records() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let output = directory.path().join("resumable.jsonl");
+        import_session(&fixture(), &output).expect("first import");
+        let original = std::fs::read_to_string(&output).expect("journal");
+        let lines: Vec<&str> = original.lines().collect();
+        std::fs::write(&output, format!("{}\n", lines[..2].join("\n")))
+            .expect("simulate interruption after two frames");
+        let resumed = import_session(&fixture(), &output).expect("resumed import");
+        assert_eq!(resumed.imported, 2, "the missing tail is imported");
+        assert_eq!(
+            market_archive::scan_journal(&output)
+                .expect("scan")
+                .frames
+                .len(),
+            4,
+            "no verified record is lost after an interrupted import"
+        );
+    }
+
+    #[test]
+    fn two_sessions_with_overlapping_local_sequences_share_the_journal() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let output = directory.path().join("two-sessions.jsonl");
+        let second_session = directory.path().join("second-session");
+        std::fs::create_dir_all(&second_session).expect("session dir");
+        for name in ["manifest.json", "fyers-sdk-observations.jsonl"] {
+            std::fs::copy(fixture().join(name), second_session.join(name)).expect("copy fixture");
+        }
+        let manifest_path = second_session.join("manifest.json");
+        let mut manifest: Value =
+            serde_json::from_slice(&std::fs::read(&manifest_path).expect("manifest"))
+                .expect("manifest JSON");
+        manifest["run_id"] = Value::String("second-synthetic-session".to_owned());
+        std::fs::write(
+            &manifest_path,
+            canonical_json(&manifest).expect("canonical"),
+        )
+        .expect("second manifest");
+
+        let first = import_session(&fixture(), &output).expect("first session");
+        let second = import_session(&second_session, &output).expect("second session");
+        assert_eq!(first.imported, 4, "the first session imports all records");
+        assert_eq!(
+            second.imported, 4,
+            "overlapping local sequences do not collide"
+        );
+        assert_eq!(
+            market_archive::scan_journal(&output)
+                .expect("scan")
+                .frames
+                .len(),
+            8,
+            "both sessions are preserved in one shared journal"
         );
     }
 }
