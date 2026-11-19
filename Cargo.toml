@@ -17,6 +17,7 @@ cost-model = { path = "crates/cost-model", version = "0.1.0" }
 execution-policy = { path = "crates/execution-policy", version = "0.1.0" }
 india-domain = { path = "crates/india-domain", version = "0.1.0" }
 market-archive = { path = "crates/market-archive", version = "0.1.0" }
+market-event = { path = "crates/market-event", version = "0.1.0" }
 market-book = { path = "crates/market-book", version = "0.1.0" }
 market-types = { path = "crates/market-types", version = "0.1.0" }
 upstox-feed-proto = { path = "crates/upstox-feed-proto", version = "0.1.0" }
