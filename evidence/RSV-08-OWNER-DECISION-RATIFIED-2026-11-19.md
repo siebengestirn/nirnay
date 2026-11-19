@@ -26,7 +26,8 @@ report the condition as initially not confirmed; this record is the decision.
   (PR #56), with child-process termination at during-transaction,
   after-insert-before-commit, before-commit and after-commit boundaries,
   uncertain-commit poison/reopen resolution, and injected full-disk plus
-  read-only-path failures. Review APPROVE; CI 11/11.
+  read-only-path failures. PR #56 review verdict: APPROVE WITH NON-BLOCKING
+  COMMENTS; exact-head CI 11/11 on that PR's head.
 
 ## Non-equivalence acknowledgement (carried forward)
 
