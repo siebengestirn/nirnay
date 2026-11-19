@@ -39,7 +39,11 @@ use crate::{
     RawFrame,
 };
 
-pub const UPSTOX_SOURCE_ID: &str = "upstox.v3";
+/// The on-disk source identity is `upstox`, as required by the established
+/// raw-frame journal contract and its decoder adapters. Changing this value
+/// breaks previously captured sessions, so v3 protocol identity is recorded in
+/// manifest fields, not in the frame source string.
+pub const UPSTOX_SOURCE_ID: &str = "upstox";
 pub const FYERS_SOURCE_ID: &str = "fyers.data_socket";
 
 const RECENT_DELIVERIES: usize = 4096;

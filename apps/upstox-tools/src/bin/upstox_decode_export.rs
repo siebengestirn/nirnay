@@ -381,6 +381,52 @@ mod tests {
     }
 
     #[test]
+    fn shared_ingress_journal_is_accepted_by_the_decoder() {
+        use market_archive::{
+            DurableIngestor, //
+            Sequence,
+            SequencePolicy,
+            SourceFrame,
+            UPSTOX_SOURCE_ID,
+        };
+
+        let dir = TestDir::new("shared-ingress");
+        let input = dir.path().join("raw.jsonl");
+        let output = dir.path().join("decoded.jsonl");
+        {
+            let mut ingestor = DurableIngestor::create_new(
+                &input,
+                UPSTOX_SOURCE_ID,
+                SequencePolicy::CaptureSession,
+            )
+            .expect("ingestor");
+            for sequence in 1..=2 {
+                let item = SourceFrame {
+                    source_id: UPSTOX_SOURCE_ID.to_owned(),
+                    provider_instrument_id: "NSE_EQ|TEST".to_owned(),
+                    entitlement_ref: "synthetic-fixture".to_owned(),
+                    received_utc_nanos: sequence,
+                    received_monotonic_nanos: sequence as u64,
+                    exchange_utc_nanos: None,
+                    sequence: Some(Sequence::capture_session(sequence as u64)),
+                    payload: vec![0x08, 0x01],
+                };
+                assert!(
+                    matches!(
+                        ingestor.ingest_one(item).expect("ingested frame"),
+                        market_archive::IngestOutcome::Committed { .. }
+                    ),
+                    "the ingress journal must contain the frame"
+                );
+            }
+        }
+        let manifest = write_session(dir.path(), &input, 2, None);
+        let count = decode_journal(&input, &output, &manifest, "Upstox")
+            .expect("decoder accepts the shared ingress journal");
+        assert_eq!(count, 2, "both ingress frames decode");
+    }
+
+    #[test]
     fn decode_succeeds_for_a_valid_journal() {
         let dir = TestDir::new("valid");
         let input = dir.path().join("raw.jsonl");
