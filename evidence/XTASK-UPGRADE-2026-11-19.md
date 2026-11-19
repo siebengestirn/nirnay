@@ -34,9 +34,12 @@ validation of task names, and no way to observe the gate's own exit code.
 - `exit_code_for` is a pure mapping from `ExitStatus` to `ExitCode`. A passing
   gate stays passing; a failing gate keeps its own code when it fits in `u8`;
   signal termination or an out-of-range code becomes the generic failure code.
-- No lint suppression was added. The workspace denies `print_stdout`; the
-  discovery command writes through a locked `BufWriter`, so that invariant is
-  preserved rather than waived.
+- No production lint suppression was added. The workspace denies
+  `print_stdout`; the discovery command writes through a locked `BufWriter`, so
+  that invariant is preserved rather than waived. The file keeps only the
+  repository's standard test-only `cfg_attr` allow for `unwrap`, `expect` and
+  `panic` in unit tests; that attribute is inactive in production and weakens
+  no gate.
 - `run() -> Result<ExitCode>` holds the fallible work; `main` only converts an
   error into a failure exit code, so `?` is used without suppressing errors.
 - `xtask/Cargo.toml` gains the workspace `clap` dependency.
@@ -50,6 +53,11 @@ gates it already wrapped. No policy rule was moved, weakened or duplicated. No
 capability or claim state changes. No owner-owned file was edited.
 
 ## Tests
+
+Exit-code mapping: success and code 7 are tested with real child processes.
+Signal termination is not directly tested because stable Rust cannot construct
+an `ExitStatus` for a signal portably; that branch is reviewed rather than
+claimed as tested.
 
 Nine tests: command-definition validity (`debug_assert`), each gate's
 script-argument mapping, discovery having no script argument, the derived task
