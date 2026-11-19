@@ -104,3 +104,15 @@ detailed evidence is in `engineering/legacy-audit-2026-11-13.md`.
    promotion.
 6. `extras/` is not scheduled for deletion. If it is ever retired, retain the
    external snapshot and the licence first.
+
+## Re-audit 2026-11-19
+
+The SBE decoder, golden corpus and licence now have an active home in
+`crates/sbe-codec` with independent differential evidence
+(`evidence/SBE-GAP-2-PROMOTION-2026-11-19.md`), closing GAP-2. The full
+classification is in `evidence/EXTRAS-REAUDIT-2026-11-19.md`.
+
+Retirement remains blocked: RSV-08 is an unratified owner decision, the
+numeric/book oracle has no byte-for-byte Rust differential, and the book
+conformance driver, `scripts/conformance.py`, several India helper modules and
+temporal goldens have no demonstrated active home or abandonment decision.
