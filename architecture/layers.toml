@@ -31,7 +31,7 @@ crates = []
 
 [[layer]]
 name = "adapters"
-crates = ["upstox-feed-proto"]
+crates = ["upstox-feed-proto", "broker-adapter"]
 
 [[layer]]
 name = "apps"
