@@ -69,7 +69,10 @@ def test_reference_binding_must_match_projection_sidecar(tmp_path):
     reference.write_text(json.dumps(body, sort_keys=True), encoding="utf-8")
     assert reference_revision_digest(reference) == digest
     sidecar = events.with_suffix(".jsonl.quality.json")
-    sidecar.write_text(json.dumps({"reference_revision_sha256": digest}), encoding="utf-8")
+    sidecar.write_text(json.dumps({
+        "reference_revision_sha256": digest,
+        "output_sha256": hashlib.sha256(events.read_bytes()).hexdigest(),
+    }), encoding="utf-8")
     assert _run(events, tmp_path / "bound.json", reference) == 0
     sidecar.write_text(json.dumps({"reference_revision_sha256": "0" * 64}), encoding="utf-8")
     assert _run(events, tmp_path / "unbound.json", reference) == 2

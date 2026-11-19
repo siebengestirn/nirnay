@@ -335,7 +335,7 @@ def _cmd_paper_replay(args: argparse.Namespace) -> int:
     events = [market_event_from_dict(row) for row in _iter_jsonl(Path(args.events))]
     if not events:
         raise ValueError("paper replay requires canonical events")
-    if any(event.instrument_id is None for event in events):
+    if any(not event.instrument_id for event in events):
         raise ValueError("paper replay refuses unresolved provider instruments")
     if any(event.source_frame_sha256 is None for event in events):
         raise ValueError("paper replay requires source_frame_sha256 lineage on every event")
@@ -347,6 +347,8 @@ def _cmd_paper_replay(args: argparse.Namespace) -> int:
         bound = reference_revision_digest(args.reference_revision)
         if report.get("reference_revision_sha256") != bound:
             raise ValueError("projection is not bound to the supplied reference revision")
+        if report.get("output_sha256") != hashlib.sha256(source).hexdigest():
+            raise ValueError("projection sidecar does not match the exact event bytes")
 
     result = EventDrivenBacktester(
         BacktestConfig(source_provider=args.provider)
