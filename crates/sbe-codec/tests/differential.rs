@@ -5,7 +5,10 @@
 //! under `extras/cpp`. It is a protocol oracle only; the numeric/book oracle is
 //! a separate obligation and is not used here.
 
-use sha2::{Digest, Sha256};
+use sha2::{
+    Digest, //
+    Sha256,
+};
 
 use sbe_codec::{
     MIN_CHUNK_BYTES, //
