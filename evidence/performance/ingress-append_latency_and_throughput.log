@@ -1,0 +1,10 @@
+   Compiling market-archive v0.1.0 (/Users/tourist/Documents/nirnay/crates/market-archive)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.19s
+     Running tests/performance.rs (target/debug/deps/performance-d5fb87ae9ad89251)
+
+running 1 test
+BENCH-APPEND frames=2000 seconds=7.909 frames_per_sec=252.9 p50_us=3996.5 p99_us=6063.9 p999_us=11624.6 queue_depth=1 dropped=0 malformed=0
+test append_latency_and_throughput ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 7.92s
+
