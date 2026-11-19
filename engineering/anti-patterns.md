@@ -428,7 +428,7 @@ Any claimed low-latency optimisation must provide:
 - A decision explaining the extra complexity and regression budget.
 
 `HFT-009` `B0 / EVIDENCE`: A speedup claim is rejected if correctness, completeness, data quality or event loss has regressed.  
-`HFT-010` `H1 / EVIDENCE`: MUST benchmark under overload and recovery, not steady-state load
+`HFT-010` `H1 / EVIDENCE`: MUST benchmark under overload and recovery, not steady-state low load
   alone.
 `HFT-011` `H1 / REVIEW`: MUST NOT use average throughput to hide queue growth or p99 latency collapse.  
 `HFT-012` `H1 / REVIEW`: MUST NOT call a system HFT because it uses Rust/C++, q, atomics, DPDK, a ring buffer or microsecond timers.
@@ -782,7 +782,7 @@ A test is useful only if its oracle is correct and it would fail for the defect 
 - `TST-017` `H1 / REVIEW`: Do not set hard performance gates from one noisy run.
 - `TST-018` `B0 / REVIEW`: Do not claim production readiness from unit tests, synthetic benchmarks, mock venues or CI alone.
 - `TST-019` `B0 / TEST`: Architecture rules that can be checked from registries/graphs must have executable gates.
-- `TST-020` `H1 / REVIEW`: Test oracle must state expected contract, not output alone.
+- `TST-020` `H1 / REVIEW`: Test oracle must state expected contract, not current output alone.
 - `TST-021` `H1 / TEST`: Test deterministic replay across restart, code/schema version and process boundaries where replay is required.
 - `TST-022` `H1 / TEST`: Test graceful shutdown during active I/O, queued work, partial writes and in-flight transactions.
 - `TST-023` `H1 / TEST`: Test restore into a new location and over an existing location, failed swap and interruption.

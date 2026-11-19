@@ -61,7 +61,7 @@ A record whose `verification_status ≠ unverified` must carry a structured evid
 - `limitations` — narrative scope/limits (e.g. absence of anchor/real data, ADR-M1-010). This is **not** the enforcement point for the process-isolation precondition.
 - `isolation_attested` — a **structured flag** for the process-isolation precondition (Challenge 1), replacing free-text prose as the machine-checkable field: `isolation_posture ∈ {not_applicable, in_process, separate_process_administered}` plus `isolation_attested ∈ {true, false}`. An authorization claim whose precondition is a separately administered process with its own signer key policy is `unverified` unless `isolation_attested = true` with `isolation_posture = separate_process_administered`; `in_process` cannot satisfy CLM-010's independence claim.
 
-**Residual (challenger re-verification N-3):** the flag and posture are asserted by the claimant;
+  **Residual (challenger re-verification N-3):** the flag and posture are asserted by the claimant;
   no field in this evidence object independently attests that a separate workload identity
   existed. `execution_attestation` proves a command ran, not that isolation was real. A determined
   claimant can set `isolation_attested=true, isolation_posture=separate_process_administered` with
