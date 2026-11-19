@@ -15,9 +15,10 @@ No `extras/` file was edited or deleted.
 | `extras/scripts/conformance.py` | **Still retained, no active equivalent** | no active gate script found in `scripts/` |
 | NSE/BSE ingestion, CSV parsing, snapshot validation, durable store, archive and backup/restore | **Active home** | `crates/india-reference/src/source/{nse,bse}.rs`, `store.rs`, `archive.rs`, `snapshot.rs`; tests `ingestion.rs`, `durability.rs`, `source_conformance.rs` |
 | Frozen reference-store contract and RSV-08 | **Retained; owner decision pending** | `extras/engineering/reference-store-contract.json` unchanged; `evidence/RSV-08-OWNER-DECISION-2026-11-19.md` reports the condition not confirmed; not passed or superseded |
-| India helper modules (`calendar`, `tick_schedule`, `resolution`, `provenance`, `corporate_actions`, `eod_close`) | **Retained; active coverage not demonstrated** | present in `extras/src/venue/india/`; no same-named active module in `crates/india-reference` |
-| Temporal wire goldens (`extras/tests/temporal_compat.rs`) | **Still retained, no active equivalent** | no active chrono-to-jiff golden test found |
-| Synthetic India fixtures (`extras/fixtures/india/`) | **Retained** | no active test reads these files; no demonstrated active home |
+| `provenance` and `corporate_actions` helper modules | **Active home** | `crates/india-domain/src/provenance.rs` and `corporate_actions.rs`, declared in `lib.rs` |
+| Other India helper modules (`calendar`, `tick_schedule`, `resolution`, `eod_close`) | **Retained; active coverage not demonstrated** | present in `extras/src/venue/india/`; no same-named active module |
+| Temporal wire goldens (`extras/tests/temporal_compat.rs`) | **Active home for the shared goldens; one predecessor-only case** | `crates/india-domain/tests/temporal_compat.rs` runs six active tests including date, timestamp, overflow and persisted-metadata goldens; only `backup_filename_matches_chrono_golden` has no active equivalent |
+| Synthetic India fixtures (`extras/fixtures/india/`) | **Active home** | byte-identical root copies in `fixtures/india/`, read by `crates/india-domain/tests/temporal_compat.rs:160` and `tests/india_domain.rs:284,316` |
 | MIT licence and external snapshot provenance | **Preserved** | `extras/LICENSE`; SBE copy travels with `crates/sbe-codec/LICENSE`; external snapshot hash recorded in `engineering/extras-audit.md` |
 
 ## Result
@@ -30,9 +31,10 @@ close the remaining blockers:
    confirm the replacement's condition and no capability was superseded.
 2. The C++ numeric/book oracle is an independent executable but has no
    byte-for-byte differential assertion against active Rust book code.
-3. The book conformance driver, `scripts/conformance.py`, several India helper
-   modules, temporal goldens and synthetic fixtures have no demonstrated active
-   home or explicit abandonment decision.
+3. The book conformance driver, `scripts/conformance.py` and the remaining
+   India helper modules (`calendar`, `tick_schedule`, `resolution`,
+   `eod_close`) have no demonstrated active home or abandonment decision, as
+   does the predecessor-only `backup_filename_matches_chrono_golden` case.
 4. No owner has approved retirement, and the frozen contract and licence must
    remain retained in any case.
 

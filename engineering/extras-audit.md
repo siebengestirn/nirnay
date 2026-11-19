@@ -114,5 +114,7 @@ classification is in `evidence/EXTRAS-REAUDIT-2026-11-19.md`.
 
 Retirement remains blocked: RSV-08 is an unratified owner decision, the
 numeric/book oracle has no byte-for-byte Rust differential, and the book
-conformance driver, `scripts/conformance.py`, several India helper modules and
-temporal goldens have no demonstrated active home or abandonment decision.
+conformance driver, `scripts/conformance.py` and four remaining India helper
+modules have no demonstrated active home or abandonment decision. The shared
+temporal goldens and India fixtures do have active homes; see the re-audit
+record for the corrected classification.
