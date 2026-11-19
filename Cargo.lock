@@ -1172,6 +1172,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "market-kernel"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "market-event",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "market-types"
 version = "0.1.0"
 dependencies = [
