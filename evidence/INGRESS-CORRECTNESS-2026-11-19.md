@@ -1,6 +1,6 @@
 # Ingress correctness evidence — 2026-11-19
 
-**Code commit:** `9c95903e07b3991a42a59a714d85417ed02259ff`.
+**Code commit:** `c3495aea736c9dbb06170529aab149839c386b02`.
 **Scope:** ingress library contract only. Producer applications are not
 connected; no live provider integration or canonical event projection is claimed.
 
@@ -14,7 +14,7 @@ connected; no live provider integration or canonical event projection is claimed
 | FYERS session sequence across two symbols → no false per-symbol gap | `fyers_session_sequence_across_symbols_has_no_false_per_symbol_gap` |
 | More than 1,024 instrument identifiers → no silent continuity loss | `more_than_1024_instruments_have_no_silent_continuity_loss` |
 | Replay of a large journal → bounded memory | `large_journal_replay_uses_bounded_memory` (20,000 frames) |
-| Restart followed by replay → no duplicate commits | `restart_and_replay_commit_nothing_twice` |
+| Restart followed by replay → no duplicate commits | `restart_and_replay_commit_nothing_twice`, `replay_fence_holds_beyond_the_delivery_window` (5,000 frames) |
 | Torn or corrupt journal → fail closed | `torn_or_corrupt_journal_fails_closed` |
 | Fresh-process recovery → same records and checkpoint | `fresh_process_recovery_matches_committed_records_and_checkpoint` |
 
@@ -37,10 +37,10 @@ cargo test -p market-archive --test ingress --offline \
 ```
 
 Raw transcript: `evidence/ingress-replay-benchmark-2026-11-19.log` (SHA-256
-`1cc085533edd488c66531823e687546b5ed685a84365955d78e1f0d88dac1f87`).
+`d935723949360a156b4f942bb8f7f450fec52bdfc1a82f6702458c15ebfb51f8`).
 
 ```text
-INGRESS-REPLAY-BENCH frames=200000 elapsed_ms=3006 frames_per_sec=66528.6 memory_frames_held=1
+INGRESS-REPLAY-BENCH frames=200000 elapsed_ms=3259 frames_per_sec=61366.5 memory_frames_held=1
 ```
 
 The benchmark uses 200,000 generated frames, not 5,000. Replay holds one
@@ -51,7 +51,7 @@ not a throughput certificate.
 ## Verification
 
 `make check` PASS; `NIRNAY_STYLE_BASE=origin/main` source-style PASS; Rust
-added-line style PASS; `cargo test -p market-archive --test ingress` — 15 passed,
+added-line style PASS; `cargo test -p market-archive --test ingress` — 16 passed,
 2 ignored, 0 failed.
 
 ## Open boundaries
