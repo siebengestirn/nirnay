@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from .alpha_search import AlphaCosts, Bar, search_alpha
+from .backtest import BacktestConfig, EventDrivenBacktester
 from .demo import run_demo
 from .market import market_event_from_dict, canonical_bytes
 from .providers import FyersV3Normalizer, UpstoxV3Normalizer
@@ -302,6 +303,75 @@ def _bind_reference_revision(path: Path, instrument_map: dict[str, str],
     return digest
 
 
+class NoIntentStrategy:
+    """Deterministic consumer that emits no order intents.
+
+    It proves that the paper engine can consume the projected stream without
+    introducing strategy semantics or trading behavior.
+    """
+    strategy_id = "no_intent-v1"
+
+    def on_event(self, event, context):
+        return None
+
+
+def reference_revision_digest(path: Path) -> str:
+    declared = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(declared, dict) or declared.get("schema_version") != 1:
+        raise ValueError("reference revision must be a v1 object")
+    binding = declared.get("revision_sha256")
+    if not isinstance(binding, str):
+        raise ValueError("reference revision has no binding hash")
+    body = dict(declared)
+    body.pop("revision_sha256")
+    digest = hashlib.sha256(canonical_bytes(body)).hexdigest()
+    if digest != binding:
+        raise ValueError("reference revision hash does not match its content")
+    return digest
+
+
+def _cmd_paper_replay(args: argparse.Namespace) -> int:
+    source = Path(args.events).read_bytes()
+    events = [market_event_from_dict(row) for row in _iter_jsonl(Path(args.events))]
+    if not events:
+        raise ValueError("paper replay requires canonical events")
+    if any(not event.instrument_id for event in events):
+        raise ValueError("paper replay refuses unresolved provider instruments")
+    if any(event.source_frame_sha256 is None for event in events):
+        raise ValueError("paper replay requires source_frame_sha256 lineage on every event")
+    if any(event.provider != args.provider for event in events):
+        raise ValueError(f"events contain a provider other than {args.provider}")
+    if args.reference_revision:
+        sidecar = Path(str(args.events) + ".quality.json")
+        report = json.loads(sidecar.read_text(encoding="utf-8"))
+        bound = reference_revision_digest(args.reference_revision)
+        if report.get("reference_revision_sha256") != bound:
+            raise ValueError("projection is not bound to the supplied reference revision")
+        if report.get("output_sha256") != hashlib.sha256(source).hexdigest():
+            raise ValueError("projection sidecar does not match the exact event bytes")
+
+    result = EventDrivenBacktester(
+        BacktestConfig(source_provider=args.provider)
+    ).run(events, NoIntentStrategy())
+    payload = {
+        "schema_version": 1,
+        "input_sha256": hashlib.sha256(source).hexdigest(),
+        "lineage_events": len(events),
+        "summary": result.summary(),
+    }
+    output = canonical_bytes(payload) + b"\n"
+    target = Path(args.output)
+    if target.exists():
+        raise ValueError("paper replay output already exists; immutability is required")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("xb") as stream:
+        stream.write(output)
+        stream.flush()
+        os.fsync(stream.fileno())
+    print(json.dumps(payload, sort_keys=True))
+    return 0
+
+
 def _cmd_normalize(args: argparse.Namespace) -> int:
     instrument_map = json.loads(args.instrument_map.read_text(encoding="utf-8"))
     if not isinstance(instrument_map, dict) or any(not isinstance(k, str) or not isinstance(v, str) or not v for k, v in instrument_map.items()):
@@ -523,6 +593,13 @@ def _cmd_alpha_search(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="quantlab", description="Nirnay deterministic quantitative research tools")
     sub = parser.add_subparsers(dest="command", required=True)
+    replay = sub.add_parser("paper-replay", help="consume canonical projection in the paper engine")
+    replay.add_argument("--events", type=Path, required=True)
+    replay.add_argument("--provider", choices=("upstox", "fyers"), required=True)
+    replay.add_argument("--reference-revision", type=Path)
+    replay.add_argument("--output", type=Path, required=True)
+    replay.set_defaults(handler=_cmd_paper_replay)
+
     demo = sub.add_parser("demo", help="run deterministic synthetic EMA/backtest fixture")
     demo.set_defaults(handler=_cmd_demo)
 

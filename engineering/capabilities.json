@@ -199,6 +199,14 @@
       "evidence_status": "quantlab normalize binds both Upstox decoded frames and FYERS SDK callback journals to an exact reference revision, records normalizer and event-schema versions, requires source_frame_sha256 for archived observations, leaves unknown instruments unresolved, and replays byte-identically in a fresh process. Seven projection tests cover these properties; no competing Rust event model or live path is introduced.",
       "owner": "research-data",
       "scope": "research/python/src/quantlab/cli.py; research/python/tests/test_canonical_projection.py; research/python/tests/test_fyers_projection.py"
+    },
+    {
+      "id": "CAP-025",
+      "name": "Deterministic paper consumption of canonical projections",
+      "status": "implemented",
+      "evidence_status": "quantlab paper-replay consumes canonical events with explicit provider selection, refuses unresolved instruments and missing source-frame lineage, verifies an optional reference binding against the projection sidecar, and writes byte-identical results from fresh processes using a no-intent strategy. Five tests; no engine rewrite, live path or trading.",
+      "owner": "research-data",
+      "scope": "research/python/src/quantlab/cli.py; research/python/tests/test_paper_projection_consumption.py"
     }
   ]
 }
