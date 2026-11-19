@@ -19,7 +19,7 @@ crates = ["account-journal", "market-archive"]
 
 [[layer]]
 name = "services"
-crates = ["cost-model", "risk-engine", "execution-policy"]
+crates = ["cost-model", "risk-engine", "execution-policy", "ops-runtime"]
 
 [[layer]]
 name = "engines"

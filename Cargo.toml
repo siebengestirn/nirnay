@@ -23,6 +23,7 @@ strategy-runtime = { path = "crates/strategy-runtime", version = "0.1.0" }
 risk-authority = { path = "crates/risk-authority", version = "0.1.0" }
 authoritative-oms = { path = "crates/authoritative-oms", version = "0.1.0" }
 broker-adapter = { path = "crates/broker-adapter", version = "0.1.0" }
+ops-runtime = { path = "crates/ops-runtime", version = "0.1.0" }
 market-book = { path = "crates/market-book", version = "0.1.0" }
 market-types = { path = "crates/market-types", version = "0.1.0" }
 upstox-feed-proto = { path = "crates/upstox-feed-proto", version = "0.1.0" }
