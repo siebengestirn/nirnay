@@ -73,8 +73,10 @@ equivalent** and must not be treated as interchangeable:
 - The old procedure kills a process at five protocol boundaries, including
   archive object write and manifest append. The active protocol performs no
   archive write inside publication, so two of those boundaries do not exist.
-- The new procedure exercises recovery around a single SQLite commit and
-  resolves uncertainty by reopening and matching the publication key.
+- The new procedure exercises recovery around a single SQLite commit, and a
+  retry of the same publication key resolves by that key. It does **not**
+  implement the frozen uncertain-commit protocol (poison handle, close without
+  success, reopen and resolve); see sections 3 and 5.
 - The equivalence being claimed is at the **objective** level — no partial
   publication, committed state survives restart, retry resolves by key — not
   at the **procedure** level. Killing a writer at a removed boundary is not a
