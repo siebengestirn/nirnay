@@ -34,10 +34,14 @@ and `scripts/check_source_style.py` for every other language, and is wired into
   valid JSON only (no comments), double-quoted keys and strings, two-space
   indentation, a final newline. Semantic naming rules are not enforced because
   existing schema property names are part of published contracts.
-- **Markdown**: Google Markdown style guide — ATX headings with a space after
-  `#`, a single H1, fenced blocks with a declared language, no trailing
-  whitespace, and a 100-column prose limit with exceptions for headings,
-  tables, links and code blocks.
+- **Markdown**: Google Markdown style guide, published as the Google developer
+  documentation style guide — ATX headings with a space after `#`, a single H1,
+  fenced blocks with a declared language, no trailing whitespace. Google's
+  published prose limit is 80 columns; this repository uses 100 for prose with
+  exceptions for headings, tables, links and code blocks. That deviation is
+  deliberate and predates the binding checker; changing it would reflow the
+  whole documentation corpus and is out of scope for a narrow change. The
+  checker enforces the repository limit, not the published one.
 
 A web search for published style guides from leading HFT/quantitative trading
 firms (Jane Street, Citadel, Two Sigma, HRT, Optiver) found no authoritative
