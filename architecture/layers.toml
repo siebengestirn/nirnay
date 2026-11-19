@@ -23,7 +23,7 @@ crates = ["cost-model", "risk-engine", "execution-policy"]
 
 [[layer]]
 name = "engines"
-crates = ["paper-engine", "market-kernel", "strategy-runtime", "risk-authority"]
+crates = ["paper-engine", "market-kernel", "strategy-runtime", "risk-authority", "authoritative-oms"]
 
 [[layer]]
 name = "strategies"
