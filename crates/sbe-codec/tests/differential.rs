@@ -12,6 +12,9 @@ use sha2::{
 
 use sbe_codec::{
     MIN_CHUNK_BYTES, //
+    SNAPSHOT_TEMPLATE,
+    SbeError,
+    SbeMessage,
     decode_capture,
     decode_message,
     encode_message,
@@ -147,13 +150,39 @@ fn seven_malformed_cases_fail_closed() {
         "a chunk below the minimum is refused"
     );
 
-    let mut torn = vec![0_u8; 4096 + 200];
-    let one = encode_message(&decode_message(GOLDEN, 0).expect("first message").message)
+    // A genuine tear: a first message consumes exactly 4086 bytes, so a
+    // following message starts at 4086 and crosses the 4096 chunk boundary.
+    // Zero padding cannot mask it because the loop reaches 4086 directly.
+    let filler = SbeMessage {
+        template_id: SNAPSHOT_TEMPLATE,
+        received_at_us: 1,
+        exchange_timestamp_us: 1,
+        symbol: "x".repeat(4050),
+        bids: Vec::new(),
+        asks: Vec::new(),
+        price_level: None,
+        quantity: None,
+        side: None,
+    };
+    let mut torn = encode_message(&filler).expect("4086-byte filler message");
+    assert_eq!(torn.len(), 4086, "the filler ends just before the boundary");
+    let first = encode_message(&decode_message(GOLDEN, 0).expect("first message").message)
         .expect("encoded first message");
-    let start = 4096 - 10;
-    torn[start..start + one.len()].copy_from_slice(&one);
-    assert!(
-        decode_capture(&torn, 4096).is_err(),
-        "a message crossing an aligned chunk boundary is refused"
+    torn.extend_from_slice(&first);
+    assert_eq!(
+        decode_capture(&torn, 4096),
+        Err(SbeError::MessageTear),
+        "the tear guard itself rejects a message crossing the chunk boundary"
+    );
+}
+
+#[test]
+fn invalid_utf8_symbol_fails_closed() {
+    let mut bad_symbol = GOLDEN.to_vec();
+    bad_symbol[68] = 0xff;
+    assert_eq!(
+        decode_capture(&bad_symbol, 4096),
+        Err(SbeError::InvalidSymbol),
+        "a non-UTF-8 symbol is refused rather than decoded lossily"
     );
 }

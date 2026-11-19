@@ -46,11 +46,14 @@ trading integration.
   messages ending at byte 732, each re-encoded to its exact original bytes.
 - `seven_malformed_cases_fail_closed`: truncated header, unknown template,
   invalid `SideEncoding`, unknown schema id, unknown schema version, invalid
-  group block and chunk below minimum, plus a cross-chunk tear case.
+  group block, chunk below minimum and a genuine cross-chunk tear. The tear is
+  constructed from a 4,086-byte filler message so the loop reaches the boundary
+  directly; the test asserts the exact `MessageTear` error.
+- `invalid_utf8_symbol_fails_closed`: a non-UTF-8 symbol byte is refused.
 
 ## Verification
 
-`cargo test -p sbe-codec` — 4 passed. `make check` PASS with full workspace and
+`cargo test -p sbe-codec` — 5 passed. `make check` PASS with full workspace and
 175 Python tests. Capability CAP-026 and claim CLM-020 are `implemented`, not
 `verified`.
 
@@ -59,4 +62,10 @@ trading integration.
 The differential oracle is the C++ **SBE** decoder, not the C++ numeric/book
 oracle; no compatibility is claimed for book or numeric conformance. The golden
 is ten synthetic Kalshi `TEST-A`/`TEST-B` messages, not live market data.
+
+Rust `read_string` enforces UTF-8 while the C++ decoder copies raw symbol bytes.
+All corpus symbols are ASCII, so byte-for-byte equivalence is established for
+this frozen corpus, not for arbitrary non-ASCII symbol bytes; a non-UTF-8 symbol
+is refused by the active decoder.
+
 `extras/` retirement remains blocked until a fresh audit and owner approval.
