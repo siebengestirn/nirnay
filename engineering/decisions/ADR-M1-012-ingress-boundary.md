@@ -1,21 +1,37 @@
 # ADR-M1-012 — Nirnay-owned raw ingress boundary
 
-- **Status:** Accepted as a Nirnay engineering decision for this bounded boundary only. Not owner ratification of M2, a network service, a broker adapter, live data rights or trading.
-- **Owner:** Market Data Engineering (Nirnay). Changes to this boundary require review and an exact-head CI pass.
+- **Status:** Accepted as a Nirnay engineering decision for this bounded
+  boundary only. It is not owner ratification of M2, a network service, a
+  broker adapter, live data rights or trading.
+- **Owner:** Market Data Engineering (Nirnay). Changes to this boundary require
+  review and an exact-head CI pass.
 - **Baseline:** `ea877ab6d784356c2e852412f5c904fd0ca15cc4`.
-- **Relationship to ADR-M1-004:** ADR-M1-004 remains **Proposed** and is **not amended** by this record. It describes a target hexagonal port and authorizes no port implementation. This ADR makes a separate, narrower decision for one already-merged in-process boundary; it does not claim the general port question was settled.
+- **Relationship to ADR-M1-004:** ADR-M1-004 remains **Proposed** and is **not
+  amended** by this record. It describes a target hexagonal port and authorizes
+  no port implementation. This ADR makes a separate, narrower decision for one
+  already-merged in-process boundary; it does not claim the general port
+  question was settled.
 
 ## Decision
 
 The shared ingress boundary is a library contract in `crates/market-archive`,
 not a service and not a new storage engine. It is authorized for this scope:
 
-- `IngressSource` adapters supply original provider bytes plus capture metadata; no provider decoding or canonical identity creation occurs at the boundary.
-- `DurableIngestor` writes through the existing `JournalWriter` to one authoritative raw journal per source stream.
-- Delivery identity is separate from payload digest. Identical bytes under different delivery identities are distinct observations; the same identity with different bytes is a conflict, never a silent overwrite.
-- Sequence provenance is explicit: capture-session, provider-per-instrument, or none. Capture-session sequences are never interpreted as per-instrument provider sequences.
-- Continuity state is bounded. Eviction is recorded as unknown continuity, never as a fresh clean stream.
-- Resume and replay stream the journal through `JournalReader`; memory is bounded by record size and explicit state budgets, not archive size.
+- `IngressSource` adapters supply original provider bytes plus capture
+  metadata. No provider decoding or canonical identity creation occurs at the
+  boundary.
+- `DurableIngestor` writes through the existing `JournalWriter` to one
+  authoritative raw journal per source stream.
+- Delivery identity is separate from payload digest. Identical bytes under
+  different delivery identities are distinct observations; the same identity
+  with different bytes is a conflict, never a silent overwrite.
+- Sequence provenance is explicit: capture-session, provider-per-instrument or
+  none. Capture-session sequences are never interpreted as per-instrument
+  provider sequences.
+- Continuity state is bounded. Eviction is recorded as unknown continuity,
+  never as a fresh clean stream.
+- Resume and replay stream the journal through `JournalReader`; memory is
+  bounded by record size and explicit state budgets, not archive size.
 
 ## Non-scope
 
