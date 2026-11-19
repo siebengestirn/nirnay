@@ -175,6 +175,14 @@
       "evidence_status": "Market-archive ingress module routes original Upstox V3 protobuf bytes and FYERS SDK-decoded callback JSON bytes, each with source-specific metadata, through the durable raw-frame journal. Source binding, duplicate/sequence/malformed accounting, disconnect stops and journal-rebuilt checkpoints are shared by both adapters. A journal replay source replays captured bytes through the same port with exact metadata fidelity and idempotent replay into a resumed journal. Seventeen dedicated tests cover replay-after-restart dedup, ordinal-fenced replay beyond the bounded hash window, post-commit continuity advancement, bounded continuity state and cross-source isolation; no provider decoding or canonical instrument resolution is performed here, and no live entitlement or network path is certified.",
       "owner": "market-data",
       "scope": "crates/market-archive/src/ingress.rs; crates/market-archive/tests/ingress.rs"
+    },
+    {
+      "id": "CAP-022",
+      "name": "Source-backed corporate financial facts and point-in-time validation",
+      "status": "implemented",
+      "evidence_status": "Initial pure Rust domain and bounded JSONL validation CLI added. Exact decimal facts, company identity observations, source document hashes and locators, append-only fact revisions, derived-input lineage, and point-in-time selection are implemented with unit/integration fixtures. Targeted Rust compilation, tests, Clippy, and hosted CI are pending; no MCA/SEBI/NSE/BSE network adapter, PDF/XBRL parser, production store, source entitlement, or complete-company coverage is claimed.",
+      "owner": "fundamental-data",
+      "scope": "crates/fundamental-domain; apps/fundamental-tools; schemas/fundamentals; research/fundamentals/fixtures"
     }
   ]
 }

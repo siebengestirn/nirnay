@@ -21,6 +21,7 @@ scope: make check + hosted CI 44420365008 on ea877ab (11/11); no later-commit cl
 | Canonical Upstox/FYERS market events | `research/python/src/quantlab/market.py`, `providers.py` | Preserves provider IDs, timestamp semantics, local sequence, source payload and capture-frame hashes. LTP changes are observations, not invented trade prints or aggressor-side labels. |
 | Cross-feed reconciliation | `quantlab/reconcile.py` | Compares fresh, comparable provider state for one canonical instrument. It never merges/sums duplicate liquidity or constructs an authoritative consolidated tape. |
 | Point-in-time reference data and datasets | `quantlab/point_in_time.py` | Bitemporal listing/universe membership, immutable corporate-action revision lineage, exact split/bonus view, source/frame/event lineage, atomic immutable JSONL publication, optional Zstandard Parquet, semantic Parquet verification and optional detached Ed25519 manifest signature through AWS KMS. A valid signature authenticates the publisher key, not the upstream data source or its completeness. |
+| Corporate financial fact contracts | `crates/fundamental-domain`, `apps/fundamental-tools` | Exact decimal financial facts, source-document digests and evidence locators, effective-dated company identity, append-only restatement lineage, derived-fact dependency checks and point-in-time selection. The current CLI validates bounded JSONL inputs; it does not acquire filings, parse XBRL/PDF, or provide a production store. |
 | Event-driven backtest | `quantlab/backtest.py`, `quantlab/portfolio_backtest.py` | `EventDrivenBacktester` is single-instrument; `MultiInstrumentPortfolioBacktester` is a separate multi-instrument, single-provider, long-only NSE cash portfolio model with independent per-symbol orders, cash/exposure reservations, latency, partial fills, participation caps, fees, spread/impact and conservative L2 market-by-price queue approximation. Neither is an exchange matching engine; queue/impact parameters need calibration. |
 | Strategy and alpha research | `quantlab/strategies.py`, `alpha_search.py`, `validation.py` | Streaming deterministic EMA-cross fixture and bounded predeclared candidate screen with train/validation/untouched holdout, embargo, flat segment portfolios, explicit net costs, Holm/HAC screening, CSCV/PBO and Deflated Sharpe diagnostics. This is a research screen, not arbitrary code generation, full execution-cost proof or validated alpha. |
 | Order management and live authorization contracts | `quantlab/oms.py`, `quantlab/durable_oms.py`, `risk_evidence.py`, `risk_service.py`, `risk_gateway.py`, `risk_daemon.py`, `kms_signing.py`, `live_auth.py` | Local SQLite WAL/FULL transactional intent/outbox store, hash-chained journal, leases, idempotent broker-event ingestion, partial fills, cancel/unknown-outcome handling and paper-only dispatcher. A separately runnable HTTPS/mTLS risk-evidence daemon obtains eight independently signed control observations and signs scoped runtime evidence via AWS KMS Ed25519. The daemon and KMS adapter have tests but no deployed KMS key, collectors or cloud service; no broker OMS adapter is certified and live mode always rejects. |
@@ -94,6 +95,40 @@ quantlab demo
 ```
 
 The demo reports `not_real_market_data=true` and `not_alpha_evidence=true`. It is a deterministic systems fixture, not a performance claim.
+
+## Corporate financial fact validation
+
+The first fundamental-data vertical defines source-backed company identity
+and financial fact records.
+It is deliberately offline: source acquisition and data entitlements remain separate decisions.
+Validate the checked-in synthetic examples with:
+
+```bash
+cargo run --locked -p fundamental-tools --bin nirnay-fundamental -- validate-facts \
+  --input research/fundamentals/fixtures/financial-facts.example.jsonl
+
+cargo run --locked -p fundamental-tools --bin nirnay-fundamental -- validate-companies \
+  --input research/fundamentals/fixtures/company-identities.example.jsonl
+```
+
+The JSON Schema contracts are in `schemas/fundamentals/`. The committed fixture records are
+synthetic conformance data, not records fetched from MCA or an exchange; their document digests
+are test values, not source evidence. The domain stores exact decimal coefficients as canonical
+signed `i128` strings plus decimal scale; it does not use binary floating point for financial
+facts. Each reported fact includes a source ID, filing ID, source-document SHA-256 and an XBRL,
+PDF-table or JSON-pointer locator. This CLI validates digest and locator syntax; it does not fetch
+or re-hash the source document. A digest proves byte identity only when checked against the bytes;
+it does not prove who published the document or whether the source is complete or licensed. The
+validator checks record
+framing, per-record and aggregate-byte limits, record count, identity and fact keys, append-only
+revisions, derivation dependencies and historical availability. It retains decoded facts in memory
+for closed-set lineage validation and is not a production ingestion store.
+
+The governing design and non-goals are recorded in
+`engineering/decisions/ADR-FND-001-corporate-financial-facts.md`. MCA/SEBI/NSE/BSE source
+adapters, taxonomy-aware XBRL parsing, PDF extraction, durable fundamental storage, statement
+reconciliation by accounting framework and valuation remain separate work items with independent
+contracts and verification.
 
 ## Research pipeline
 

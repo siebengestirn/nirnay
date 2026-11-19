@@ -7,7 +7,7 @@ crates = ["market-types", "india-domain"]
 
 [[layer]]
 name = "domain"
-crates = ["trading-core", "market-book"]
+crates = ["trading-core", "market-book", "fundamental-domain"]
 
 [[layer]]
 name = "reference"
@@ -36,7 +36,7 @@ crates = ["upstox-feed-proto"]
 [[layer]]
 name = "apps"
 leaf = true
-crates = ["cost-cli", "upstox-tools"]
+crates = ["cost-cli", "upstox-tools", "fundamental-tools"]
 
 [tooling]
 crates = ["xtask"]

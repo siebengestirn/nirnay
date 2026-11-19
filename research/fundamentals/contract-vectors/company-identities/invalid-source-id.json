@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "record_id": "company-record-example-v1",
+  "company_id": "company-in-mca-u12345mh2010plc123456",
+  "identity_key": "8ae20a70018c4620b6d1b2e068bac02f52903d09aa6b4b80e249925a76e24b3c",
+  "revision": 1,
+  "supersedes": null,
+  "cin": "U12345MH2010PLC123456",
+  "legal_name": "Example Components Limited",
+  "valid_from": "2010-06-15",
+  "valid_to": null,
+  "recorded_at": "2025-05-01T08:16:00Z",
+  "source_id": "MCA21.COMPANY_MASTER",
+  "source_document_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "locator": {
+    "kind": "json_pointer",
+    "pointer": "/company/name"
+  }
+}
