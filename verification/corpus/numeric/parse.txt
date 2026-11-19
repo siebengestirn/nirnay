@@ -1,0 +1,7 @@
+parse 0 6
+parse 100 2
+parse 0.08 6
+parse -54.00 6
+parse 1.234567 6
+parse -0.000001 6
+parse 9223372036854775807 0

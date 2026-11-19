@@ -1,0 +1,5 @@
+format 0 6
+format 80000 6
+format -54000000 6
+format 100 2
+format 9223372036854775807 0
