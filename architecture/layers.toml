@@ -36,7 +36,7 @@ crates = ["upstox-feed-proto"]
 [[layer]]
 name = "apps"
 leaf = true
-crates = ["cost-cli", "upstox-tools", "fundamental-tools"]
+crates = ["cost-cli", "upstox-tools", "fundamental-tools", "fyers-importer"]
 
 [tooling]
 crates = ["xtask"]

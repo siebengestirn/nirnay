@@ -189,6 +189,18 @@
         ]
       },
       "falsifier": "A malformed fact or identity is accepted; an invalid document digest or evidence locator passes; a duplicate, broken or cyclic revision/dependency chain passes; a future or unknown-publication fact is selected in a historical as-of view; or the CLI accepts an overlong, aggregate-byte-over-limit, blank, CRLF, BOM-prefixed or torn JSONL record."
+    },
+    {
+      "id": "CLM-017",
+      "statement": "A completed FYERS SDK session is imported only after its manifest and full hash chain verify; every record is validated, event and gap metadata survive canonical re-encoding, and repeated imports add no records to the shared raw journal.",
+      "status": "implemented",
+      "scope": {
+        "packages": [
+          "apps/fyers-importer/src/main.rs",
+          "apps/fyers-importer/tests"
+        ]
+      },
+      "falsifier": "An invalid manifest or broken chain is imported, a verified record is dropped, gap metadata is lost, or a repeated import adds a second set of journal records."
     }
   ]
 }
