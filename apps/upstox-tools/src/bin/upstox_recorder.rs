@@ -59,15 +59,31 @@ impl std::fmt::Display for OversizedFrame {
 
 impl std::error::Error for OversizedFrame {}
 
+/// The shared ingress port refused a frame. Retrying the connection cannot
+/// make a refused observation acceptable, so this is terminal.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct IngressRefusal;
+
+impl std::fmt::Display for IngressRefusal {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("shared ingress refused an Upstox frame")
+    }
+}
+
+impl std::error::Error for IngressRefusal {}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ConnectionFailure {
     OversizedFrame,
+    IngressRefusal,
     Retryable,
 }
 
 fn classify_failure(error: &anyhow::Error) -> ConnectionFailure {
     if error.downcast_ref::<OversizedFrame>().is_some() {
         ConnectionFailure::OversizedFrame
+    } else if error.downcast_ref::<IngressRefusal>().is_some() {
+        ConnectionFailure::IngressRefusal
     } else {
         ConnectionFailure::Retryable
     }
@@ -309,7 +325,7 @@ impl Session {
             IngestOutcome::DuplicateSkipped
             | IngestOutcome::ConflictRejected
             | IngestOutcome::MalformedRejected => {
-                bail!("shared ingress refused a live Upstox frame; capture cannot continue")
+                return Err(IngressRefusal.into());
             }
         }
         self.frame_count = self.ingestor.checkpoint().committed_frames;
@@ -619,10 +635,13 @@ async fn main() -> anyhow::Result<()> {
                 session.lifecycle("reconnect_budget_exhausted", u64::from(attempt), None)?;
             }
             Err(error) => {
-                if classify_failure(&error) == ConnectionFailure::OversizedFrame {
+                if matches!(
+                    classify_failure(&error),
+                    ConnectionFailure::OversizedFrame | ConnectionFailure::IngressRefusal
+                ) {
                     session.terminal_error = Some(format!("terminal capture failure: {error}"));
                     session.lifecycle(
-                        "oversized_frame_fatal",
+                        "terminal_capture_failure",
                         u64::from(attempt),
                         Some(&error.to_string()),
                     )?;
@@ -666,6 +685,7 @@ mod tests {
         ConnectionFailure,
         DurableIngestor,
         FeedMode,
+        IngressRefusal,
         OversizedFrame,
         SequencePolicy,
         Session,
@@ -673,6 +693,7 @@ mod tests {
         classify_failure,
         validate_frame_size,
     };
+    use base64::Engine as _;
     use market_archive::MAX_PAYLOAD_BYTES;
 
     #[test]
@@ -750,6 +771,11 @@ mod tests {
             frames.iter().all(|frame| frame.source == UPSTOX_SOURCE_ID),
             "journal frames carry the Upstox ingress source identity"
         );
+        assert_eq!(
+            frames[0].payload_base64,
+            base64::engine::general_purpose::STANDARD.encode(b"original-protobuf-bytes"),
+            "the exact original protobuf bytes survive in the authoritative journal"
+        );
         let files: Vec<_> = std::fs::read_dir(&session.run_dir)
             .expect("session files")
             .filter_map(|entry| entry.ok().map(|entry| entry.file_name()))
@@ -815,5 +841,13 @@ mod tests {
             "replay resolves the committed frame as a duplicate"
         );
         let _ = std::fs::remove_dir_all(&root);
+    }
+    #[test]
+    fn ingress_refusal_is_not_retryable() {
+        let refusal: anyhow::Error = IngressRefusal.into();
+        assert!(
+            classify_failure(&refusal) == ConnectionFailure::IngressRefusal,
+            "a refused frame terminates capture instead of reconnecting"
+        );
     }
 }
