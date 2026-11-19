@@ -6,9 +6,9 @@ code and no decision. The accepted ADR is left intact.
 
 ## ADR claim under check
 
-ADR-M1-009 §16 item 2 states, under a design falsifier for copied-forward P&L:
+ADR-M1-009 §9 item 2 states, under a design falsifier for copied-forward P&L:
 "Current: P&L included tautologically and no machine check exists → fails."
-The same ADR's §17 and invariant M1-REP-INV-001 require that P&L never be
+The ADR's §3.1 and §5 and invariant M1-REP-INV-001 require that P&L never be
 reported `verified-equal` unless recomputed from an anchored fill stream.
 
 ## Verified source state
