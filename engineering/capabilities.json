@@ -207,6 +207,14 @@
       "evidence_status": "quantlab paper-replay consumes canonical events with explicit provider selection, refuses unresolved instruments and missing source-frame lineage, verifies an optional reference binding against the projection sidecar, and writes byte-identical results from fresh processes using a no-intent strategy. Five tests; no engine rewrite, live path or trading.",
       "owner": "research-data",
       "scope": "research/python/src/quantlab/cli.py; research/python/tests/test_paper_projection_consumption.py"
+    },
+    {
+      "id": "CAP-026",
+      "name": "Active challenge SBE decoder with protocol differential evidence",
+      "status": "implemented",
+      "evidence_status": "crates/sbe-codec decodes challenge schema id 1 version 2 templates 1 and 2 with no predecessor type dependency. Four differential tests verify the frozen golden digest, reproduce the independent C++ SBE canonical dump byte for byte, assert byte-identical canonical re-encoding, and refuse the seven malformed cases. The oracle is the C++ SBE decoder only; the numeric/book oracle is not used as SBE evidence.",
+      "owner": "market-data",
+      "scope": "crates/sbe-codec/src; crates/sbe-codec/tests; crates/sbe-codec/tests/golden"
     }
   ]
 }
