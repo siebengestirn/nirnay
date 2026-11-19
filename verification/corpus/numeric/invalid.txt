@@ -1,0 +1,6 @@
+parse nonsense 6
+parse 1.2345678 6
+parse 1 19
+format 1 19
+rescale 1 2 19
+parse 0 6

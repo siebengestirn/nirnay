@@ -35,3 +35,13 @@ add_executable(nirnay_numeric_oracle_test tests/numeric_orderbook_test.cpp)
 target_link_libraries(nirnay_numeric_oracle_test PRIVATE nirnay_numeric_oracle)
 target_compile_options(nirnay_numeric_oracle_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME numeric_orderbook_oracle COMMAND nirnay_numeric_oracle_test)
+
+# Active differential drivers: the Rust counterparts consume the same
+# versioned corpus and must emit byte-identical canonical output.
+add_executable(nirnay_book_driver src/book_driver.cpp)
+target_link_libraries(nirnay_book_driver PRIVATE nirnay_numeric_oracle)
+target_compile_options(nirnay_book_driver PRIVATE -Wall -Wextra -Werror)
+
+add_executable(nirnay_numeric_driver src/numeric_driver.cpp)
+target_link_libraries(nirnay_numeric_driver PRIVATE nirnay_numeric_oracle)
+target_compile_options(nirnay_numeric_driver PRIVATE -Wall -Wextra -Werror)
