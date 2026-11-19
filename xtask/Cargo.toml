@@ -9,6 +9,7 @@ description = "Repository architecture, claims and waiver policy gates."
 
 [dependencies]
 anyhow.workspace = true
+clap.workspace = true
 
 [lints]
 workspace = true
