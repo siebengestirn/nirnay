@@ -392,9 +392,10 @@ verification are implemented for synthetic/internal fixtures; replay of real
 archived provider sessions remains unverified.
 
 The shared ingress **library** (`crates/market-archive/src/ingress.rs`) is
-implemented with Upstox and FYERS adapters and streaming replay, but the
-provider **applications** are not yet connected to it: `upstox_recorder` still
-writes directly through `JournalWriter` and the FYERS recorder still writes its
-own Python hash-chain journal. No live provider integration or canonical event
-projection is claimed. PR #44 corrects delivery identity, sequence scope,
-continuity state and bounded replay before application wiring.
+implemented with Upstox and FYERS adapters and streaming replay. PR #44
+corrected delivery identity, sequence scope, continuity state and bounded
+replay before application wiring. `upstox_recorder` now writes its authoritative
+raw journal through `DurableIngestor`; the FYERS recorder still writes its own
+Python hash-chain journal and needs a verified offline importer before it can
+share the same path. No live provider integration or canonical event projection
+is claimed.

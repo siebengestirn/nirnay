@@ -17,9 +17,13 @@ use clap::{Parser, ValueEnum};
 use futures_util::{SinkExt, StreamExt};
 use jiff::Timestamp;
 use market_archive::{
-    JournalWriter, //
+    DurableIngestor, //
+    IngestOutcome,
     MAX_PAYLOAD_BYTES,
-    RawFrame,
+    Sequence,
+    SequencePolicy,
+    SourceFrame,
+    UPSTOX_SOURCE_ID,
     verify_journal,
 };
 use reqwest::{Client, redirect};
@@ -200,7 +204,7 @@ impl Token {
 struct Session {
     run_dir: PathBuf,
     journal_path: PathBuf,
-    journal: JournalWriter,
+    ingestor: DurableIngestor,
     observations: BufWriter<File>,
     lifecycle: BufWriter<File>,
     started_utc: String,
@@ -226,8 +230,15 @@ impl Session {
             .with_context(|| format!("creating unique session directory {}", run_dir.display()))?;
         set_private_permissions(&run_dir)?;
         let journal_path = run_dir.join("raw-frames.jsonl");
-        let journal =
-            JournalWriter::create_new(&journal_path).context("creating raw-frame journal")?;
+        // One authoritative journal, owned by the shared ingress port. The
+        // recorder-local sequence is a capture-session sequence, never a
+        // provider sequence.
+        let ingestor = DurableIngestor::create_new(
+            &journal_path,
+            UPSTOX_SOURCE_ID,
+            SequencePolicy::CaptureSession,
+        )
+        .context("creating shared-ingress raw-frame journal")?;
         let observations = BufWriter::new(create_private_file(
             &run_dir.join("decoded-observations.jsonl"),
         )?);
@@ -237,7 +248,7 @@ impl Session {
         Ok(Self {
             run_dir,
             journal_path,
-            journal,
+            ingestor,
             observations,
             lifecycle,
             started_utc: started.strftime("%Y-%m-%dT%H:%M:%S%.9fZ").to_string(),
@@ -279,20 +290,29 @@ impl Session {
             .frame_count
             .checked_add(1)
             .context("Upstox capture sequence exhausted")?;
-        let frame = RawFrame::new(
-            "upstox",
-            "__multi_instrument_frame__",
-            received_utc_ns,
-            received_monotonic_ns,
-            None,
-            Some(capture_sequence),
-            &self.entitlement_ref,
-            payload,
-        )?;
-        self.journal
-            .append(&frame)
-            .context("durably appending Upstox raw frame")?;
-        self.frame_count = capture_sequence;
+        let source_frame = SourceFrame {
+            source_id: UPSTOX_SOURCE_ID.to_owned(),
+            provider_instrument_id: "__multi_instrument_frame__".to_owned(),
+            entitlement_ref: self.entitlement_ref.clone(),
+            received_utc_nanos: received_utc_ns,
+            received_monotonic_nanos: received_monotonic_ns,
+            exchange_utc_nanos: None,
+            sequence: Some(Sequence::capture_session(capture_sequence)),
+            payload: payload.to_vec(),
+        };
+        match self
+            .ingestor
+            .ingest_one(source_frame)
+            .context("durably appending Upstox raw frame through shared ingress")?
+        {
+            IngestOutcome::Committed { .. } => {}
+            IngestOutcome::DuplicateSkipped
+            | IngestOutcome::ConflictRejected
+            | IngestOutcome::MalformedRejected => {
+                bail!("shared ingress refused a live Upstox frame; capture cannot continue")
+            }
+        }
+        self.frame_count = self.ingestor.checkpoint().committed_frames;
 
         match decode_feed_response_diagnostic(payload) {
             Ok(diagnostic) => {
@@ -344,7 +364,7 @@ impl Session {
         self.observations.get_ref().sync_all()?;
         self.lifecycle.flush()?;
         self.lifecycle.get_ref().sync_all()?;
-        drop(self.journal);
+        drop(self.ingestor);
         let summary = verify_journal(&self.journal_path).context("verifying Upstox raw journal")?;
         let mut source = File::open(&self.journal_path)?;
         let mut hasher = Sha256::new();
@@ -642,8 +662,14 @@ async fn main() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ConnectionFailure, //
+        Args, //
+        ConnectionFailure,
+        DurableIngestor,
+        FeedMode,
         OversizedFrame,
+        SequencePolicy,
+        Session,
+        UPSTOX_SOURCE_ID,
         classify_failure,
         validate_frame_size,
     };
@@ -687,5 +713,107 @@ mod tests {
             message, "Upstox frame of 9 bytes exceeds the archive payload limit of 8 bytes",
             "the diagnostic names both sizes exactly"
         );
+    }
+    #[test]
+    fn recorder_writes_one_shared_ingress_journal() {
+        let root = std::env::temp_dir().join(format!(
+            "nirnay-upstox-ingress-{}-{}",
+            std::process::id(),
+            "one-journal"
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("temp root");
+        let args = Args {
+            instrument_file: root.join("watchlist.txt"),
+            mode: FeedMode::Full,
+            output_root: root.clone(),
+            max_reconnects: 0,
+            entitlement_ref: "entitlement:test:upstox".to_owned(),
+        };
+        let mut session = Session::create(&args, vec!["NSE_EQ|TEST".to_owned()])
+            .expect("session with shared ingress");
+        session
+            .frame(b"original-protobuf-bytes", 100, 1)
+            .expect("first frame");
+        session
+            .frame(b"second-original-bytes", 200, 2)
+            .expect("second frame");
+        assert_eq!(
+            session.frame_count, 2,
+            "capture sequence tracks committed frames"
+        );
+        let frames = market_archive::scan_journal(&session.journal_path)
+            .expect("journal scan")
+            .frames;
+        assert_eq!(frames.len(), 2, "exactly one raw journal has two records");
+        assert!(
+            frames.iter().all(|frame| frame.source == UPSTOX_SOURCE_ID),
+            "journal frames carry the Upstox ingress source identity"
+        );
+        let files: Vec<_> = std::fs::read_dir(&session.run_dir)
+            .expect("session files")
+            .filter_map(|entry| entry.ok().map(|entry| entry.file_name()))
+            .collect();
+        assert_eq!(
+            files
+                .iter()
+                .filter(|name| name.to_string_lossy().ends_with(".jsonl"))
+                .count(),
+            3,
+            "raw, decoded and lifecycle journals are distinct; no duplicate raw journal"
+        );
+        let path = session.finish().expect("session manifest");
+        assert!(
+            path.join("manifest.json").exists(),
+            "session manifest is preserved"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn recorder_journal_restart_replays_without_new_commits() {
+        let root = std::env::temp_dir().join(format!(
+            "nirnay-upstox-ingress-{}-{}",
+            std::process::id(),
+            "restart"
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("temp root");
+        let args = Args {
+            instrument_file: root.join("watchlist.txt"),
+            mode: FeedMode::Ltpc,
+            output_root: root.clone(),
+            max_reconnects: 0,
+            entitlement_ref: "entitlement:test:upstox".to_owned(),
+        };
+        let mut session = Session::create(&args, vec!["NSE_EQ|TEST".to_owned()])
+            .expect("session with shared ingress");
+        session.frame(b"first", 100, 1).expect("first frame");
+        let journal_path = session.journal_path.clone();
+        session.finish().expect("manifest");
+
+        let mut replay = market_archive::JournalReplaySource::open(&journal_path, UPSTOX_SOURCE_ID)
+            .expect("replay source");
+        let mut ingestor = DurableIngestor::resume(
+            &journal_path,
+            UPSTOX_SOURCE_ID,
+            SequencePolicy::CaptureSession,
+        )
+        .expect("restarted ingestor");
+        assert_eq!(
+            ingestor.checkpoint().committed_frames,
+            1,
+            "restart recovers the committed frame count"
+        );
+        let summary = ingestor.replay(&mut replay).expect("replay");
+        assert_eq!(
+            summary.committed, 0,
+            "restart does not re-commit captured frames"
+        );
+        assert_eq!(
+            summary.duplicates, 1,
+            "replay resolves the committed frame as a duplicate"
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
