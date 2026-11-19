@@ -222,7 +222,6 @@ impl BrokerAdapter for SimulatedBroker {
                     broker_event_id: ack_id.clone(),
                     sequence: self.sequence,
                 });
-                let mut last = ack_id;
                 for (quantity, price) in fills {
                     let event_id = self.event_id();
                     let execution_id = format!("exec-{}", self.sequence);
@@ -234,12 +233,11 @@ impl BrokerAdapter for SimulatedBroker {
                         broker_event_id: event_id.clone(),
                         sequence: self.sequence,
                     });
-                    last = event_id;
                 }
                 Ok(SubmissionOutcome::Acknowledged(SubmissionAck {
                     submission_attempt_id: attempt_id,
                     broker_order_id,
-                    broker_event_id: last,
+                    broker_event_id: ack_id,
                     accepted_at_ns: i64::try_from(self.sequence).unwrap_or(i64::MAX),
                 }))
             }

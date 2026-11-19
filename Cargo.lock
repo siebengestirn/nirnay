@@ -1291,6 +1291,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "paper-runner"
+version = "0.1.0"
+dependencies = [
+ "authoritative-oms",
+ "broker-adapter",
+ "market-event",
+ "market-kernel",
+ "ops-runtime",
+ "risk-authority",
+ "risk-engine",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "strategy-runtime",
+ "tempfile",
+ "trading-core",
+]
+
+[[package]]
 name = "pem-rfc7468"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
