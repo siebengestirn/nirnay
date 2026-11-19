@@ -58,6 +58,12 @@ The historical conformance report records `gate_passed: false` with empty
 conformance and fixture lists. Do not cite predecessor SBE/BOOK/REPLAY claims as
 verified evidence.
 
+The SBE decoder and golden corpus are inventoried in
+`evidence/SBE-GAP-2-INVENTORY-2026-11-19.md`. Each obligation is mapped to a
+proposed active Rust home and an independent differential test. That inventory
+is a scope record, not a promotion: no file has been copied and `extras/`
+retirement remains blocked until every obligation has an active home.
+
 ## Removed to the external snapshot
 
 The following were removed from the active tree because they were auxiliary,
