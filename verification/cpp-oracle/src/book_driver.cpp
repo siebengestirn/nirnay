@@ -19,8 +19,7 @@ void print_levels(const std::vector<eng::Level>& levels, std::ostream& out) {
       out << ",";
     }
     first = false;
-    out << "{\"price\":" << level.price.raw
-        << ",\"quantity\":" << level.quantity.raw << "}";
+    out << "{\"price\":" << level.price.raw << ",\"quantity\":" << level.quantity.raw << "}";
   }
 }
 
@@ -43,8 +42,7 @@ int main() {
       const eng::Side side = side_text == "buy" ? eng::Side::Buy : eng::Side::Sell;
       try {
         if (op == "abs") {
-          book.apply(side, eng::Price(price),
-                     eng::QuantityChange::Abs(eng::Quantity(value)));
+          book.apply(side, eng::Price(price), eng::QuantityChange::Abs(eng::Quantity(value)));
         } else {
           book.apply(side, eng::Price(price),
                      eng::QuantityChange::Delta(eng::QuantityDelta(value)));

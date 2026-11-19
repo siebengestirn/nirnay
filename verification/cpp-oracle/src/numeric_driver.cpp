@@ -36,8 +36,8 @@ int main() {
         uint16_t from = 0;
         uint16_t to = 0;
         stream >> raw >> from >> to;
-        const int64_t value = eng::rescale_exact(
-            raw, static_cast<uint8_t>(from), static_cast<uint8_t>(to));
+        const int64_t value =
+            eng::rescale_exact(raw, static_cast<uint8_t>(from), static_cast<uint8_t>(to));
         std::cout << "rescale " << value << "\n";
       } else {
         std::cerr << "unknown op: " << op << "\n";
