@@ -43,7 +43,8 @@ Every claim/capability record must carry two independent fields:
 Rules:
 - The two fields are independent: `implemented` maturity with `unverified` status is the normal baseline state; maturity never implies verification.
 - The nightly-run claim is `unverified` by owner ruling and remains so until a committed run id/attestation bound to a SHA exists (§1).
-correction).
+- `falsified` requires the recorded falsifier to have failed; a code-traced concern stays
+  `unverified`, not `falsified` (R2 B4 evidence-language correction).
 
 ### 3.2 Structured evidence object (required for every non-unverified state)
 
@@ -53,12 +54,21 @@ A record whose `verification_status ≠ unverified` must carry a structured evid
 - `verified_at` — recorded date/time. Self-declared; insufficient on its own (see `execution_attestation`).
 - `tests[]` — named tests referenced as `path::test_name` (reusing the citation format in `check_repo.py:180-187`), each of which must exist **and be declared relevant**.
 - `test_relevance[]` — a **declared mapping from the claim to each cited test**: for every `tests[]` entry, an explicit statement of which part of the claim's falsifier that test exercises. A real but unrelated `path::test_name` fails this requirement (challenger B-6).
-B-6).
+- `execution_attestation` — structured proof that the command ran: a named hosted `run_id` **or**
+  a recorded command-output reference, plus `exit_status`, `test_counts` and the `commit` it ran
+  against. This attests execution; `command` + `verified_at` alone do not (challenger B-6).
 - `environment` — toolchain/versions/target (the baseline `verification-policy.md:15` asks for commit SHA, toolchain, target triple, command, exit status, test counts, artifact hashes).
 - `limitations` — narrative scope/limits (e.g. absence of anchor/real data, ADR-M1-010). This is **not** the enforcement point for the process-isolation precondition.
 - `isolation_attested` — a **structured flag** for the process-isolation precondition (Challenge 1), replacing free-text prose as the machine-checkable field: `isolation_posture ∈ {not_applicable, in_process, separate_process_administered}` plus `isolation_attested ∈ {true, false}`. An authorization claim whose precondition is a separately administered process with its own signer key policy is `unverified` unless `isolation_attested = true` with `isolation_posture = separate_process_administered`; `in_process` cannot satisfy CLM-010's independence claim.
 
-machine-enforced.
+**Residual (challenger re-verification N-3):** the flag and posture are asserted by the claimant;
+  no field in this evidence object independently attests that a separate workload identity
+  existed. `execution_attestation` proves a command ran, not that isolation was real. A determined
+  claimant can set `isolation_attested=true, isolation_posture=separate_process_administered` with
+  no external proof. Required future control: bind the posture to an independently attested source
+  (anchor/authenticated run metadata from the isolated workload). Until that exists the flag is a
+  **self-declaration with residual forgery risk** (M1-EV-INV-011); no M1 claim may call isolation
+  machine-enforced.
 - `commit` — the SHA the evidence was produced against.
 
 Absent any required element — including a missing relevance mapping, missing execution attestation, or an unsatisfied structured isolation flag — the record is treated as `unverified` (fail closed, §3.3).
@@ -133,7 +143,11 @@ Challenge 6 (evidence) is primary here.
 
 ## 8. Rejection conditions
 
-evidence.
+This decision is revised if: (a) the owner adopts a different verification vocabulary or assigns a
+  different authoritative registry; (b) hosted CI/attestation becomes attainable, changing which
+  states are reachable (owner decision, baseline §13 item 10); (c) an independent owner rules that
+  a specific claim's falsifier has failed, moving it to `falsified`; (d) a security/authority
+  decision (Architecture ADR-M1-002) changes what counts as sufficient isolation evidence.
 
 **Recorded unresolved disagreements (not resolved by vote):** Three vocabularies coexist (`capabilities.json`, `verification-policy.md`, `production-readiness-matrix.md`); this ADR proposes one collapse but does not delete the others (A7-001/§3.1). The nightly run is downgraded by owner ruling, not by evidence analysis (§1, Amendment A §A9). R2's epistemic challenge — that "reproducible scenarios" often means B/C-traced with proposed tests, not E-reproduced (R2 §E, Amendment A §A7) — is adopted as the `unverified`-by-default rule; whether D/E/F is attainable on the current account remains an open owner decision (baseline §13 item 10). The challenger's B-6 sufficiency defect is resolved at the design level (§3.2/§3.3, M1-EV-INV-009/010), but **the enforcement timeline — who owns and when the future gate is built — is referred to owner ruling** (challenger §F.6/§F.8); until then M1-EV-INV-004 is a design rule, not an enforced control. These are recorded, not resolved by vote.
 

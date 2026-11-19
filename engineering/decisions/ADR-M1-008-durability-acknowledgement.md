@@ -135,7 +135,10 @@ Challenges 4 (durability) is primary here. The other challenges are owned by oth
 4. **Adversarial torn tail masquerading as a repairable crash.** An attacker appends a data-bearing partial frame to the account journal; `repair_tail()` silently discards it and reports only `repaired_tail_bytes` (A3-04). Under M1-DUR-INV-003 this is an incident with quarantined bytes, not an invisible truncation.
 5. **UNKNOWN order treated as D1-committed.** After SUBMIT timeout the OMS marks DISPATCHING→UNKNOWN (`durable_oms.py:238-256`); no broker query exists (F-A5-04). Representing this as "committed" or "recovered" is forbidden; it is an uncertain outcome requiring reconciliation evidence (Challenge 2).
 6. **Per-partition success summed into account-global durability.** Two partition replays each pass their local checks while aggregate `gross_exposure`/`daily_pnl` breach (`engine.rs:955-971`; R1-Q3/A4 R1-C). M1-DUR-INV-007 forbids deriving an account-global ACK from partition-local ones.
-(M1-DUR-INV-005).
+7. **Fabricated "verified" durability claim by JSON edit.** A claim is set to `status: verified`
+  in `claims/ledger.json` without evidence; `check_repo.py:174-187` would police it but the
+  baseline has 13/13 `implemented` and zero evidence (A7-001). ADR-M1-011 closes this; this ADR
+  forbids lowering the level by registry edits (M1-DUR-INV-005).
 
 ---
 
