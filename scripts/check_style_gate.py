@@ -73,7 +73,7 @@ MIN_TESTS: dict[str, int] = {
     "scripts/check_rust_style.py": 13,
     "scripts/check_source_style.py": 26,
     "scripts/check_style_gate.py": 7,
-    "scripts/check_prose_style.py": 10,
+    "scripts/check_prose_style.py": 12,
 }
 
 
