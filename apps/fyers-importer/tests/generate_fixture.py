@@ -30,14 +30,17 @@ def main() -> None:
     journal = HashChainJournal(journal_path)
     records = [
         {"schema_version": 1, "event_type": "socket_connected", "capture_sequence": 1,
-         "symbol": None, "payload": {"attempt": 1}},
+         "received_utc_ns": 1794372000000000001, "symbol": None, "payload": {"attempt": 1}},
         {"schema_version": 1, "event_type": "market_data", "capture_sequence": 2,
-         "symbol": "SBIN-EQ", "payload": {"type": "sf", "ltp": 812.5}},
+         "received_utc_ns": 1794372000000000002, "symbol": "SBIN-EQ",
+         "payload": {"type": "sf", "ltp": 812.5}},
         {"schema_version": 1, "event_type": "gap", "capture_sequence": 4,
-         "symbol": None, "payload": {"first_missing_local_sequence": 3,
-                                     "last_missing_local_sequence": 3}},
+         "received_utc_ns": 1794372000000000004, "symbol": None,
+         "payload": {"first_missing_local_sequence": 3,
+                     "last_missing_local_sequence": 3}},
         {"schema_version": 1, "event_type": "market_data", "capture_sequence": 5,
-         "symbol": "TCS-EQ", "payload": {"type": "sf", "ltp": 4012.0}},
+         "received_utc_ns": 1794372000000000005, "symbol": "TCS-EQ",
+         "payload": {"type": "sf", "ltp": 4012.0}},
     ]
     for record in records:
         journal.append(record)

@@ -194,9 +194,9 @@
     },
     {
       "id": "CAP-024",
-      "name": "Version-bound canonical event projection (Upstox slice)",
+      "name": "Version-bound canonical event projection (Upstox and FYERS)",
       "status": "implemented",
-      "evidence_status": "quantlab normalize can bind a projection to an exact reference content revision, record normalizer and event-schema versions, require source_frame_sha256 for archived observations, leave unknown instruments unresolved, and replay byte-identically in a fresh process. Four tests cover these properties; no competing Rust event model or live path is introduced.",
+      "evidence_status": "quantlab normalize binds both Upstox decoded frames and FYERS SDK callback journals to an exact reference revision, records normalizer and event-schema versions, requires source_frame_sha256 for archived observations, leaves unknown instruments unresolved, and replays byte-identically in a fresh process. Seven projection tests cover these properties; no competing Rust event model or live path is introduced.",
       "owner": "research-data",
       "scope": "research/python/src/quantlab/cli.py; research/python/tests/test_canonical_projection.py"
     }
