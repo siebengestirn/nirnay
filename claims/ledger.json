@@ -214,6 +214,18 @@
         ]
       },
       "falsifier": "A projection accepts a drifted instrument map, infers an identity for an unknown instrument, omits a source-frame hash when bound, or produces different bytes on a fresh-process replay."
+    },
+    {
+      "id": "CLM-019",
+      "statement": "The paper engine consumes a canonical projection only with explicit provider selection, resolved instruments and source-frame lineage; optional reference binding must match the projection, and fresh-process replay is byte-identical.",
+      "status": "implemented",
+      "scope": {
+        "packages": [
+          "research/python/src/quantlab/cli.py",
+          "research/python/tests/test_paper_projection_consumption.py"
+        ]
+      },
+      "falsifier": "A replay accepts unresolved instruments, unlinked events, a mismatched provider or reference binding, or produces different bytes in a fresh process."
     }
   ]
 }
