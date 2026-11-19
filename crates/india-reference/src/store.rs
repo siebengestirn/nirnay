@@ -63,6 +63,12 @@ pub enum StoreError {
     Snapshot(#[from] crate::snapshot::SnapshotError),
     #[error("reference source lineage could not be resolved: {0}")]
     Lineage(String),
+    #[error("publication outcome is unknown: {0}; the writer is poisoned and must be reopened")]
+    UncertainCommit(String),
+    #[error("this store handle is poisoned by an uncertain publication; reopen to resolve")]
+    Poisoned,
+    #[error("publication storage is full: {0}")]
+    StorageFull(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -70,6 +76,11 @@ enum FailPoint {
     BeforeCommit,
     AfterCommit,
     RestoreSync,
+    ActiveDuringTransaction,
+    ActiveAfterInsertBeforeCommit,
+    ActiveBeforeCommit,
+    ActiveAfterCommit,
+    ActiveStorageFull,
 }
 
 #[cfg(debug_assertions)]
@@ -83,6 +94,11 @@ fn inject(point: FailPoint) -> Result<(), StoreError> {
         FailPoint::BeforeCommit => 1,
         FailPoint::AfterCommit => 2,
         FailPoint::RestoreSync => 3,
+        FailPoint::ActiveDuringTransaction => 4,
+        FailPoint::ActiveAfterInsertBeforeCommit => 5,
+        FailPoint::ActiveBeforeCommit => 6,
+        FailPoint::ActiveAfterCommit => 7,
+        FailPoint::ActiveStorageFull => 8,
     };
     if FAIL_POINT.with(|cell| cell.get()) == code {
         return Err(StoreError::BadPath(format!(
@@ -103,6 +119,11 @@ pub fn set_fail_point(point: Option<&str>) {
         Some("before_commit") => 1,
         Some("after_commit") => 2,
         Some("restore_sync") => 3,
+        Some("active_during_transaction") => 4,
+        Some("active_after_insert_before_commit") => 5,
+        Some("active_before_commit") => 6,
+        Some("active_after_commit") => 7,
+        Some("active_storage_full") => 8,
         _ => 0,
     };
     FAIL_POINT.with(|cell| cell.set(code));
@@ -657,6 +678,9 @@ pub struct DurableReferenceStore {
     path: PathBuf,
     archive: crate::archive::SourceArchive,
     archive_timeout_ms: u64,
+    /// Set when a commit outcome cannot be proven. The handle then refuses
+    /// all operations; reopening resolves the publication by key.
+    poisoned: bool,
 }
 
 fn contract_hex(bytes: &[u8]) -> String {
@@ -666,6 +690,27 @@ fn contract_hex(bytes: &[u8]) -> String {
         let _ = std::fmt::Write::write_fmt(&mut text, format_args!("{byte:02x}"));
     }
     text
+}
+
+/// Commit a publication transaction. A busy/locked result is a known rollback;
+/// any other commit failure leaves the outcome unknown and poisons the writer.
+fn commit_publication(transaction: rusqlite::Transaction<'_>) -> Result<(), StoreError> {
+    match transaction.commit() {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            let known_rollback = matches!(
+                &error,
+                rusqlite::Error::SqliteFailure(detail, _)
+                    if detail.code == ErrorCode::DatabaseBusy
+                        || detail.code == ErrorCode::DatabaseLocked
+            );
+            if known_rollback {
+                Err(StoreError::Sqlite(error))
+            } else {
+                Err(StoreError::UncertainCommit(error.to_string()))
+            }
+        }
+    }
 }
 
 fn read_head(connection: &Connection) -> Result<Option<u64>, StoreError> {
@@ -783,6 +828,7 @@ impl DurableReferenceStore {
             path,
             archive,
             archive_timeout_ms,
+            poisoned: false,
         })
     }
 
@@ -805,6 +851,9 @@ impl DurableReferenceStore {
         snapshot: &crate::snapshot::ReferenceSnapshot,
         expected_parent: Option<u64>,
     ) -> Result<PublishOutcome, StoreError> {
+        if self.poisoned {
+            return Err(StoreError::Poisoned);
+        }
         snapshot.validate()?;
         // Lineage must resolve before any write: an unresolvable source hash
         // must never acquire a revision or a head position.
@@ -819,6 +868,7 @@ impl DurableReferenceStore {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        inject(FailPoint::ActiveDuringTransaction)?;
         // An exact key replay is resolved before the parent check: a retry of
         // an acknowledged delivery must not be turned into a stale-parent
         // error by its own earlier success.
@@ -866,7 +916,18 @@ impl DurableReferenceStore {
                         .to_owned(),
                 ));
             }
-            transaction.commit()?;
+            if let Err(error) = commit_publication(transaction) {
+                if matches!(error, StoreError::UncertainCommit(_)) {
+                    self.poisoned = true;
+                }
+                return Err(error);
+            }
+            if inject(FailPoint::ActiveAfterCommit).is_err() {
+                self.poisoned = true;
+                return Err(StoreError::UncertainCommit(
+                    "replay committed but the post-commit step failed".to_owned(),
+                ));
+            }
             return Ok(PublishOutcome {
                 revision_id,
                 replayed: true,
@@ -878,6 +939,11 @@ impl DurableReferenceStore {
                 expected: format!("{expected_parent:?}"),
                 actual: head.map(|value| value.to_string()),
             });
+        }
+        if inject(FailPoint::ActiveStorageFull).is_err() {
+            return Err(StoreError::StorageFull(
+                "injected full-disk condition at revision insert".to_owned(),
+            ));
         }
         let revision_id = head.map_or(0, |value| value + 1);
         transaction.execute(
@@ -905,7 +971,20 @@ impl DurableReferenceStore {
                 params![to_db_id(revision_id)?],
             )?;
         }
-        transaction.commit()?;
+        inject(FailPoint::ActiveAfterInsertBeforeCommit)?;
+        inject(FailPoint::ActiveBeforeCommit)?;
+        if let Err(error) = commit_publication(transaction) {
+            if matches!(error, StoreError::UncertainCommit(_)) {
+                self.poisoned = true;
+            }
+            return Err(error);
+        }
+        if inject(FailPoint::ActiveAfterCommit).is_err() {
+            self.poisoned = true;
+            return Err(StoreError::UncertainCommit(
+                "publication committed but the post-commit step failed".to_owned(),
+            ));
+        }
         Ok(PublishOutcome {
             revision_id,
             replayed: false,
@@ -914,6 +993,9 @@ impl DurableReferenceStore {
 
     /// The committed head revision id, if any.
     pub fn head(&self) -> Result<Option<u64>, StoreError> {
+        if self.poisoned {
+            return Err(StoreError::Poisoned);
+        }
         read_head(&self.connection)
     }
 
@@ -965,11 +1047,17 @@ impl DurableReferenceStore {
         &self,
         id: u64,
     ) -> Result<Option<crate::snapshot::ReferenceSnapshot>, StoreError> {
+        if self.poisoned {
+            return Err(StoreError::Poisoned);
+        }
         Ok(self.revision_with_meta(id)?.map(|row| row.snapshot))
     }
 
     /// Decode and fully verify one revision with its metadata.
     pub fn revision_with_meta(&self, id: u64) -> Result<Option<StoredRevision>, StoreError> {
+        if self.poisoned {
+            return Err(StoreError::Poisoned);
+        }
         let raw: Option<RawContractRevision> = self
             .connection
             .query_row(
@@ -1011,6 +1099,9 @@ impl DurableReferenceStore {
 
     /// Verify counts, contiguous ids, parent links, head and every payload.
     pub fn verify_full(&self) -> Result<VerificationReport, StoreError> {
+        if self.poisoned {
+            return Err(StoreError::Poisoned);
+        }
         let revision_count: i64 =
             self.connection
                 .query_row("SELECT count(*) FROM reference_revision", [], |row| {
@@ -1047,6 +1138,9 @@ impl DurableReferenceStore {
 
     /// The fully verified snapshot at the committed head.
     pub fn head_snapshot(&self) -> Result<Option<crate::snapshot::ReferenceSnapshot>, StoreError> {
+        if self.poisoned {
+            return Err(StoreError::Poisoned);
+        }
         match self.head()? {
             Some(id) => self.revision(id),
             None => Ok(None),
@@ -1060,6 +1154,9 @@ impl DurableReferenceStore {
         t_valid: Date,
         t_recorded: Timestamp,
     ) -> Result<Vec<crate::snapshot::ListingStateRecord>, StoreError> {
+        if self.poisoned {
+            return Err(StoreError::Poisoned);
+        }
         let Some(snapshot) = self.head_snapshot()? else {
             return Ok(Vec::new());
         };

@@ -1700,3 +1700,170 @@ fn rsv12_performance_baseline_records_sizes_and_timings() {
         "the measured store contains one verified revision"
     );
 }
+
+#[test]
+#[ignore = "child-only worker invoked by parent with --ignored"]
+fn child_active_publication_boundary() {
+    let root = std::env::var_os("NIRNAY_ACTIVE_RS08_ROOT").expect("child requires root path");
+    let point = std::env::var("NIRNAY_ACTIVE_RS08_POINT").expect("child requires fail point");
+    india_reference::set_fail_point(Some(&point));
+    let snapshot = contract_snapshot("rsv08-child");
+    let mut store = DurableReferenceStore::open(PathBuf::from(root)).expect("child store opens");
+    let _ = store.publish(&snapshot, None);
+    // Exit without unwinding: the process terminates immediately after the
+    // injected boundary, which is the failure the parent must recover from.
+    std::process::exit(0);
+}
+
+#[test]
+fn rsv08_active_process_termination_at_publication_boundaries() {
+    for (point, committed) in [
+        ("active_during_transaction", false),
+        ("active_after_insert_before_commit", false),
+        ("active_before_commit", false),
+        ("active_after_commit", true),
+    ] {
+        let root = contract_root(&format!("rsv08-child-{point}"));
+        let child = Command::new(std::env::current_exe().expect("test binary"))
+            .arg("--ignored")
+            .arg("child_active_publication_boundary")
+            .env("NIRNAY_ACTIVE_RS08_ROOT", &root)
+            .env("NIRNAY_ACTIVE_RS08_POINT", point)
+            .output()
+            .expect("spawn active-store crash worker");
+        assert!(
+            child.status.success(),
+            "active-store crash worker at {point} exited normally"
+        );
+        set_fail_point(None);
+        let reopened = DurableReferenceStore::open(&root).expect("store reopens");
+        let expected_head = if committed { Some(0) } else { None };
+        assert_eq!(
+            reopened.head().expect("head reads after reopen"),
+            expected_head,
+            "process termination at {point} leaves the expected head"
+        );
+        let expected_count = u64::from(committed);
+        assert_eq!(
+            reopened
+                .verify_full()
+                .expect("full verification")
+                .revision_count,
+            expected_count,
+            "process termination at {point} leaves the expected revision count"
+        );
+    }
+}
+
+#[test]
+fn rsv08_active_crash_before_commit_leaves_no_publication() {
+    let root = contract_root("rsv08-before-commit");
+    {
+        let mut store = DurableReferenceStore::open(&root).expect("store opens");
+        set_fail_point(Some("active_before_commit"));
+        let result = store.publish(&contract_snapshot("rsv08-before"), None);
+        set_fail_point(None);
+        assert!(
+            result.is_err(),
+            "injected failure before commit is returned"
+        );
+    }
+    let reopened = DurableReferenceStore::open(&root).expect("store reopens");
+    assert_eq!(
+        reopened.head().expect("head"),
+        None,
+        "no head was published"
+    );
+    assert_eq!(
+        reopened.verify_full().expect("verify").revision_count,
+        0,
+        "no revision was published"
+    );
+}
+
+#[test]
+fn rsv08_uncertain_commit_poisons_writer_and_reopen_resolves_by_key() {
+    let root = contract_root("rsv08-uncertain");
+    let snapshot = contract_snapshot("rsv08-uncertain");
+    {
+        let mut store = DurableReferenceStore::open(&root).expect("store opens");
+        set_fail_point(Some("active_after_commit"));
+        let result = store.publish(&snapshot, None);
+        set_fail_point(None);
+        assert!(
+            matches!(result, Err(StoreError::UncertainCommit(_))),
+            "a post-commit failure is reported as an unknown outcome"
+        );
+        assert!(
+            matches!(store.head(), Err(StoreError::Poisoned)),
+            "the poisoned handle refuses reads"
+        );
+        assert!(
+            matches!(store.publish(&snapshot, None), Err(StoreError::Poisoned)),
+            "the poisoned handle refuses further writes"
+        );
+    }
+    let mut reopened = DurableReferenceStore::open(&root).expect("store reopens");
+    let resolved = reopened
+        .publish(&snapshot, None)
+        .expect("key resolves on reopen");
+    assert_eq!(
+        resolved.revision_id, 0,
+        "the committed revision is reported"
+    );
+    assert!(resolved.replayed, "the retry resolves by publication key");
+    assert_eq!(
+        reopened.verify_full().expect("verify").revision_count,
+        1,
+        "exactly one revision exists"
+    );
+}
+
+#[test]
+fn rsv08_full_disk_fails_closed_and_reopen_recovers() {
+    let root = contract_root("rsv08-full");
+    let snapshot = contract_snapshot("rsv08-full");
+    {
+        let mut store = DurableReferenceStore::open(&root).expect("store opens");
+        set_fail_point(Some("active_storage_full"));
+        let result = store.publish(&snapshot, None);
+        set_fail_point(None);
+        assert!(
+            matches!(result, Err(StoreError::StorageFull(_))),
+            "an injected full-disk failure is reported explicitly"
+        );
+        assert_eq!(store.head().expect("head"), None, "no head was published");
+    }
+    let mut reopened = DurableReferenceStore::open(&root).expect("store reopens after recovery");
+    let resolved = reopened
+        .publish(&snapshot, None)
+        .expect("publication retries");
+    assert_eq!(resolved.revision_id, 0, "the retry publishes revision zero");
+    assert!(!resolved.replayed, "the failed attempt did not commit");
+    assert_eq!(
+        reopened.verify_full().expect("verify").revision_count,
+        1,
+        "exactly one revision exists"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn rsv08_readonly_path_fails_closed() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = tempfile::tempdir().expect("tempdir");
+    let root = directory.path().join("readonly-root");
+    std::fs::create_dir_all(&root).expect("root exists before locking it down");
+    {
+        let mut archive = SourceArchive::create_new(root.join("archive")).expect("archive");
+        archive
+            .put_source(CONTRACT_SOURCE_BYTES, "nse.cash", "v1")
+            .expect("source archived");
+    }
+    std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o555))
+        .expect("root is read-only");
+    let result = DurableReferenceStore::open(&root);
+    let _ = std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o755));
+    assert!(result.is_err(), "an unwritable store path fails closed");
+}
