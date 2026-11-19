@@ -577,6 +577,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "fundamental-domain"
+version = "0.1.0"
+dependencies = [
+ "jiff",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror",
+]
+
+[[package]]
+name = "fundamental-tools"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "fundamental-domain",
+ "jiff",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "futures-channel"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"

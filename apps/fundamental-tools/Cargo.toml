@@ -1,0 +1,27 @@
+[package]
+name = "fundamental-tools"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+description = "Validation tools for Nirnay corporate financial fact datasets"
+
+[[bin]]
+name = "nirnay-fundamental"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+fundamental-domain.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+jiff.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

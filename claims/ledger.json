@@ -176,6 +176,19 @@
         ]
       },
       "falsifier": "An ingested frame changes its payload bytes or metadata, a foreign-source frame is committed, a duplicate produces a second journal record, a gap or malformed frame is silently ignored, a restart loses the last committed position or payload hash, or an unknown instrument is assigned a canonical identity in the ingress stage."
+    },
+    {
+      "id": "CLM-016",
+      "statement": "The fundamental-data validation path rejects malformed company identities and financial facts, validates source-document SHA-256 syntax and evidence locations, validates append-only revisions and derived-fact dependency lineage, and selects only revisions whose publication, observation, ingestion, and required predecessor/input records are known at the requested point in time.",
+      "status": "implemented",
+      "scope": {
+        "packages": [
+          "crates/fundamental-domain",
+          "apps/fundamental-tools",
+          "schemas/fundamentals"
+        ]
+      },
+      "falsifier": "A malformed fact or identity is accepted; an invalid document digest or evidence locator passes; a duplicate, broken or cyclic revision/dependency chain passes; a future or unknown-publication fact is selected in a historical as-of view; or the CLI accepts an overlong, aggregate-byte-over-limit, blank, CRLF, BOM-prefixed or torn JSONL record."
     }
   ]
 }

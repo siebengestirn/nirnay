@@ -1,0 +1,488 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nirnay.dev/schemas/fundamentals/financial-fact.v1.schema.json",
+  "title": "Nirnay financial fact v1",
+  "description": "One reported or derived financial fact revision with source evidence and knowledge timestamps. Exact decimal coefficients are strings; binary floating point is forbidden.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "fact_id",
+    "fact_key",
+    "revision",
+    "supersedes",
+    "company_id",
+    "concept",
+    "period",
+    "statement_scope",
+    "accounting_basis",
+    "dimensions",
+    "unit",
+    "value",
+    "published_at",
+    "observed_at",
+    "ingested_at",
+    "origin"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "fact_id": {
+      "$ref": "#/$defs/id"
+    },
+    "fact_key": {
+      "$ref": "#/$defs/hash"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "supersedes": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "company_id": {
+      "$ref": "#/$defs/id"
+    },
+    "concept": {
+      "$ref": "#/$defs/concept"
+    },
+    "period": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "as_of"
+          ],
+          "properties": {
+            "kind": {
+              "const": "instant"
+            },
+            "as_of": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "start",
+            "end"
+          ],
+          "properties": {
+            "kind": {
+              "const": "duration"
+            },
+            "start": {
+              "type": "string",
+              "format": "date"
+            },
+            "end": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        }
+      ]
+    },
+    "statement_scope": {
+      "enum": [
+        "standalone",
+        "consolidated"
+      ]
+    },
+    "accounting_basis": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "ind_as",
+                "indian_gaap",
+                "ifrs",
+                "us_gaap"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "name"
+          ],
+          "properties": {
+            "kind": {
+              "const": "other"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      ]
+    },
+    "dimensions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "axis",
+          "member"
+        ],
+        "properties": {
+          "axis": {
+            "$ref": "#/$defs/expanded_name"
+          },
+          "member": {
+            "$ref": "#/$defs/expanded_name"
+          }
+        }
+      }
+    },
+    "unit": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "currency",
+            "magnitude"
+          ],
+          "properties": {
+            "kind": {
+              "const": "currency"
+            },
+            "currency": {
+              "$ref": "#/$defs/currency"
+            },
+            "magnitude": {
+              "enum": [
+                "unit",
+                "thousand",
+                "lakh",
+                "million",
+                "crore",
+                "billion"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "shares",
+                "ratio",
+                "percent",
+                "count"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "currency"
+          ],
+          "properties": {
+            "kind": {
+              "const": "per_share"
+            },
+            "currency": {
+              "$ref": "#/$defs/currency"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "namespace_uri",
+            "local_name"
+          ],
+          "properties": {
+            "kind": {
+              "const": "other"
+            },
+            "namespace_uri": {
+              "type": "string",
+              "minLength": 1
+            },
+            "local_name": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      ]
+    },
+    "value": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coefficient",
+        "scale"
+      ],
+      "properties": {
+        "coefficient": {
+          "type": "string",
+          "pattern": "^-?(0|[1-9][0-9]{0,38})$"
+        },
+        "scale": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18
+        }
+      }
+    },
+    "published_at": {
+      "oneOf": [
+        {
+          "type": "string",
+          "format": "date-time"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "observed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "ingested_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "origin": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "source_id",
+            "filing_id",
+            "document_sha256",
+            "locator"
+          ],
+          "properties": {
+            "kind": {
+              "const": "reported"
+            },
+            "source_id": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._-]*$"
+            },
+            "filing_id": {
+              "$ref": "#/$defs/id"
+            },
+            "document_sha256": {
+              "$ref": "#/$defs/hash"
+            },
+            "locator": {
+              "$ref": "#/$defs/locator"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "method_id",
+            "method_version",
+            "input_fact_ids",
+            "derivation_sha256"
+          ],
+          "properties": {
+            "kind": {
+              "const": "derived"
+            },
+            "method_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "method_version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "input_fact_ids": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/id"
+              }
+            },
+            "derivation_sha256": {
+              "$ref": "#/$defs/hash"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "expanded_name": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "namespace_uri",
+        "local_name"
+      ],
+      "properties": {
+        "namespace_uri": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:[^\\s]+$"
+        },
+        "local_name": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+        }
+      }
+    },
+    "concept": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/expanded_name"
+        }
+      }
+    },
+    "locator": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "fact_id",
+            "context_ref",
+            "unit_ref"
+          ],
+          "properties": {
+            "kind": {
+              "const": "xbrl"
+            },
+            "fact_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "context_ref": {
+              "type": "string",
+              "minLength": 1
+            },
+            "unit_ref": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "page",
+            "table",
+            "row_label",
+            "column_label"
+          ],
+          "properties": {
+            "kind": {
+              "const": "pdf_table"
+            },
+            "page": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "table": {
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "row_label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "column_label": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "pointer"
+          ],
+          "properties": {
+            "kind": {
+              "const": "json_pointer"
+            },
+            "pointer": {
+              "type": "string",
+              "pattern": "^(|/(~[01]|[^~/])*)$"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

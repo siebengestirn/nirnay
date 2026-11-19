@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nirnay.dev/schemas/fundamentals/company-identity.v1.schema.json",
+  "title": "Nirnay company identity observation v1",
+  "description": "Source-backed company identity with effective time and knowledge time. Corrections append revisions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "record_id",
+    "company_id",
+    "identity_key",
+    "revision",
+    "supersedes",
+    "cin",
+    "legal_name",
+    "valid_from",
+    "valid_to",
+    "recorded_at",
+    "source_id",
+    "source_document_sha256",
+    "locator"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "record_id": {
+      "$ref": "#/$defs/id"
+    },
+    "company_id": {
+      "$ref": "#/$defs/id"
+    },
+    "identity_key": {
+      "$ref": "#/$defs/hash"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "supersedes": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "cin": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^[LU][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "legal_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "valid_from": {
+      "type": "string",
+      "format": "date"
+    },
+    "valid_to": {
+      "oneOf": [
+        {
+          "type": "string",
+          "format": "date"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "recorded_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "source_document_sha256": {
+      "$ref": "#/$defs/hash"
+    },
+    "locator": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "fact_id",
+            "context_ref",
+            "unit_ref"
+          ],
+          "properties": {
+            "kind": {
+              "const": "xbrl"
+            },
+            "fact_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "context_ref": {
+              "type": "string",
+              "minLength": 1
+            },
+            "unit_ref": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "page",
+            "table",
+            "row_label",
+            "column_label"
+          ],
+          "properties": {
+            "kind": {
+              "const": "pdf_table"
+            },
+            "page": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "table": {
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "row_label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "column_label": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "pointer"
+          ],
+          "properties": {
+            "kind": {
+              "const": "json_pointer"
+            },
+            "pointer": {
+              "type": "string",
+              "pattern": "^(|/.*)$"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

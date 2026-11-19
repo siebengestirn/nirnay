@@ -1,4 +1,4 @@
-.PHONY: check docs-check shellcheck-check generated-paths-check pollution-check style rust-style source-style style-gate python-format-check rust-test extras-test python-test python-check cpp-test cpp-format-check schema-check verify-local fmt constraints sbom supply-chain wheels packaging-test bundle bundle-verify git-policy
+.PHONY: check docs-check shellcheck-check generated-paths-check pollution-check style rust-style source-style style-gate python-format-check rust-test extras-test python-test python-check cpp-test cpp-format-check schema-check fundamental-fixture-check verify-local fmt constraints sbom supply-chain wheels packaging-test bundle bundle-verify git-policy
 check:
 	$(MAKE) docs-check
 	$(MAKE) shellcheck-check
@@ -11,6 +11,7 @@ check:
 	$(MAKE) rust-test
 	$(MAKE) extras-test
 	$(MAKE) schema-check
+	$(MAKE) fundamental-fixture-check
 	$(MAKE) python-test
 docs-check:
 	python3 scripts/check_docs.py --self-test
@@ -51,6 +52,11 @@ python-check:
 	python3 scripts/check_repo.py check
 schema-check:
 	python3 scripts/validate_contracts.py
+fundamental-fixture-check:
+	python3 scripts/check_fundamental_contract_vectors.py --self-test
+	python3 scripts/check_fundamental_contract_vectors.py
+	cargo run --locked -p fundamental-tools --bin nirnay-fundamental -- validate-facts --input research/fundamentals/fixtures/financial-facts.example.jsonl
+	cargo run --locked -p fundamental-tools --bin nirnay-fundamental -- validate-companies --input research/fundamentals/fixtures/company-identities.example.jsonl
 constraints:
 	uv pip compile research/python/pyproject.toml --extra dev --extra research --extra security \
 		--python-version 3.12 --no-emit-package nirnay-quantlab -o constraints/python-research.txt

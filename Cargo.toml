@@ -2,7 +2,7 @@
 # This is a virtual workspace; the separate extras/ reference workspace is excluded.
 [workspace]
 resolver = "3"
-members = ["crates/*", "apps/cost-cli", "apps/upstox-tools", "xtask"]
+members = ["crates/*", "apps/cost-cli", "apps/upstox-tools", "apps/fundamental-tools", "xtask"]
 
 [workspace.package]
 edition = "2024"
@@ -23,6 +23,7 @@ upstox-feed-proto = { path = "crates/upstox-feed-proto", version = "0.1.0" }
 paper-engine = { path = "crates/paper-engine", version = "0.1.0" }
 risk-engine = { path = "crates/risk-engine", version = "0.1.0" }
 trading-core = { path = "crates/trading-core", version = "0.1.0" }
+fundamental-domain = { path = "crates/fundamental-domain", version = "0.1.0" }
 
 # External dependencies (single version policy; members inherit these entries)
 anyhow = "1"
