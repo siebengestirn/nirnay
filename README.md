@@ -197,7 +197,15 @@ quantlab normalize --provider fyers \
   --output data/normalized/fyers/<session>.jsonl
 ```
 
-By default, explicit FYERS journal gaps stop normalization. `--allow-gaps` is an explicit degraded mode; resulting quality metadata marks the output as unsuitable for a continuous/research-grade tape. Keep provider instrument maps versioned and dated; do not map on ticker text alone.
+By default, explicit FYERS journal gaps stop normalization. `--allow-gaps` is
+an explicit degraded mode; the quality metadata marks the output as unsuitable
+for a continuous/research-grade tape. Both providers accept
+`--reference-revision <file>` to bind a projection to one exact reference
+content revision. The embedded maps must match the supplied maps exactly,
+unknown provider instruments remain unresolved, and the quality report records
+the binding hash plus normalizer and event-schema versions. The binding proves
+consistency, not authenticity of the reference file. Keep provider instrument
+maps versioned and dated; do not map on ticker text alone.
 
 Cross-check comparable Upstox/FYERS quote or depth state:
 

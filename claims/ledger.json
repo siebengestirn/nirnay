@@ -204,12 +204,13 @@
     },
     {
       "id": "CLM-018",
-      "statement": "Canonical projection from verified decoded frames is bound to one exact reference revision and normalizer version, keeps unknown instruments unresolved, requires source-frame hashes, and replays byte-identically in a fresh process.",
+      "statement": "Canonical projection from Upstox and FYERS verified sources is bound to one exact reference revision and normalizer version, keeps unknown instruments unresolved, requires source-frame hashes, and replays byte-identically in a fresh process.",
       "status": "implemented",
       "scope": {
         "packages": [
           "research/python/src/quantlab/cli.py",
-          "research/python/tests/test_canonical_projection.py"
+          "research/python/tests/test_canonical_projection.py",
+          "research/python/tests/test_fyers_projection.py"
         ]
       },
       "falsifier": "A projection accepts a drifted instrument map, infers an identity for an unknown instrument, omits a source-frame hash when bound, or produces different bytes on a fresh-process replay."

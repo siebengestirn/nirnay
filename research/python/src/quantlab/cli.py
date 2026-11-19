@@ -359,6 +359,12 @@ def _cmd_normalize(args: argparse.Namespace) -> int:
         monotonic = row.get("received_monotonic_ns")
         sequence = row.get("local_sequence", row.get("capture_sequence"))
         payload = row.get("payload") if args.provider == "fyers" else row.get("message", row)
+        if (args.provider == "fyers" and isinstance(payload, dict)
+                and "symbol" not in payload and isinstance(row.get("symbol"), str)):
+            # The SDK journal keeps the symbol beside the callback object.
+            # Copy it into the normalized message without altering the record.
+            payload = dict(payload)
+            payload["symbol"] = row["symbol"]
         if args.provider == "upstox" and isinstance(payload, dict) and "feed_keys" in payload and "feeds" not in payload:
             raise ValueError("Upstox decoded-observations.jsonl is a diagnostic index, not a full quote export; decode raw protobuf frames and supply full V3 JSON message envelopes")
         if not isinstance(payload, dict):
