@@ -1,10 +1,27 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
-//! Shared ingress port tests: Upstox raw frames through the durable journal.
+//! Shared ingress contract tests, including delivery identity, sequence scope,
+//! continuity state and bounded streaming replay.
 
+use std::{
+    path::PathBuf,
+    process::{
+        Command, //
+        Output,
+    },
+};
+
+use base64::Engine as _;
 use market_archive::{
     DurableIngestor, //
+    FYERS_SOURCE_ID,
+    FyersCallback,
+    FyersCallbackAdapter,
     IngestOutcome,
     IngressError,
+    IngressSource,
+    JournalReplaySource,
+    Sequence,
+    SequencePolicy,
     SourceFrame,
     UPSTOX_SOURCE_ID,
     UpstoxV3Adapter,
@@ -20,305 +37,24 @@ fn frame(sequence: u64, payload: &[u8]) -> SourceFrame {
             + i64::try_from(sequence).expect("small sequence"),
         received_monotonic_nanos: sequence,
         exchange_utc_nanos: Some(1_760_000_000_000_000_000),
-        provider_sequence: Some(sequence),
+        sequence: Some(Sequence::capture_session(sequence)),
         payload: payload.to_vec(),
     }
 }
 
-#[test]
-fn upstox_raw_frames_keep_native_payload_and_capture_metadata() {
-    let directory = tempfile::tempdir().expect("tempdir");
-    let path = directory.path().join("upstox.jsonl");
-    let first: Vec<u8> = vec![0x00, 0x01, 0x02, 0xff];
-    let second: Vec<u8> = vec![0x7f, 0x80, 0x00];
-    let mut source = UpstoxV3Adapter::new(vec![frame(1, &first), frame(2, &second)]);
-    let mut ingestor = DurableIngestor::create_new(&path, UPSTOX_SOURCE_ID).expect("ingestor");
-    let summary = ingestor.run(&mut source, 10).expect("run");
-    assert_eq!(summary.committed, 2, "both native frames are committed");
-    assert_eq!(
-        ingestor.checkpoint().last_capture_sequence,
-        Some(2),
-        "the checkpoint tracks the last provider sequence"
-    );
-
-    let frames = scan_journal(&path).expect("scan").frames;
-    assert_eq!(frames.len(), 2, "the journal has exactly two records");
-    assert!(
-        frames.iter().all(|item| item.source == UPSTOX_SOURCE_ID),
-        "every record carries the Upstox source identity"
-    );
-    assert_eq!(
-        frames[0].payload_base64,
-        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &first),
-        "original bytes survive without reinterpretation"
-    );
-    assert_eq!(
-        frames[0].capture_sequence,
-        Some(1),
-        "capture sequence is preserved"
-    );
-    assert_eq!(
-        frames[0].entitlement_ref, "entitlement:operator:upstox",
-        "entitlement reference is preserved without secrets"
-    );
+fn provider_frame(sequence: u64, instrument: &str, payload: &[u8]) -> SourceFrame {
+    let mut item = frame(sequence, payload);
+    item.provider_instrument_id = instrument.to_owned();
+    item.sequence = Some(Sequence::provider(sequence));
+    item
 }
 
-#[test]
-fn duplicate_delivery_is_skipped_without_a_second_journal_record() {
-    let directory = tempfile::tempdir().expect("tempdir");
-    let path = directory.path().join("duplicate.jsonl");
-    let mut ingestor = DurableIngestor::create_new(&path, UPSTOX_SOURCE_ID).expect("ingestor");
-    let outcome = ingestor.ingest_one(frame(1, b"same-bytes")).expect("first");
-    assert!(
-        matches!(
-            outcome,
-            IngestOutcome::Committed {
-                capture_sequence: 1
-            }
-        ),
-        "the first delivery is committed"
-    );
-    let duplicate = ingestor.ingest_one(frame(1, b"same-bytes")).expect("retry");
-    assert_eq!(
-        duplicate,
-        IngestOutcome::DuplicateSkipped,
-        "an identical retry is skipped"
-    );
-    assert_eq!(
-        scan_journal(&path).expect("scan").frames.len(),
-        1,
-        "the duplicate adds no journal record"
-    );
-    assert_eq!(
-        ingestor.checkpoint().duplicates_skipped,
-        1,
-        "the duplicate is accounted for"
-    );
-}
-
-#[test]
-fn malformed_frames_are_rejected_without_advancing_the_checkpoint() {
-    let directory = tempfile::tempdir().expect("tempdir");
-    let path = directory.path().join("malformed.jsonl");
-    let mut ingestor = DurableIngestor::create_new(&path, UPSTOX_SOURCE_ID).expect("ingestor");
-    assert_eq!(
-        ingestor.ingest_one(frame(1, b"")).expect("empty payload"),
-        IngestOutcome::MalformedRejected,
-        "an empty payload is rejected"
-    );
-    let oversized = vec![0_u8; market_archive::MAX_PAYLOAD_BYTES + 1];
-    assert_eq!(
-        ingestor
-            .ingest_one(frame(2, &oversized))
-            .expect("oversized"),
-        IngestOutcome::MalformedRejected,
-        "an oversized payload is rejected"
-    );
-    assert_eq!(
-        ingestor.checkpoint().committed_frames,
-        0,
-        "no malformed frame advanced the checkpoint"
-    );
-    assert_eq!(
-        ingestor.checkpoint().malformed_rejected,
-        2,
-        "both rejections are accounted for"
-    );
-    assert!(
-        scan_journal(&path).expect("scan").frames.is_empty(),
-        "the journal has no records"
-    );
-}
-
-#[test]
-fn sequence_gap_is_recorded_and_every_received_frame_is_preserved() {
-    let directory = tempfile::tempdir().expect("tempdir");
-    let path = directory.path().join("gap.jsonl");
-    let mut source = UpstoxV3Adapter::new(vec![
-        frame(1, b"first"),
-        frame(4, b"after-gap"),
-        frame(2, b"late"),
-    ]);
-    let mut ingestor = DurableIngestor::create_new(&path, UPSTOX_SOURCE_ID).expect("ingestor");
-    let summary = ingestor.run(&mut source, 10).expect("run");
-    assert_eq!(summary.committed, 3, "all received frames are preserved");
-    assert_eq!(
-        ingestor.checkpoint().gaps_observed,
-        1,
-        "the missing sequence is reported"
-    );
-    assert_eq!(
-        ingestor.checkpoint().out_of_order,
-        1,
-        "the late frame is reported without being dropped"
-    );
-}
-
-#[test]
-fn disconnect_stops_the_run_at_the_last_durable_frame() {
-    let directory = tempfile::tempdir().expect("tempdir");
-    let path = directory.path().join("disconnect.jsonl");
-    let mut source = UpstoxV3Adapter::new(vec![frame(1, b"before")]);
-    source.disconnect();
-    source.push(frame(2, b"after-disconnect"));
-    let mut ingestor = DurableIngestor::create_new(&path, UPSTOX_SOURCE_ID).expect("ingestor");
-    let summary = ingestor.run(&mut source, 10).expect("run");
-    assert!(summary.disconnected, "the disconnect is observed");
-    assert_eq!(
-        summary.committed, 1,
-        "no frame after the disconnect is committed"
-    );
-    assert_eq!(
-        ingestor.checkpoint().last_capture_sequence,
-        Some(1),
-        "the checkpoint stays at the last durable frame"
-    );
-}
-
-#[test]
-fn restart_rebuilds_checkpoint_and_consumer_can_resume() {
-    let directory = tempfile::tempdir().expect("tempdir");
-    let path = directory.path().join("resume.jsonl");
-    {
-        let mut source = UpstoxV3Adapter::new(vec![frame(1, b"one"), frame(2, b"two")]);
-        let mut ingestor = DurableIngestor::create_new(&path, UPSTOX_SOURCE_ID).expect("ingestor");
-        ingestor.run(&mut source, 10).expect("first run");
-    }
-    let resumed = DurableIngestor::resume(&path, UPSTOX_SOURCE_ID).expect("resume");
-    let checkpoint = resumed.checkpoint().clone();
-    assert_eq!(checkpoint.committed_frames, 2, "both frames are recovered");
-    assert_eq!(
-        checkpoint.last_capture_sequence,
-        Some(2),
-        "the last sequence is recovered"
-    );
-    assert!(
-        checkpoint.last_payload_sha256.is_some(),
-        "the last payload hash is recovered for consumer fencing"
-    );
-
-    let mut resumed = resumed;
-    let mut source = UpstoxV3Adapter::new(vec![frame(3, b"three")]);
-    let summary = resumed.run(&mut source, 10).expect("resumed run");
-    assert_eq!(summary.committed, 1, "a new frame commits after restart");
-    assert_eq!(
-        scan_journal(&path).expect("scan").frames.len(),
-        3,
-        "no committed frame was replayed into a duplicate"
-    );
-}
-
-#[test]
-fn foreign_source_frames_are_rejected_before_any_write() {
-    let directory = tempfile::tempdir().expect("tempdir");
-    let path = directory.path().join("foreign.jsonl");
-    let mut ingestor = DurableIngestor::create_new(&path, UPSTOX_SOURCE_ID).expect("ingestor");
-    let mut foreign = frame(1, b"fyers-payload");
-    foreign.source_id = "fyers.data_socket".to_owned();
-    assert!(
-        matches!(
-            ingestor.ingest_one(foreign),
-            Err(IngressError::SourceMismatch { .. })
-        ),
-        "a foreign-source envelope is refused"
-    );
-    assert!(
-        scan_journal(&path).expect("scan").frames.is_empty(),
-        "the rejected frame left no journal record"
-    );
-}
-
-#[test]
-fn replaying_a_committed_frame_after_restart_is_skipped() {
-    let directory = tempfile::tempdir().expect("tempdir");
-    let path = directory.path().join("replay.jsonl");
-    let original = frame(7, b"committed-once");
-    {
-        let mut ingestor = DurableIngestor::create_new(&path, UPSTOX_SOURCE_ID).expect("ingestor");
-        ingestor.ingest_one(original.clone()).expect("first commit");
-    }
-    let mut resumed = DurableIngestor::resume(&path, UPSTOX_SOURCE_ID).expect("resume");
-    assert_eq!(
-        resumed.ingest_one(original).expect("replayed delivery"),
-        IngestOutcome::DuplicateSkipped,
-        "an exact replay after restart is recognised"
-    );
-    assert_eq!(
-        scan_journal(&path).expect("scan").frames.len(),
-        1,
-        "the replay adds no second journal record"
-    );
-    assert_eq!(
-        resumed.checkpoint().committed_frames,
-        1,
-        "the checkpoint does not advance on replay"
-    );
-}
-
-#[test]
-fn metadata_failure_does_not_advance_continuity() {
-    let directory = tempfile::tempdir().expect("tempdir");
-    let path = directory.path().join("metadata.jsonl");
-    let mut ingestor = DurableIngestor::create_new(&path, UPSTOX_SOURCE_ID).expect("ingestor");
-    let mut invalid = frame(5, b"valid-payload");
-    invalid.provider_instrument_id = "x".repeat(1024 * 1024);
-    assert_eq!(
-        ingestor.ingest_one(invalid).expect("invalid metadata"),
-        IngestOutcome::MalformedRejected,
-        "an unrepresentable metadata field is rejected"
-    );
-    assert_eq!(
-        ingestor.checkpoint().last_capture_sequence,
-        None,
-        "the failed frame left no phantom sequence"
-    );
-    assert_eq!(
-        ingestor.checkpoint().gaps_observed,
-        0,
-        "the failed frame recorded no phantom gap"
-    );
-    assert!(
-        scan_journal(&path).expect("scan").frames.is_empty(),
-        "the rejected frame wrote nothing"
-    );
-}
-
-#[test]
-fn continuity_stream_map_is_bounded_by_source_supplied_ids() {
-    let directory = tempfile::tempdir().expect("tempdir");
-    let path = directory.path().join("streams.jsonl");
-    let mut ingestor = DurableIngestor::create_new(&path, UPSTOX_SOURCE_ID).expect("ingestor");
-    for index in 0..1200_u64 {
-        let mut item = frame(index, format!("payload-{index}").as_bytes());
-        item.provider_instrument_id = format!("provider.instrument.{index}");
-        ingestor.ingest_one(item).expect("commit stream frame");
-    }
-    assert!(
-        ingestor.tracked_streams() <= 1024,
-        "source-supplied instrument ids cannot grow the continuity map without bound"
-    );
-    assert_eq!(
-        ingestor.checkpoint().committed_frames,
-        1200,
-        "every valid frame is still committed"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// FYERS: second independent source implementation over the same ingress port.
-// ---------------------------------------------------------------------------
-
-use market_archive::{
-    FYERS_SOURCE_ID, //
-    FyersCallback,
-    FyersCallbackAdapter,
-};
-
-fn fyers_callback(sequence: u64, json: &[u8]) -> FyersCallback {
+fn fyers_callback(sequence: u64, symbol: &str, json: &[u8]) -> FyersCallback {
     FyersCallback {
-        provider_instrument_id: "NSE_EQ|INE002A01018".to_owned(),
+        provider_instrument_id: symbol.to_owned(),
         entitlement_ref: "entitlement:operator:fyers".to_owned(),
-        received_utc_nanos: 1_760_000_000_000_000_000 + i64::try_from(sequence).expect("sequence"),
+        received_utc_nanos: 1_760_000_000_000_000_000
+            + i64::try_from(sequence).expect("small sequence"),
         received_monotonic_nanos: sequence,
         exchange_utc_nanos: Some(1_760_000_000_000_000_000),
         local_sequence: Some(sequence),
@@ -326,262 +62,540 @@ fn fyers_callback(sequence: u64, json: &[u8]) -> FyersCallback {
     }
 }
 
-#[test]
-fn fyers_callbacks_keep_exact_json_bytes_and_local_sequence() {
-    let directory = tempfile::tempdir().expect("tempdir");
-    let path = directory.path().join("fyers.jsonl");
-    let first = br#"{"type":"sf","symbol":"SBIN-EQ","ltp":812.5}"#;
-    let second = br#"{"type":"dp","symbol":"SBIN-EQ","bid_price1":812.0}"#;
-    let mut source =
-        FyersCallbackAdapter::new(vec![fyers_callback(1, first), fyers_callback(2, second)]);
-    let mut ingestor = DurableIngestor::create_new(&path, FYERS_SOURCE_ID).expect("ingestor");
-    let summary = ingestor.run(&mut source, 10).expect("run");
-    assert_eq!(summary.committed, 2, "both callbacks are committed");
+fn temp_path(name: &str) -> PathBuf {
+    let path = std::env::temp_dir().join(format!(
+        "nirnay-ingress-{name}-{}-{}",
+        std::process::id(),
+        std::thread::current().name().unwrap_or("main")
+    ));
+    let _ = std::fs::remove_dir_all(&path);
+    std::fs::create_dir_all(&path).expect("temp root");
+    path.join("frames.jsonl")
+}
 
+#[test]
+fn upstox_raw_frames_keep_native_payload_and_capture_metadata() {
+    let path = temp_path("native");
+    let first: Vec<u8> = vec![0x00, 0x01, 0x02, 0xff];
+    let mut source = UpstoxV3Adapter::new(vec![frame(1, &first), frame(2, b"second")]);
+    let mut ingestor =
+        DurableIngestor::create_new(&path, UPSTOX_SOURCE_ID, SequencePolicy::CaptureSession)
+            .expect("ingestor");
+    let summary = ingestor.run(&mut source, 10).expect("run");
+    assert_eq!(summary.committed, 2, "both frames are committed");
     let frames = scan_journal(&path).expect("scan").frames;
-    assert_eq!(frames.len(), 2, "the journal has exactly two records");
+    assert_eq!(frames.len(), 2, "contract assertion");
     assert!(
-        frames.iter().all(|item| item.source == FYERS_SOURCE_ID),
-        "records carry the FYERS source identity"
+        frames.iter().all(|item| item.source == UPSTOX_SOURCE_ID),
+        "contract assertion"
     );
     assert_eq!(
         frames[0].payload_base64,
-        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, first),
-        "the original callback bytes survive unchanged"
+        base64::engine::general_purpose::STANDARD.encode(&first),
+        "payload bytes are preserved exactly"
     );
+    assert_eq!(frames[0].capture_sequence, Some(1), "contract assertion");
     assert_eq!(
-        frames[0].capture_sequence,
-        Some(1),
-        "the recorder's local sequence is preserved as metadata"
-    );
-    assert_eq!(
-        frames[0].entitlement_ref, "entitlement:operator:fyers",
-        "the FYERS entitlement reference round-trips"
-    );
-    assert_eq!(
-        frames[0].received_utc_nanos, 1_760_000_000_000_000_001,
-        "FYERS receipt time round-trips"
-    );
-    assert_eq!(
-        frames[0].exchange_utc_nanos,
-        Some(1_760_000_000_000_000_000),
-        "FYERS exchange time round-trips"
+        frames[0].entitlement_ref, "entitlement:operator:upstox",
+        "contract assertion"
     );
 }
 
 #[test]
-fn fyers_gap_duplicate_disconnect_and_restart_are_accounted() {
-    let directory = tempfile::tempdir().expect("tempdir");
-    let path = directory.path().join("fyers-recovery.jsonl");
-    {
-        let mut source = FyersCallbackAdapter::new(vec![
-            fyers_callback(1, b"{\"type\":\"sf\",\"ltp\":1}"),
-            fyers_callback(4, b"{\"type\":\"sf\",\"ltp\":4}"),
-        ]);
-        source.push(fyers_callback(4, b"{\"type\":\"sf\",\"ltp\":4}"));
-        source.disconnect();
-        source.push(fyers_callback(5, b"{\"type\":\"sf\",\"ltp\":5}"));
-        let mut ingestor = DurableIngestor::create_new(&path, FYERS_SOURCE_ID).expect("ingestor");
-        let summary = ingestor.run(&mut source, 10).expect("run");
-        assert!(summary.disconnected, "disconnect stops the FYERS run");
-        assert_eq!(
-            summary.committed, 2,
-            "no frame after disconnect is committed"
-        );
-        assert_eq!(summary.duplicates, 1, "the repeated callback is skipped");
-        assert_eq!(
-            ingestor.checkpoint().gaps_observed,
-            1,
-            "the missing local sequence is reported"
-        );
-    }
-    let resumed = DurableIngestor::resume(&path, FYERS_SOURCE_ID).expect("resume");
-    assert_eq!(
-        resumed.checkpoint().committed_frames,
-        2,
-        "the FYERS checkpoint survives restart"
-    );
-    assert_eq!(
-        resumed.checkpoint().gaps_observed,
-        1,
-        "the FYERS gap accounting survives restart"
-    );
-    assert_eq!(
-        resumed.checkpoint().last_capture_sequence,
-        Some(4),
-        "the last local sequence survives restart"
-    );
-}
-
-#[test]
-fn independent_sources_share_the_port_without_cross_contamination() {
-    let directory = tempfile::tempdir().expect("tempdir");
-    let upstox_path = directory.path().join("upstox.jsonl");
-    let fyers_path = directory.path().join("fyers.jsonl");
-    let mut upstox = DurableIngestor::create_new(&upstox_path, UPSTOX_SOURCE_ID).expect("upstox");
-    let mut fyers = DurableIngestor::create_new(&fyers_path, FYERS_SOURCE_ID).expect("fyers");
-
-    upstox
-        .ingest_one(frame(1, b"upstox-native"))
-        .expect("upstox commit");
-    fyers
-        .ingest_one(fyers_callback(1, b"{\"type\":\"sf\"}").into_source_frame())
-        .expect("fyers commit");
-
-    let mut foreign = frame(2, b"fyers-sent-to-upstox");
-    foreign.source_id = FYERS_SOURCE_ID.to_owned();
-    assert!(
-        matches!(
-            upstox.ingest_one(foreign),
-            Err(IngressError::SourceMismatch { .. })
-        ),
-        "a source cannot write through another source's ingestor"
-    );
-    assert_eq!(
-        scan_journal(&upstox_path).expect("scan").frames.len(),
-        1,
-        "the rejected frame left the first journal untouched"
-    );
-    assert_eq!(
-        scan_journal(&fyers_path).expect("scan").frames.len(),
-        1,
-        "the second source has one independent journal"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// Replay from captured source bytes through the same ingress contract.
-// ---------------------------------------------------------------------------
-
-use market_archive::{
-    IngressSource, //
-    JournalReplaySource,
-};
-
-#[test]
-fn replay_reproduces_identical_journal_frames() {
-    let directory = tempfile::tempdir().expect("tempdir");
-    let captured = directory.path().join("captured.jsonl");
-    let replayed = directory.path().join("replayed.jsonl");
-    {
-        let mut source = UpstoxV3Adapter::new(vec![
-            frame(1, b"first-original-bytes"),
-            frame(2, b"second-original-bytes"),
-        ]);
-        let mut ingestor =
-            DurableIngestor::create_new(&captured, UPSTOX_SOURCE_ID).expect("capturing ingestor");
-        ingestor.run(&mut source, 10).expect("capture run");
-    }
-    let mut source = JournalReplaySource::open(&captured, UPSTOX_SOURCE_ID).expect("replay source");
-    assert_eq!(source.remaining(), 2, "both captured frames are replayable");
+fn same_payload_with_different_capture_sequences_is_preserved() {
+    let path = temp_path("same-payload");
     let mut ingestor =
-        DurableIngestor::create_new(&replayed, UPSTOX_SOURCE_ID).expect("replay ingestor");
-    let summary = ingestor.run(&mut source, 10).expect("replay run");
-    assert_eq!(summary.committed, 2, "replay commits both frames");
-
-    let original = scan_journal(&captured).expect("original scan").frames;
-    let restored = scan_journal(&replayed).expect("replay scan").frames;
+        DurableIngestor::create_new(&path, UPSTOX_SOURCE_ID, SequencePolicy::CaptureSession)
+            .expect("ingestor");
     assert_eq!(
-        original, restored,
-        "replay reproduces bytes and metadata exactly"
+        ingestor
+            .ingest_one(frame(1, b"identical-payload"))
+            .expect("first"),
+        IngestOutcome::Committed { sequence: Some(1) }
     );
-}
-
-#[test]
-fn replay_into_a_resumed_journal_is_idempotent() {
-    let directory = tempfile::tempdir().expect("tempdir");
-    let path = directory.path().join("idempotent.jsonl");
-    {
-        let mut source = UpstoxV3Adapter::new(vec![frame(1, b"one"), frame(2, b"two")]);
-        let mut ingestor = DurableIngestor::create_new(&path, UPSTOX_SOURCE_ID).expect("ingestor");
-        ingestor.run(&mut source, 10).expect("capture");
-    }
-    let mut source = JournalReplaySource::open(&path, UPSTOX_SOURCE_ID).expect("replay source");
-    let mut ingestor = DurableIngestor::resume(&path, UPSTOX_SOURCE_ID).expect("resume");
-    let summary = ingestor.replay(&mut source).expect("replay run");
-    assert_eq!(summary.committed, 0, "no captured frame is re-committed");
-    assert_eq!(summary.duplicates, 2, "both frames resolve as duplicates");
+    assert_eq!(
+        ingestor
+            .ingest_one(frame(2, b"identical-payload"))
+            .expect("second"),
+        IngestOutcome::Committed { sequence: Some(2) },
+        "identical bytes from different deliveries are not a duplicate"
+    );
     assert_eq!(
         scan_journal(&path).expect("scan").frames.len(),
         2,
-        "the journal is unchanged by replay"
+        "contract assertion"
     );
 }
 
 #[test]
-fn replay_preserves_fyers_bytes_and_source_boundary() {
-    let directory = tempfile::tempdir().expect("tempdir");
-    let captured = directory.path().join("fyers-captured.jsonl");
-    let replayed = directory.path().join("fyers-replayed.jsonl");
+fn same_delivery_and_payload_is_an_idempotent_duplicate() {
+    let path = temp_path("same-delivery");
+    let mut ingestor =
+        DurableIngestor::create_new(&path, UPSTOX_SOURCE_ID, SequencePolicy::CaptureSession)
+            .expect("ingestor");
+    ingestor.ingest_one(frame(3, b"payload")).expect("first");
+    assert_eq!(
+        ingestor.ingest_one(frame(3, b"payload")).expect("retry"),
+        IngestOutcome::DuplicateSkipped
+    );
+    assert_eq!(
+        scan_journal(&path).expect("scan").frames.len(),
+        1,
+        "contract assertion"
+    );
+}
+
+#[test]
+fn same_delivery_with_different_payload_is_a_conflict() {
+    let path = temp_path("conflict");
+    let mut ingestor =
+        DurableIngestor::create_new(&path, UPSTOX_SOURCE_ID, SequencePolicy::CaptureSession)
+            .expect("ingestor");
+    ingestor.ingest_one(frame(4, b"original")).expect("first");
+    assert_eq!(
+        ingestor.ingest_one(frame(4, b"changed")).expect("conflict"),
+        IngestOutcome::ConflictRejected
+    );
+    assert_eq!(
+        ingestor.checkpoint().conflicts_rejected,
+        1,
+        "contract assertion"
+    );
+    assert_eq!(
+        scan_journal(&path).expect("scan").frames.len(),
+        1,
+        "contract assertion"
+    );
+}
+
+#[test]
+fn unknown_sequence_never_infers_duplicate_from_content() {
+    let path = temp_path("unknown");
+    let mut a = frame(0, b"same-bytes");
+    let mut b = frame(0, b"same-bytes");
+    a.sequence = None;
+    b.sequence = None;
+    b.received_monotonic_nanos += 1;
+    let mut ingestor = DurableIngestor::create_new(&path, UPSTOX_SOURCE_ID, SequencePolicy::None)
+        .expect("ingestor");
+    ingestor.ingest_one(a).expect("first");
+    assert_eq!(
+        ingestor.ingest_one(b).expect("second"),
+        IngestOutcome::Committed { sequence: None },
+        "unknown-identity frames with equal bytes are preserved"
+    );
+    assert_eq!(
+        scan_journal(&path).expect("scan").frames.len(),
+        2,
+        "contract assertion"
+    );
+}
+
+#[test]
+fn fyers_session_sequence_across_symbols_has_no_false_per_symbol_gap() {
+    let path = temp_path("fyers-session");
+    let mut source = FyersCallbackAdapter::new(vec![
+        fyers_callback(1, "SBIN-EQ", b"{\"type\":\"sf\"}"),
+        fyers_callback(2, "TCS-EQ", b"{\"type\":\"sf\"}"),
+        fyers_callback(3, "SBIN-EQ", b"{\"type\":\"dp\"}"),
+    ]);
+    let mut ingestor =
+        DurableIngestor::create_new(&path, FYERS_SOURCE_ID, SequencePolicy::CaptureSession)
+            .expect("ingestor");
+    let summary = ingestor.run(&mut source, 10).expect("run");
+    assert_eq!(summary.committed, 3, "all callbacks are preserved");
+    assert_eq!(
+        ingestor.checkpoint().gaps_observed,
+        0,
+        "a session-wide sequence cannot create per-symbol gaps"
+    );
+    assert_eq!(ingestor.checkpoint().out_of_order, 0, "contract assertion");
+    assert_eq!(
+        ingestor.checkpoint().last_capture_sequence,
+        Some(3),
+        "contract assertion"
+    );
+}
+
+#[test]
+fn provider_sequence_uses_per_instrument_continuity() {
+    let path = temp_path("provider-sequence");
+    let mut ingestor = DurableIngestor::create_new(
+        &path,
+        UPSTOX_SOURCE_ID,
+        SequencePolicy::ProviderPerInstrument,
+    )
+    .expect("ingestor");
+    ingestor
+        .ingest_one(provider_frame(1, "A", b"a1"))
+        .expect("A1");
+    ingestor
+        .ingest_one(provider_frame(2, "B", b"b1"))
+        .expect("B1");
+    ingestor
+        .ingest_one(provider_frame(4, "A", b"a4"))
+        .expect("A4");
+    assert_eq!(
+        ingestor.checkpoint().gaps_observed,
+        1,
+        "A's gap is reported"
+    );
+    assert_eq!(
+        ingestor.policy(),
+        SequencePolicy::ProviderPerInstrument,
+        "provider sequence scope is explicit"
+    );
+}
+
+#[test]
+fn more_than_1024_instruments_have_no_silent_continuity_loss() {
+    let path = temp_path("continuity-bound");
+    let mut ingestor = DurableIngestor::create_new(
+        &path,
+        UPSTOX_SOURCE_ID,
+        SequencePolicy::ProviderPerInstrument,
+    )
+    .expect("ingestor");
+    for index in 0..1100_u64 {
+        let instrument = format!("provider.instrument.{index}");
+        ingestor
+            .ingest_one(provider_frame(
+                index,
+                &instrument,
+                format!("p{index}").as_bytes(),
+            ))
+            .expect("commit");
+    }
+    assert!(
+        ingestor.tracked_streams() <= 1024,
+        "the continuity map is bounded"
+    );
+    assert!(
+        ingestor.checkpoint().unknown_continuity_streams > 0,
+        "eviction is recorded as unknown continuity, never as a fresh clean stream"
+    );
+    assert!(
+        ingestor.continuity_degraded(),
+        "one bounded flag records degraded continuity instead of an unbounded eviction set"
+    );
+    assert_eq!(
+        ingestor.checkpoint().committed_frames,
+        1100,
+        "contract assertion"
+    );
+}
+
+#[test]
+fn malformed_payload_and_foreign_source_fail_closed() {
+    let path = temp_path("malformed");
+    let mut ingestor =
+        DurableIngestor::create_new(&path, UPSTOX_SOURCE_ID, SequencePolicy::CaptureSession)
+            .expect("ingestor");
+    assert_eq!(
+        ingestor.ingest_one(frame(1, b"")).expect("empty"),
+        IngestOutcome::MalformedRejected
+    );
+    let oversized = vec![0_u8; market_archive::MAX_PAYLOAD_BYTES + 1];
+    assert_eq!(
+        ingestor
+            .ingest_one(frame(2, &oversized))
+            .expect("oversized"),
+        IngestOutcome::MalformedRejected
+    );
+    let mut foreign = frame(3, b"foreign");
+    foreign.source_id = FYERS_SOURCE_ID.to_owned();
+    assert!(
+        matches!(
+            ingestor.ingest_one(foreign),
+            Err(IngressError::SourceMismatch { .. })
+        ),
+        "a foreign source is refused before any write"
+    );
+    assert_eq!(
+        ingestor.checkpoint().committed_frames,
+        0,
+        "contract assertion"
+    );
+    assert!(
+        scan_journal(&path).expect("scan").frames.is_empty(),
+        "contract assertion"
+    );
+}
+
+#[test]
+fn disconnect_stops_at_the_last_durable_frame() {
+    let path = temp_path("disconnect");
+    let mut source = UpstoxV3Adapter::new(vec![frame(1, b"before")]);
+    source.disconnect();
+    source.push(frame(2, b"after"));
+    let mut ingestor =
+        DurableIngestor::create_new(&path, UPSTOX_SOURCE_ID, SequencePolicy::CaptureSession)
+            .expect("ingestor");
+    let summary = ingestor.run(&mut source, 10).expect("run");
+    assert!(summary.disconnected, "contract assertion");
+    assert_eq!(summary.committed, 1, "contract assertion");
+    assert_eq!(
+        ingestor.checkpoint().last_capture_sequence,
+        Some(1),
+        "contract assertion"
+    );
+}
+
+#[test]
+fn restart_and_replay_commit_nothing_twice() {
+    let path = temp_path("restart");
     {
-        let mut source = FyersCallbackAdapter::new(vec![fyers_callback(
-            9,
-            b"{\"type\":\"sf\",\"symbol\":\"SBIN-EQ\"}",
-        )]);
+        let mut source = UpstoxV3Adapter::new(vec![frame(1, b"one"), frame(2, b"two")]);
         let mut ingestor =
-            DurableIngestor::create_new(&captured, FYERS_SOURCE_ID).expect("ingestor");
+            DurableIngestor::create_new(&path, UPSTOX_SOURCE_ID, SequencePolicy::CaptureSession)
+                .expect("ingestor");
+        ingestor.run(&mut source, 10).expect("capture");
+    }
+    let mut source = JournalReplaySource::open(&path, UPSTOX_SOURCE_ID).expect("replay source");
+    let mut ingestor =
+        DurableIngestor::resume(&path, UPSTOX_SOURCE_ID, SequencePolicy::CaptureSession)
+            .expect("resume");
+    let summary = ingestor.replay(&mut source).expect("replay");
+    assert_eq!(summary.committed, 0, "contract assertion");
+    assert_eq!(summary.duplicates, 2, "contract assertion");
+    assert_eq!(
+        scan_journal(&path).expect("scan").frames.len(),
+        2,
+        "contract assertion"
+    );
+}
+
+#[test]
+fn replay_reproduces_frames_and_preserves_source_boundary() {
+    let root = temp_path("replay-fidelity");
+    let captured = root.with_file_name("captured.jsonl");
+    let replayed = root.with_file_name("replayed.jsonl");
+    {
+        let mut source =
+            FyersCallbackAdapter::new(vec![fyers_callback(9, "SBIN-EQ", b"{\"type\":\"sf\"}")]);
+        let mut ingestor =
+            DurableIngestor::create_new(&captured, FYERS_SOURCE_ID, SequencePolicy::CaptureSession)
+                .expect("ingestor");
         ingestor.run(&mut source, 10).expect("capture");
     }
     let mut source = JournalReplaySource::open(&captured, FYERS_SOURCE_ID).expect("replay source");
-    assert_eq!(
-        source.source_id(),
-        FYERS_SOURCE_ID,
-        "source identity survives replay"
-    );
-    let mut ingestor = DurableIngestor::create_new(&replayed, FYERS_SOURCE_ID).expect("replay");
+    assert_eq!(source.source_id(), FYERS_SOURCE_ID, "contract assertion");
+    let mut ingestor =
+        DurableIngestor::create_new(&replayed, FYERS_SOURCE_ID, SequencePolicy::CaptureSession)
+            .expect("replay ingestor");
     ingestor.run(&mut source, 10).expect("replay");
     assert_eq!(
         scan_journal(&replayed).expect("scan").frames,
-        scan_journal(&captured).expect("scan").frames,
-        "FYERS callback bytes survive replay"
+        scan_journal(&captured).expect("scan").frames
     );
 
     let mut wrong = DurableIngestor::create_new(
-        directory.path().join("wrong-source.jsonl"),
+        root.with_file_name("wrong.jsonl"),
         UPSTOX_SOURCE_ID,
+        SequencePolicy::CaptureSession,
     )
     .expect("upstox ingestor");
     let mut replay = JournalReplaySource::open(&captured, FYERS_SOURCE_ID).expect("replay source");
     assert!(
         matches!(
-            wrong.run(&mut replay, 10),
+            wrong.replay(&mut replay),
             Err(IngressError::SourceMismatch { .. })
         ),
-        "a FYERS replay cannot cross into an Upstox-bound ingestor"
+        "a replay cannot cross into another source's ingestor"
     );
 }
 
 #[test]
-fn replay_is_idempotent_beyond_the_hash_window() {
-    let directory = tempfile::tempdir().expect("tempdir");
-    let path = directory.path().join("large-replay.jsonl");
-    let count = 5000_u64;
+fn torn_or_corrupt_journal_fails_closed() {
+    let path = temp_path("corruption");
     {
-        let frames: Vec<_> = (0..count)
-            .map(|index| frame(index, format!("payload-{index}").as_bytes()))
-            .collect();
-        let mut source = UpstoxV3Adapter::new(frames);
-        let mut ingestor = DurableIngestor::create_new(&path, UPSTOX_SOURCE_ID).expect("ingestor");
-        ingestor
-            .run(&mut source, count as usize + 1)
-            .expect("capture");
+        let mut source = UpstoxV3Adapter::new(vec![frame(1, b"valid")]);
+        let mut ingestor =
+            DurableIngestor::create_new(&path, UPSTOX_SOURCE_ID, SequencePolicy::CaptureSession)
+                .expect("ingestor");
+        ingestor.run(&mut source, 10).expect("capture");
     }
+    let mut bytes = std::fs::read(&path).expect("journal");
+    bytes.extend_from_slice(b"{\"partial\":");
+    std::fs::write(&path, bytes).expect("append torn tail");
+    assert!(
+        DurableIngestor::resume(&path, UPSTOX_SOURCE_ID, SequencePolicy::CaptureSession,).is_err(),
+        "resume refuses a torn journal"
+    );
+    assert!(
+        JournalReplaySource::open(&path, UPSTOX_SOURCE_ID).is_ok(),
+        "open succeeds; the reader reports the tear on iteration"
+    );
+    let mut replay = JournalReplaySource::open(&path, UPSTOX_SOURCE_ID).expect("source");
+    let mut failed = false;
+    for _ in 0..4 {
+        if replay.next_indexed_frame().is_err() {
+            failed = true;
+            break;
+        }
+    }
+    assert!(failed, "replay fails on the corrupt record");
+}
+
+#[test]
+#[ignore = "child-only fresh-process recovery worker"]
+fn child_recovery_worker() {
+    let path = std::env::var_os("NIRNAY_INGRESS_RECOVERY_DB").expect("recovery path");
+    let ingestor = DurableIngestor::resume(
+        PathBuf::from(path),
+        UPSTOX_SOURCE_ID,
+        SequencePolicy::CaptureSession,
+    )
+    .expect("resume in fresh process");
+    assert_eq!(
+        ingestor.checkpoint().committed_frames,
+        2,
+        "contract assertion"
+    );
+    assert_eq!(
+        ingestor.checkpoint().last_capture_sequence,
+        Some(2),
+        "contract assertion"
+    );
+}
+
+#[test]
+fn fresh_process_recovery_matches_committed_records_and_checkpoint() {
+    let path = temp_path("fresh-process");
+    {
+        let mut source = UpstoxV3Adapter::new(vec![frame(1, b"one"), frame(2, b"two")]);
+        let mut ingestor =
+            DurableIngestor::create_new(&path, UPSTOX_SOURCE_ID, SequencePolicy::CaptureSession)
+                .expect("ingestor");
+        ingestor.run(&mut source, 10).expect("capture");
+    }
+    let child: Output = Command::new(std::env::current_exe().expect("test binary"))
+        .arg("--ignored")
+        .arg("child_recovery_worker")
+        .env("NIRNAY_INGRESS_RECOVERY_DB", &path)
+        .output()
+        .expect("spawn recovery worker");
+    assert!(child.status.success(), "fresh-process recovery succeeded");
     assert_eq!(
         scan_journal(&path).expect("scan").frames.len(),
-        count as usize,
-        "the captured journal has more frames than the bounded hash window"
+        2,
+        "contract assertion"
     );
+}
+
+#[test]
+fn large_journal_replay_uses_bounded_memory() {
+    let path = temp_path("large-replay");
+    let count = 20_000_u64;
+    {
+        let mut output = String::new();
+        for index in 0..count {
+            let item = frame(index, format!("payload-{index}").as_bytes());
+            let raw = market_archive::RawFrame::new(
+                &item.source_id,
+                &item.provider_instrument_id,
+                item.received_utc_nanos,
+                item.received_monotonic_nanos,
+                item.exchange_utc_nanos,
+                item.sequence.map(|value| value.value),
+                &item.entitlement_ref,
+                &item.payload,
+            )
+            .expect("raw frame");
+            output.push_str(&raw.to_json_line().expect("journal line"));
+            output.push('\n');
+        }
+        std::fs::write(&path, output).expect("generated journal");
+    }
     let mut source = JournalReplaySource::open(&path, UPSTOX_SOURCE_ID).expect("replay source");
-    let mut ingestor = DurableIngestor::resume(&path, UPSTOX_SOURCE_ID).expect("resume");
+    let mut seen = 0_u64;
+    while let Some((ordinal, _)) = source.next_indexed_frame().expect("stream") {
+        assert_eq!(ordinal, seen, "ordinals are assigned in journal order");
+        seen += 1;
+    }
+    assert_eq!(seen, count, "all frames stream through a bounded reader");
+}
+
+#[test]
+#[ignore = "benchmark only: generate and replay a large journal"]
+fn replay_benchmark_large_generated_journal() {
+    let path = temp_path("benchmark");
+    let count = 200_000_u64;
+    {
+        let mut output = String::new();
+        for index in 0..count {
+            let item = frame(index, format!("payload-{index}").as_bytes());
+            let raw = market_archive::RawFrame::new(
+                &item.source_id,
+                &item.provider_instrument_id,
+                item.received_utc_nanos,
+                item.received_monotonic_nanos,
+                item.exchange_utc_nanos,
+                item.sequence.map(|value| value.value),
+                &item.entitlement_ref,
+                &item.payload,
+            )
+            .expect("raw frame");
+            output.push_str(&raw.to_json_line().expect("journal line"));
+            output.push('\n');
+        }
+        std::fs::write(&path, output).expect("generated benchmark journal");
+    }
+    let started = std::time::Instant::now();
+    let mut source = JournalReplaySource::open(&path, UPSTOX_SOURCE_ID).expect("replay source");
+    let mut streamed = 0_u64;
+    while source.next_indexed_frame().expect("stream").is_some() {
+        streamed += 1;
+    }
+    let elapsed = started.elapsed();
+    eprintln!(
+        "INGRESS-REPLAY-BENCH frames={streamed} elapsed_ms={} frames_per_sec={:.1} memory_frames_held=1",
+        elapsed.as_millis(),
+        streamed as f64 / elapsed.as_secs_f64()
+    );
+    assert_eq!(streamed, count, "contract assertion");
+}
+
+#[test]
+fn replay_fence_holds_beyond_the_delivery_window() {
+    let path = temp_path("fence-beyond-window");
+    let count = 5_000_u64;
+    {
+        let mut output = String::new();
+        for index in 0..count {
+            let item = frame(index, format!("payload-{index}").as_bytes());
+            let raw = market_archive::RawFrame::new(
+                &item.source_id,
+                &item.provider_instrument_id,
+                item.received_utc_nanos,
+                item.received_monotonic_nanos,
+                item.exchange_utc_nanos,
+                item.sequence.map(|value| value.value),
+                &item.entitlement_ref,
+                &item.payload,
+            )
+            .expect("raw frame");
+            output.push_str(&raw.to_json_line().expect("journal line"));
+            output.push('\n');
+        }
+        std::fs::write(&path, output).expect("generated journal");
+    }
+    let mut source = JournalReplaySource::open(&path, UPSTOX_SOURCE_ID).expect("replay source");
+    let mut ingestor =
+        DurableIngestor::resume(&path, UPSTOX_SOURCE_ID, SequencePolicy::CaptureSession)
+            .expect("resume");
+    assert!(
+        ingestor.known_deliveries() <= 4096,
+        "the delivery window stays bounded"
+    );
     let summary = ingestor.replay(&mut source).expect("replay");
     assert_eq!(
         summary.committed, 0,
-        "no frame outside the hash window is re-committed"
+        "frames older than the delivery window are fenced by ordinal"
     );
-    assert_eq!(summary.duplicates, count, "every captured frame is fenced");
+    assert_eq!(summary.duplicates, count, "contract assertion");
     assert_eq!(
         scan_journal(&path).expect("scan").frames.len(),
-        count as usize,
-        "the journal length is unchanged by a large replay"
+        count as usize
     );
 }

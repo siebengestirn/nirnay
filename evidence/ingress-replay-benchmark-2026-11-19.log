@@ -1,0 +1,10 @@
+   Compiling market-archive v0.1.0 (/Users/tourist/Documents/nirnay/crates/market-archive)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.10s
+     Running tests/ingress.rs (target/debug/deps/ingress-6ae8f37b8d0e2fad)
+
+running 1 test
+INGRESS-REPLAY-BENCH frames=200000 elapsed_ms=3259 frames_per_sec=61366.5 memory_frames_held=1
+test replay_benchmark_large_generated_journal ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 17 filtered out; finished in 8.87s
+
