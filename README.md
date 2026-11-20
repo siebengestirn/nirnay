@@ -370,12 +370,14 @@ once published; a new run adds a new dated file instead of rewriting history.
 | Canonical | `CONTRIBUTING.md` | change and evidence workflow |
 | Canonical | `SECURITY.md` | disclosure and secret handling |
 | Canonical | `engineering/verification-policy.md` | claim-state vocabulary |
+| Canonical | `engineering/q-kdb-style.md` | q / kdb+ (KDB-X) style rules and their authoritative sources |
 | Dated evidence | `BUILD-RESULTS.md` | owner-maintained bundle record; do not edit |
 | Dated evidence | `evidence/VERIFICATION-2026-11-17.md` | executed checks and boundaries |
 | Dated evidence | `evidence/UPGRADE-VERIFICATION-2026-11-13.md` | implementation inventory and upgrade gates |
 | Dated evidence | `evidence/BUILD-INVENTORY-2026-11-13.json` | machine-readable release inventory |
 | Dated evidence | `evidence/M2-AUTHORIZATION-2026-11-20.md` | signed M1 exit and bounded M2 scope |
 | Dated evidence | `evidence/KDB-ANALYTICS-2026-11-20.md` | checked-in KDB-X contract, golden pin and real-capture measurements |
+| Dated evidence | `evidence/Q-TESTS-STYLE-2026-11-20.md` | q unit harness, style guide, added-lines gate and measured results |
 
 The current-state block above names the verified commit, date, CI run and
 scope. Update it in the PR that changes the verified baseline. Do not add a

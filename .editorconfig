@@ -46,6 +46,11 @@ max_line_length = 80
 end_of_line = crlf
 indent_size = 4
 
+[*.q]
+indent_style = space
+indent_size = 2
+max_line_length = 100
+
 [*.sbe]
 charset = unset
 end_of_line = unset
