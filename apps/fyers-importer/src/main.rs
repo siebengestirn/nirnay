@@ -18,6 +18,7 @@ use std::{
     },
 };
 
+mod mbp;
 use anyhow::{
     Context, //
     bail,
@@ -64,6 +65,9 @@ pub struct ImportReport {
     pub records: usize,
     pub imported: usize,
     pub duplicates: usize,
+    /// Count of SDK depth callbacks that produced a typed five-level MBP
+    /// snapshot. Non-depth callbacks are not counted.
+    pub depth_snapshots: usize,
 }
 
 pub fn canonical_json(value: &Value) -> anyhow::Result<Vec<u8>> {
@@ -243,6 +247,7 @@ pub fn import_session(session_dir: &Path, output: &Path) -> anyhow::Result<Impor
         records: records.len(),
         imported: 0,
         duplicates: 0,
+        depth_snapshots: 0,
     };
     for record in records {
         let sequence = record
@@ -263,6 +268,25 @@ pub fn import_session(session_dir: &Path, output: &Path) -> anyhow::Result<Impor
         if high_water.is_some_and(|committed| sequence <= committed) {
             report.duplicates += 1;
             continue;
+        }
+        // Typed projection of depth callbacks. The kernel envelope keeps the
+        // SDK-callback origin; this does not promote it to an exchange packet.
+        if record.get("event_type").and_then(|value| value.as_str()) == Some("market_data") {
+            let symbol = record.get("symbol").and_then(Value::as_str).unwrap_or("");
+            let projected = mbp::callback_to_mbp(
+                record.get("payload").unwrap_or(&Value::Null),
+                symbol,
+                "NSE",
+                "data_socket",
+                record
+                    .get("received_utc_ns")
+                    .and_then(Value::as_i64)
+                    .unwrap_or_default(),
+            )
+            .context("projecting FYERS callback to typed MBP")?;
+            if projected.is_some() {
+                report.depth_snapshots += 1;
+            }
         }
         // Canonical re-encoding of the SDK-decoded callback record. The
         // original Python journal remains the authoritative capture artifact.
