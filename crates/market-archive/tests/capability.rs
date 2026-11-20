@@ -146,17 +146,22 @@ fn store_and_replay_require_verified_entitlement_and_rights() -> TestResult {
 }
 
 #[test]
-fn kite_quote_is_execution_support_not_an_mbp_source() -> TestResult {
+fn kite_quote_supplies_a_snapshot_but_no_source_continuity() -> TestResult {
+    let registry = registry()?;
+    let kite = registry.product("zerodha_kite", "quote", "NSE", "Cash")?;
+    assert!(kite.snapshot, "Kite quote returns a market-depth snapshot");
     let mut need = requirement();
     need.provider = "zerodha_kite".to_owned();
     need.product = "quote".to_owned();
     need.requires_clean_snapshot = true;
+    registry.evaluate(&need)?;
+    need.requires_source_continuity = true;
     assert!(
         matches!(
-            registry()?.evaluate(&need),
-            Err(CapabilityError::NoSnapshot)
+            registry.evaluate(&need),
+            Err(CapabilityError::NoSourceContinuity)
         ),
-        "a touchline quote cannot supply a clean book snapshot"
+        "a snapshot-only quote has no continuous source sequence"
     );
     Ok(())
 }
@@ -166,7 +171,7 @@ fn malformed_and_wrong_version_registries_are_refused() -> TestResult {
     assert!(
         matches!(
             SourceProductRegistry::from_bytes(
-                b"{\"schema_version\":2,\"registry_id\":\"x\",\"products\":[]}"
+                b"{\"schema_version\":2,\"registry_id\":\"x\",\"rights_review\":{\"status\":\"pending\",\"review_date\":\"2026-11-20\",\"required_evidence\":[]},\"products\":[]}"
             ),
             Err(CapabilityError::UnsupportedSchema(2))
         ),
@@ -206,5 +211,56 @@ fn protocol_digest_is_real_or_explicitly_unavailable() -> TestResult {
         fyers.protocol.schema_digest.is_none() && fyers.protocol.schema_reference.is_some(),
         "the SDK callback product names its protocol reference without inventing a digest"
     );
+    Ok(())
+}
+
+#[test]
+fn unknown_and_prohibited_rights_do_not_grant_store_or_replay() -> TestResult {
+    let registry = registry()?;
+    let upstox = registry.product("upstox", "full", "NSE", "Cash")?;
+    assert_eq!(
+        upstox.rights.store.state,
+        market_archive::PermissionState::Unknown,
+        "no written evidence means UNKNOWN, not PERMITTED"
+    );
+    assert_eq!(
+        upstox.rights.replay.state,
+        market_archive::PermissionState::Unknown,
+        "replay remains UNKNOWN until written evidence is reviewed"
+    );
+    let mut need = requirement();
+    need.requires_store = true;
+    assert!(
+        matches!(
+            registry.evaluate(&need),
+            Err(CapabilityError::MissingRight(_))
+        ),
+        "UNKNOWN store right must fail closed"
+    );
+    Ok(())
+}
+
+#[test]
+fn rights_review_requires_written_evidence() -> TestResult {
+    let registry = registry()?;
+    let review = &registry.rights_review;
+    assert_eq!(
+        review.status, "pending_written_evidence",
+        "written evidence is pending"
+    );
+    for required in [
+        "personal_capture",
+        "local_retention",
+        "historical_replay",
+        "backup_retention",
+        "internal_analytics",
+        "external_redistribution",
+        "retention_period",
+    ] {
+        assert!(
+            review.required_evidence.iter().any(|item| item == required),
+            "{required} must be in the written-evidence checklist"
+        );
+    }
     Ok(())
 }
