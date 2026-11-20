@@ -19,9 +19,11 @@ pub use lifecycle::{
 };
 pub use store::{
     BrokerOrderId, //
+    ChargeStatus,
     ClientOrderId,
     CommitFault,
     DispatchClaim,
+    FillEvent,
     OmsStore,
     OrderView,
     OutboxView,
