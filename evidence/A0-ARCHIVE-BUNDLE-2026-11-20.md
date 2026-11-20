@@ -48,3 +48,22 @@ checkout of the final merge commit after this change lands; until then
 
 No credential, licensed capture or broker action is involved. This record
 covers archive integrity only and grants no trading or platform-readiness claim.
+
+## Follow-up closure (2026-11-21)
+
+Two narrower defects were found after the initial correction:
+
+- The archive manifest declared `refs/heads/feat/data-rights`, but the bundle
+  did not carry that ref. The commit was reachable from `main`; the missing
+  item was the ref itself. The verifier now requires exact agreement between
+  every declared `git_refs` entry and a bundled ref, and rejects bundled refs
+  the manifest does not declare. A self-test covers a declared-but-unbundled
+  ref. The archive contract is narrowed to the refs it actually preserves.
+- The verifier self-tests assumed Git's default branch was `main`, so four of
+  five failed under a machine configured otherwise. Each synthetic repository
+  is now created with `git init --initial-branch=main`, and every test-local
+  Git command runs with global and system config isolated. All six self-tests
+  pass with `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1`.
+
+The archive builder fails closed if either agreement check fails, which is how
+both defects were reproduced before the fix.
