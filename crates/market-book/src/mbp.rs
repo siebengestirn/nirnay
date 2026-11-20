@@ -235,6 +235,11 @@ impl MbpBook {
     }
 
     #[must_use]
+    pub fn to_snapshot(&self) -> BookSnapshot {
+        self.inner.to_snapshot()
+    }
+
+    #[must_use]
     pub fn best_bid(&self) -> Option<market_types::model::Level> {
         self.inner.best_bid()
     }
