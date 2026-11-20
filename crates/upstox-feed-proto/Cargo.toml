@@ -7,6 +7,7 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+market-event.workspace = true
 prost.workspace = true
 thiserror.workspace = true
 

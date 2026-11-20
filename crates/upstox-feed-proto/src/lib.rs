@@ -6,6 +6,7 @@
 //! remains authoritative.
 
 pub mod decode;
+pub mod mbp;
 pub mod proto {
     include!(concat!(
         env!("OUT_DIR"),
@@ -16,4 +17,11 @@ pub mod proto {
 pub use decode::{
     DecodeError, FeedKind, FeedResponseDiagnostic, FeedResponseType, FeedSummary,
     decode_feed_response, decode_feed_response_diagnostic, response_type_from_raw,
+};
+pub use mbp::{
+    FULL_DEPTH_LEVELS, //
+    MbpDecodeError,
+    market_full_to_mbp,
+    millis_to_ns,
+    rupees_to_paise,
 };

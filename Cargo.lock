@@ -2307,6 +2307,7 @@ name = "upstox-feed-proto"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "market-event",
  "prost",
  "prost-build",
  "protoc-bin-vendored",
