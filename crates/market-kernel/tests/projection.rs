@@ -38,6 +38,7 @@ fn observation(frame: &str, instrument: &str, payload: &str, sequence: u64) -> S
         receive_monotonic_ns: sequence,
         source_time_ns: Some(1_699_999_999_000_000_000 + sequence as i64),
         source_clock_domain: Some("provider_feed_clock".to_owned()),
+        channel_id: Some("test-channel".to_owned()),
         connection_epoch: 1,
         receive_sequence: sequence,
         sequence: Some(sequence),
@@ -236,4 +237,264 @@ fn missing_reference_revision_is_refused() {
         Err(market_kernel::KernelError::MissingReferenceRevision),
         "no revision means no resolution"
     );
+}
+
+fn scoped(
+    frame: &str,
+    instrument: &str,
+    sequence: Option<u64>,
+    scope: SequenceScope,
+    channel: Option<&str>,
+    epoch: u64,
+) -> SourceObservation {
+    let mut observation = observation(frame, instrument, frame, sequence.unwrap_or(1));
+    observation.sequence = sequence;
+    observation.sequence_scope = scope;
+    observation.channel_id = channel.map(str::to_owned);
+    observation.connection_epoch = epoch;
+    observation
+}
+
+fn session_of(observations: Vec<SourceObservation>) -> KernelSession {
+    KernelSession {
+        schema_version: market_kernel::KERNEL_SESSION_SCHEMA_VERSION,
+        source_scope: "NSE".to_owned(),
+        session_reference_revision: Some("revision-a".to_owned()),
+        observations,
+    }
+}
+
+/// No declared source sequence means no exchange-level completeness claim.
+#[test]
+fn unscoped_sequence_is_unverified() -> Result<(), Box<dyn std::error::Error>> {
+    let events = project_session(&session_of(vec![scoped(
+        "f1",
+        "NSE_EQ|A",
+        None,
+        SequenceScope::None,
+        Some("ch"),
+        1,
+    )]))?;
+    assert_eq!(
+        events[0].quality,
+        StreamState::Unverified,
+        "no scope yields Unverified"
+    );
+    assert_eq!(
+        events[0].instrument_id, None,
+        "an unverified event is not actionable"
+    );
+    assert!(
+        !events[0].is_actionable(),
+        "unverified events cannot drive exposure"
+    );
+    Ok(())
+}
+
+/// A local receive counter is ordered locally; it is not a source sequence.
+#[test]
+fn local_receive_order_is_not_a_source_sequence() -> Result<(), Box<dyn std::error::Error>> {
+    let mut first = scoped("f1", "NSE_EQ|A", None, SequenceScope::None, Some("ch"), 1);
+    let mut second = scoped("f2", "NSE_EQ|A", None, SequenceScope::None, Some("ch"), 1);
+    first.receive_sequence = 1;
+    second.receive_sequence = 2;
+    let events = project_session(&session_of(vec![first, second]))?;
+    assert!(
+        events
+            .iter()
+            .all(|event| event.quality == StreamState::Unverified),
+        "increasing local receive counters do not establish continuity"
+    );
+    Ok(())
+}
+
+/// One raw channel carrying several instruments shares one sequence tracker.
+#[test]
+fn channel_sequence_is_shared_across_instruments() -> Result<(), Box<dyn std::error::Error>> {
+    let events = project_session(&session_of(vec![
+        scoped(
+            "f1",
+            "NSE_EQ|A",
+            Some(1),
+            SequenceScope::Channel,
+            Some("ch"),
+            1,
+        ),
+        scoped(
+            "f2",
+            "NSE_EQ|B",
+            Some(3),
+            SequenceScope::Channel,
+            Some("ch"),
+            1,
+        ),
+    ]))?;
+    assert_eq!(
+        events[0].quality,
+        StreamState::Clean,
+        "first channel observation is clean"
+    );
+    assert_eq!(
+        events[1].quality,
+        StreamState::Gap,
+        "a channel gap affects later instruments"
+    );
+    Ok(())
+}
+
+/// Provider-per-instrument sequences must not be conflated.
+#[test]
+fn provider_instrument_sequences_are_independent() -> Result<(), Box<dyn std::error::Error>> {
+    let events = project_session(&session_of(vec![
+        scoped(
+            "f1",
+            "NSE_EQ|A",
+            Some(1),
+            SequenceScope::ProviderInstrument,
+            None,
+            1,
+        ),
+        scoped(
+            "f2",
+            "NSE_EQ|B",
+            Some(1),
+            SequenceScope::ProviderInstrument,
+            None,
+            1,
+        ),
+    ]))?;
+    assert!(
+        events
+            .iter()
+            .all(|event| event.quality == StreamState::Clean),
+        "two instruments at sequence 1 are not a gap under per-instrument scope"
+    );
+    Ok(())
+}
+
+/// Connection epochs and distinct channels are separate continuity scopes.
+#[test]
+fn epochs_and_channels_separate_trackers() -> Result<(), Box<dyn std::error::Error>> {
+    let events = project_session(&session_of(vec![
+        scoped(
+            "f1",
+            "NSE_EQ|A",
+            Some(5),
+            SequenceScope::Channel,
+            Some("ch-a"),
+            1,
+        ),
+        scoped(
+            "f2",
+            "NSE_EQ|A",
+            Some(1),
+            SequenceScope::Channel,
+            Some("ch-a"),
+            2,
+        ),
+        scoped(
+            "f3",
+            "NSE_EQ|A",
+            Some(1),
+            SequenceScope::Channel,
+            Some("ch-b"),
+            2,
+        ),
+    ]))?;
+    assert!(
+        events
+            .iter()
+            .all(|event| event.quality == StreamState::Clean),
+        "a new epoch or a different channel starts a new tracker"
+    );
+    Ok(())
+}
+
+/// A reconnect must never clear an existing gap without recovery evidence.
+#[test]
+fn reconnect_after_gap_stays_fail_closed() -> Result<(), Box<dyn std::error::Error>> {
+    let events = project_session(&session_of(vec![
+        scoped(
+            "f1",
+            "NSE_EQ|A",
+            Some(1),
+            SequenceScope::Channel,
+            Some("ch"),
+            1,
+        ),
+        scoped(
+            "f2",
+            "NSE_EQ|A",
+            Some(4),
+            SequenceScope::Channel,
+            Some("ch"),
+            1,
+        ),
+        scoped(
+            "f3",
+            "NSE_EQ|A",
+            Some(1),
+            SequenceScope::Channel,
+            Some("ch"),
+            2,
+        ),
+    ]))?;
+    assert_eq!(
+        events[1].quality,
+        StreamState::Gap,
+        "sequence jump opens a gap"
+    );
+    assert_eq!(
+        events[2].quality,
+        StreamState::Recovering,
+        "a new epoch cannot clear a gap"
+    );
+    assert!(
+        !events[2].is_actionable(),
+        "reconnected order stays non-actionable"
+    );
+    Ok(())
+}
+
+/// Per-instrument scopes isolate a gap on one instrument from another.
+#[test]
+fn per_instrument_gap_does_not_leak_to_other_instruments() -> Result<(), Box<dyn std::error::Error>>
+{
+    let events = project_session(&session_of(vec![
+        scoped(
+            "f1",
+            "NSE_EQ|A",
+            Some(1),
+            SequenceScope::ProviderInstrument,
+            None,
+            1,
+        ),
+        scoped(
+            "f2",
+            "NSE_EQ|A",
+            Some(4),
+            SequenceScope::ProviderInstrument,
+            None,
+            1,
+        ),
+        scoped(
+            "f3",
+            "NSE_EQ|B",
+            Some(1),
+            SequenceScope::ProviderInstrument,
+            None,
+            1,
+        ),
+    ]))?;
+    assert_eq!(
+        events[1].quality,
+        StreamState::Gap,
+        "instrument A has a gap"
+    );
+    assert_eq!(
+        events[2].quality,
+        StreamState::Clean,
+        "instrument B is unaffected"
+    );
+    Ok(())
 }

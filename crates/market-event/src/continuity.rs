@@ -11,9 +11,14 @@ use serde::{
 use crate::error::ContractError;
 
 /// Stream continuity state. `Clean` is the only risk-increasing state.
+///
+/// `Unverified` is the fail-closed state for a source that declares no
+/// sequence scope. Receipt order may still be recorded, but exchange-level
+/// packet completeness is not claimed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StreamState {
+    Unverified,
     Clean,
     Gap,
     Recovering,
@@ -121,7 +126,10 @@ impl ContinuityMachine {
         self.highest = Some(sequence);
         match self.state {
             StreamState::Clean => Ok(ObservationOutcome::InOrder),
-            StreamState::Recovering | StreamState::Gap | StreamState::Recovered => {
+            StreamState::Recovering
+            | StreamState::Gap
+            | StreamState::Recovered
+            | StreamState::Unverified => {
                 // Sequence order alone cannot clear an unknown state.
                 Ok(ObservationOutcome::InOrder)
             }

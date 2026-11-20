@@ -104,7 +104,7 @@ impl OriginClass {
 }
 
 /// Where a sequence value is meaningful (ADR-M1-006 ordering scopes).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SequenceScope {
     /// No source sequence exists; only local receive order is available.

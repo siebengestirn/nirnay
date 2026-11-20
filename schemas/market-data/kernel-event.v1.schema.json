@@ -132,6 +132,7 @@
     },
     "quality": {
       "enum": [
+        "unverified",
         "clean",
         "gap",
         "recovering",
