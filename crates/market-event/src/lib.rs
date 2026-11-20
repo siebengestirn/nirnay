@@ -9,6 +9,7 @@ pub mod continuity;
 pub mod error;
 pub mod event;
 pub mod identity;
+pub mod mbp;
 
 pub use continuity::{
     ContinuityMachine, //
@@ -28,4 +29,12 @@ pub use identity::{
     business_event_id,
     capture_frame_id,
     observation_id,
+};
+pub use mbp::{
+    MarketByPriceDelta,
+    MarketByPriceSnapshot,
+    MarketDataEvent,
+    MbpError, //
+    MbpLevel,
+    MbpSide,
 };
