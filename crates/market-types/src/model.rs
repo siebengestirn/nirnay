@@ -31,11 +31,11 @@ impl fmt::Display for SourceId {
 
 /// Exact price coefficient.
 ///
-/// The coefficient is interpreted using the owning instrument's
-/// [`NumericSpec::price_scale`] and [`NumericSpec::price_unit`]. The scale and
-/// unit live in instrument metadata, not in every book level, so a level stays
-/// one machine word. Prices are signed: negative prices are valid for yield,
-/// spread, and other non-probability instruments.
+/// The coefficient is interpreted using the scale and unit declared by the
+/// owning instrument's effective venue terms. Those live in instrument
+/// metadata, not in every book level, so a level stays one machine word. Prices
+/// are signed: negative prices are valid for yield, spread, and other
+/// non-probability instruments.
 ///
 /// `Price` and [`Quantity`] are not interchangeable:
 ///

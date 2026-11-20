@@ -15,8 +15,10 @@ compile-cost reductions. It makes no live-trading or real-source claim.
 - Kalshi/Polymarket prediction-market types (`PriceRange`, `MarketInfo`,
   `PriceBand`, `NumericSpec`, `Ratio`, price/quantity units and two legacy
   conversion helpers) were removed from `market-types`. They had no non-test
-  caller; an earlier ADR already classified them as unwired scaffolding. Their
-  provenance remains in the archived workspace.
+  caller; the removal is limited to this dead prediction-market cluster. Their
+  provenance remains in the archived workspace. A separate ADR classifies a
+  different legacy event-metadata group as non-authoritative scaffolding; it is
+  not the rationale for this removal.
 - The synthetic SBE golden was re-symbolized in place from `kalshi:TEST-A/B`
   to `nirnay:TEST-A/B`. Its 4096-byte structure and message semantics are
   unchanged. The independent C++ dump was regenerated from the archived oracle

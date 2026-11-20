@@ -93,9 +93,9 @@ impl OrderBook {
 
     /// Apply an absolute or relative level update.
     ///
-    /// Prices are signed and unrestricted: the instrument's [`market_types::model::NumericSpec`]
-    /// owns tick validation, not the shared book. Quantities remain non-negative
-    /// and all arithmetic is checked.
+    /// Prices are signed and unrestricted: tick validation belongs to the
+    /// venue's effective instrument terms, not to the shared book. Quantities
+    /// remain non-negative and all arithmetic is checked.
     pub fn apply(
         &mut self,
         side: Side,
