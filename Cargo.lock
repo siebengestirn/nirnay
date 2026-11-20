@@ -683,9 +683,11 @@ dependencies = [
  "base64 0.22.1",
  "clap",
  "market-archive",
+ "market-event",
  "serde_json",
  "sha2 0.10.9",
  "tempfile",
+ "thiserror",
 ]
 
 [[package]]
