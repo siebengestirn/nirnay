@@ -194,6 +194,7 @@ fn synthetic_session(input: &PaperInput) -> Result<(KernelSession, Vec<QuoteSnap
             receive_monotonic_ns: sequence + *age_ns,
             source_time_ns: Some(1_699_999_999_000_000_000 + sequence as i64),
             source_clock_domain: Some("provider_feed_clock".to_owned()),
+            channel_id: Some("paper-channel".to_owned()),
             connection_epoch: 1,
             receive_sequence: sequence,
             sequence: Some(sequence),
@@ -415,7 +416,10 @@ pub fn run_paper(input: &PaperInput, oms_path: &Path) -> Result<PaperRun, String
             continue;
         }
 
-        let gap = if matches!(event.quality, StreamState::Gap | StreamState::Recovering) {
+        let gap = if matches!(
+            event.quality,
+            StreamState::Gap | StreamState::Recovering | StreamState::Unverified
+        ) {
             Some(SequenceGap {
                 expected: None,
                 observed: event.sequence.unwrap_or(0),

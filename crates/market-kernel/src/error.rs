@@ -26,6 +26,8 @@ pub enum KernelError {
     OutputExists,
     #[error("duplicate observation identity within a verified session")]
     DuplicateObservation,
+    #[error("a scoped continuity observation has no source sequence")]
+    MissingSequence,
     #[error("kernel identity contract error: {0}")]
     Identity(#[from] ContractError),
 }

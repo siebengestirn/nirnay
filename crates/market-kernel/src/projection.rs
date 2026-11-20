@@ -1,10 +1,14 @@
 //! Deterministic projection from verified observations to kernel events.
 
-use std::collections::BTreeMap;
+use std::collections::{
+    BTreeMap, //
+    BTreeSet,
+};
 
 use market_event::{
     ContinuityMachine, //
     KernelEvent,
+    SequenceScope,
     StreamState,
     capture_frame_id,
     observation_id,
@@ -41,6 +45,43 @@ impl KernelSession {
             observation.validate()?;
         }
         Ok(())
+    }
+}
+
+/// The scope in which a source sequence value orders observations.
+///
+/// A local receive counter is never a source sequence and is not a key here.
+/// When a provider supplies no sequence scope, no continuity claim is made at
+/// all and the event is marked `Unverified`.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ContinuityKey {
+    pub source_id: String,
+    pub source_session_id: String,
+    pub scope: SequenceScope,
+    pub channel_id: Option<String>,
+    pub provider_instrument_id: Option<String>,
+}
+
+impl ContinuityKey {
+    /// Build the key declared by the observation's sequence scope.
+    /// Instrument identity is included only for provider-per-instrument
+    /// sequences; a channel sequence is shared by all instruments in a frame.
+    pub fn for_observation(observation: &SourceObservation) -> Option<Self> {
+        if observation.sequence.is_none() || observation.sequence_scope == SequenceScope::None {
+            return None;
+        }
+        let instrument = if observation.sequence_scope == SequenceScope::ProviderInstrument {
+            Some(observation.provider_instrument_id.clone())
+        } else {
+            None
+        };
+        Some(Self {
+            source_id: observation.source_id.clone(),
+            source_session_id: observation.source_session_id.clone(),
+            scope: observation.sequence_scope,
+            channel_id: observation.channel_id.clone(),
+            provider_instrument_id: instrument,
+        })
     }
 }
 
@@ -103,14 +144,15 @@ pub fn project_observation(
 
 /// Project a whole verified session deterministically.
 ///
-/// Continuity is tracked per source id. An observation that cannot be
-/// classified by the sequence tracker is still emitted with its derived
-/// identity but carries the session's fail-closed quality state, so a gap
-/// never becomes an actionable clean event.
+/// Continuity is keyed by the declared sequence scope: source session,
+/// channel and scope, plus instrument only when the provider sequence is
+/// per-instrument. Connection epochs stay inside the tracker so a reconnect
+/// cannot silently clear a gap. A source with no sequence scope produces
+/// `Unverified` events, never clean ones.
 pub fn project_session(session: &KernelSession) -> Result<Vec<KernelEvent>, KernelError> {
     session.validate()?;
-    let mut machines: BTreeMap<String, ContinuityMachine> = BTreeMap::new();
-    let mut seen = std::collections::BTreeSet::new();
+    let mut machines: BTreeMap<ContinuityKey, ContinuityMachine> = BTreeMap::new();
+    let mut seen = BTreeSet::new();
     let mut events = Vec::with_capacity(session.observations.len());
 
     for observation in &session.observations {
@@ -118,15 +160,25 @@ pub fn project_session(session: &KernelSession) -> Result<Vec<KernelEvent>, Kern
         if !seen.insert(event.observation_id.clone()) {
             return Err(KernelError::DuplicateObservation);
         }
-        let machine = machines.entry(observation.source_id.clone()).or_default();
-        if let Some(sequence) = observation.sequence {
-            machine
-                .observe(observation.connection_epoch, sequence)
-                .map_err(|_| KernelError::InvalidReceiveTime)?;
-        }
-        event.quality = machine.state();
-        if matches!(event.quality, StreamState::Gap | StreamState::Recovering) {
-            event.instrument_id = None;
+        match ContinuityKey::for_observation(observation) {
+            None => {
+                event.quality = StreamState::Unverified;
+                event.instrument_id = None;
+            }
+            Some(key) => {
+                let sequence = observation.sequence.ok_or(KernelError::MissingSequence)?;
+                let machine = machines.entry(key).or_default();
+                machine
+                    .observe(observation.connection_epoch, sequence)
+                    .map_err(|_| KernelError::InvalidReceiveTime)?;
+                event.quality = machine.state();
+                if matches!(
+                    event.quality,
+                    StreamState::Gap | StreamState::Recovering | StreamState::Unverified
+                ) {
+                    event.instrument_id = None;
+                }
+            }
         }
         events.push(event);
     }

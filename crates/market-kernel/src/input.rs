@@ -38,6 +38,10 @@ pub struct SourceObservation {
     /// Source-provided timestamp and clock domain, if any.
     pub source_time_ns: Option<i64>,
     pub source_clock_domain: Option<String>,
+    /// Feed or channel identity when a source multiplexes instruments on one
+    /// ordered channel. Channel sequence belongs to the channel, not to each
+    /// instrument inside a frame.
+    pub channel_id: Option<String>,
     /// Connection generation and receive fence.
     pub connection_epoch: u64,
     pub receive_sequence: u64,

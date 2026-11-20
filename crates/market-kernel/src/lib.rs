@@ -14,6 +14,7 @@ pub mod projection;
 pub use error::KernelError;
 pub use input::SourceObservation;
 pub use projection::{
+    ContinuityKey,                 //
     KERNEL_SESSION_SCHEMA_VERSION, //
     KernelSession,
     project_observation,
