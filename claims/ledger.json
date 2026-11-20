@@ -282,6 +282,18 @@
         ]
       },
       "falsifier": "An UNKNOWN store/replay right satisfies a requirement, a boolean permission is still accepted, a right changes to PERMITTED without written evidence, or a snapshot_only product declares snapshot=false."
+    },
+    {
+      "id": "CLM-024",
+      "statement": "A newly constructed risk authority denies new risk until session, account snapshot, kill switch and reconciliation readiness are explicitly supplied; control flags do not alter the economic-state revision.",
+      "status": "implemented",
+      "scope": {
+        "packages": [
+          "crates/risk-authority/src/authority.rs",
+          "crates/risk-authority/tests/authority.rs"
+        ]
+      },
+      "falsifier": "A fresh authority accepts a reservation, any default readiness flag is permissive, a control setter changes the revision, or the fresh-authority test does not fail all four checks."
     }
   ]
 }

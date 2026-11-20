@@ -136,12 +136,45 @@ fn policy() -> Result<ValidatedRiskPolicy, Box<dyn std::error::Error>> {
 }
 
 fn authority() -> Result<RiskAuthority, Box<dyn std::error::Error>> {
-    Ok(RiskAuthority::new(
+    let authority = RiskAuthority::new(
         AccountId::new(ACCOUNT)?,
         policy()?,
         vec![instrument()?],
         date()?,
-    ))
+    );
+    // Readiness must be supplied explicitly; the default is unready.
+    authority.set_session_open(true)?;
+    authority.set_snapshot_available(true)?;
+    authority.set_kill_switch(false)?;
+    authority.set_reconciliation_blocked(false)?;
+    Ok(authority)
+}
+
+/// A newly constructed authority has no evidence of session, account or
+/// operational readiness. It must deny new risk without any setter calls.
+#[test]
+fn fresh_authority_denies_new_risk() -> TestResult {
+    let authority = RiskAuthority::new(
+        AccountId::new(ACCOUNT)?,
+        policy()?,
+        vec![instrument()?],
+        date()?,
+    );
+    let rejected = authority
+        .evaluate_and_reserve(intent(1, 2, PRICE, Side::Buy)?, observation()?, None)
+        .expect_err("an unready authority must reject");
+    for required in [
+        RiskCheck::SessionOpen,
+        RiskCheck::AccountSnapshotAvailable,
+        RiskCheck::KillSwitch,
+        RiskCheck::Reconciliation,
+    ] {
+        assert!(
+            rejected_check(&rejected, required),
+            "fresh authority must fail {required:?}"
+        );
+    }
+    Ok(())
 }
 
 fn intent(

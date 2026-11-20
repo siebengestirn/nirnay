@@ -231,6 +231,14 @@
       "evidence_status": "The source-product registry records capture/store/replay/redistribute as UNKNOWN, PERMITTED or PROHIBITED with source, document reference, scope and review date; UNKNOWN never grants a right and store/replay requirements fail closed. A registry-level written-evidence review lists the seven required evidence classes. The Kite quote product now declares a snapshot, with cross-field schema rules enforcing snapshot/recovery/depth coherence. All rights remain UNKNOWN pending owner evidence; no entitlement or data right is claimed.",
       "owner": "market-data",
       "scope": "configs/providers/source-products.v1.json; schemas/providers/source-product-registry.v1.schema.json; crates/market-archive/src/capability.rs"
+    },
+    {
+      "id": "CAP-029",
+      "name": "Fail-closed risk authority startup",
+      "status": "implemented",
+      "evidence_status": "A newly constructed RiskAuthority now has session closed, account snapshot unavailable, kill switch engaged and reconciliation blocked, so it denies new risk until readiness facts are supplied by their owners. Readiness control flags no longer bump the economic-state revision. A fresh-authority test asserts all four fail-closed checks; the synthetic paper runner supplies readiness explicitly and records that these values are fixtures, not measured evidence. This is the M3.6.0 prerequisite only, not complete health-to-risk integration.",
+      "owner": "risk-authority",
+      "scope": "crates/risk-authority/src/authority.rs; crates/risk-authority/tests/authority.rs; apps/paper-runner/src/lib.rs"
     }
   ]
 }

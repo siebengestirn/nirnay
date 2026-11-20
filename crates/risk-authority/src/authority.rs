@@ -149,10 +149,12 @@ impl Default for AuthorityState {
         Self {
             now: LogicalNanos::ZERO,
             revision: 0,
-            session_open: true,
-            account_snapshot_available: true,
-            kill_switch_engaged: false,
-            reconciliation_blocked: false,
+            // No startup evidence exists: a fresh authority must deny new risk
+            // until each readiness fact is supplied by its owner.
+            session_open: false,
+            account_snapshot_available: false,
+            kill_switch_engaged: true,
+            reconciliation_blocked: true,
             daily_pnl: Paise(0),
             positions: BTreeMap::new(),
             pending_buy: BTreeMap::new(),
@@ -252,23 +254,17 @@ impl RiskAuthority {
     }
 
     pub fn set_snapshot_available(&self, available: bool) -> Result<(), AuthorityError> {
-        let mut state = self.lock()?;
-        state.account_snapshot_available = available;
-        state.revision += 1;
+        self.lock()?.account_snapshot_available = available;
         Ok(())
     }
 
     pub fn set_kill_switch(&self, engaged: bool) -> Result<(), AuthorityError> {
-        let mut state = self.lock()?;
-        state.kill_switch_engaged = engaged;
-        state.revision += 1;
+        self.lock()?.kill_switch_engaged = engaged;
         Ok(())
     }
 
     pub fn set_reconciliation_blocked(&self, blocked: bool) -> Result<(), AuthorityError> {
-        let mut state = self.lock()?;
-        state.reconciliation_blocked = blocked;
-        state.revision += 1;
+        self.lock()?.reconciliation_blocked = blocked;
         Ok(())
     }
 
