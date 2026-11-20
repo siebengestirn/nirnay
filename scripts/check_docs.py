@@ -65,8 +65,33 @@ def parse_state(readme: str) -> dict[str, str]:
     return fields
 
 
+# Paths that constitute code or executable contract, as opposed to prose or
+# dated evidence. A change to any of these after the declared code_commit
+# invalidates the current-state record even though the commit is an ancestor.
+CODE_SUFFIXES = (
+    ".rs", ".py", ".q", ".sh", ".bash", ".zsh", ".c", ".cc", ".cpp", ".h",
+    ".hpp", ".toml", ".json", ".yml", ".yaml", ".proto",
+)
+CODE_NAMES = frozenset(
+    {"Makefile", "Cargo.lock", "Cargo.toml", ".editorconfig", ".clippy.toml",
+     ".rustfmt.toml", ".ruff.toml", ".gitattributes"}
+)
+PROSE_DIRS = ("evidence/", "docs/")
+
+
+def is_code_path(path: str) -> bool:
+    """Report whether a changed path is code/contract rather than prose."""
+    normalized = path.replace("\\", "/")
+    if any(normalized.startswith(prefix) for prefix in PROSE_DIRS):
+        return False
+    name = normalized.rsplit("/", 1)[-1]
+    return name in CODE_NAMES or name.endswith(CODE_SUFFIXES)
+
+
 def validate_current_state(
-    state: dict[str, str], ancestor_check: Callable[[str], bool]
+    state: dict[str, str],
+    ancestor_check: Callable[[str], bool],
+    code_changes_check: Callable[[str], list[str]] | None = None,
 ) -> list[str]:
     """Validate the parsed current-state block against the code-commit contract."""
     errors: list[str] = []
@@ -80,6 +105,13 @@ def validate_current_state(
         errors.append(
             f"CURRENT-STATE code_commit {code_commit} is not an ancestor of HEAD"
         )
+    elif code_changes_check is not None:
+        changed = code_changes_check(code_commit)
+        if changed:
+            errors.append(
+                "CURRENT-STATE code_commit is stale: code changed after it in "
+                + ", ".join(changed)
+            )
     try:
         dt.date.fromisoformat(state.get("verified_on", ""))
     except ValueError:
@@ -103,6 +135,25 @@ def is_ancestor(commit: str) -> bool:
     except OSError:
         return False
     return result.returncode == 0
+
+
+def code_changes_since(commit: str) -> list[str]:
+    """Return code/contract paths changed between a commit and HEAD."""
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--name-only", f"{commit}..HEAD"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return []
+    if result.returncode != 0:
+        return []
+    return sorted(
+        path for path in result.stdout.splitlines() if path and is_code_path(path)
+    )
 
 
 def local_links(text: str, source: Path) -> list[Path]:
@@ -135,7 +186,9 @@ def check() -> list[str]:
         if Path(name).name not in readme and name not in readme:
             errors.append(f"README does not point to canonical document {name}")
 
-    errors.extend(validate_current_state(parse_state(readme), is_ancestor))
+    errors.extend(
+        validate_current_state(parse_state(readme), is_ancestor, code_changes_since)
+    )
 
     for name in (*CANONICAL, *DATED):
         path = ROOT / name
@@ -189,6 +242,42 @@ class DocsTest(unittest.TestCase):
             "scope": "local",
         }
         self.assertEqual(validate_current_state(current, lambda _commit: True), [])
+
+    def test_detects_code_changes_after_declared_commit(self) -> None:
+        """An older ancestor commit with later code edits must fail."""
+        current = {
+            "code_commit": "abc1234",
+            "verified_on": "2026-11-18",
+            "ci_run": "none",
+            "scope": "local",
+        }
+        errors = validate_current_state(
+            current,
+            lambda _commit: True,
+            lambda _commit: ["scripts/check_q_style.py", "analytics/kdb/mbp.q"],
+        )
+        self.assertTrue(
+            any("stale" in error for error in errors),
+            "code changes after the declared commit must fail the gate",
+        )
+
+    def test_prose_changes_after_commit_are_ignored(self) -> None:
+        """Evidence and canonical Markdown edits do not invalidate state."""
+        self.assertFalse(is_code_path("evidence/NEW-2026-11-20.md"))
+        self.assertFalse(is_code_path("README.md"))
+        self.assertFalse(is_code_path("engineering/q-kdb-style.md"))
+
+    def test_code_paths_are_recognised(self) -> None:
+        """Source, config and workflow paths count as code."""
+        for path in (
+            "scripts/check_docs.py",
+            "analytics/kdb/mbp.q",
+            "Makefile",
+            "Cargo.lock",
+            ".github/workflows/ci.yml",
+            "schemas/analytics/kdb-metrics-report.v1.schema.json",
+        ):
+            self.assertTrue(is_code_path(path), f"{path} must count as code")
 
     def test_rejects_missing_block(self) -> None:
         """An absent block produces no fields."""

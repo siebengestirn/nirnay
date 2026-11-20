@@ -1,4 +1,4 @@
-.PHONY: check perf docs-check shellcheck-check generated-paths-check pollution-check style rust-style source-style q-style prose-style style-gate python-format-check rust-test python-test python-check cpp-test cpp-format-check schema-check fundamental-fixture-check verify-local fmt constraints sbom supply-chain wheels packaging-test bundle bundle-verify git-policy kdb-analyze kdb-golden
+.PHONY: check perf docs-check shellcheck-check generated-paths-check pollution-check style rust-style source-style q-style prose-style style-gate python-format-check rust-test python-test python-check cpp-test cpp-format-check schema-check fundamental-fixture-check verify-local fmt constraints sbom supply-chain wheels packaging-test bundle bundle-verify git-policy kdb-analyze kdb-golden kdb-q-test archive-verify
 check:
 	$(MAKE) docs-check
 	$(MAKE) shellcheck-check
@@ -121,3 +121,8 @@ kdb-q-test:
 	  $(abspath apps/kdb-lab/tests/golden/mbp-observation-v1.csv) \
 	  $(abspath $(KDB_Q_DIR)/tests/empty.csv) \
 	  $(abspath $(KDB_Q_DIR)/tests/mbp-unit.csv)
+
+# Verify a full archive's source commit is recoverable from its Git bundle.
+ARCHIVE ?= /Users/tourist/Documents/nirnay-full-2026-11-20.zip
+archive-verify:
+	python3 scripts/verify_archive_bundle.py $(ARCHIVE)
