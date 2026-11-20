@@ -137,8 +137,18 @@ Never print these values. The recorder reads them into the process environment.
 
 ### KDB-X analysis
 
-KDB-X 5.0 is installed at `/Users/tourist/.kx/bin/q`. The operator-local
-`.local/perf/kdb/analyze.q` loads the exported five-level book CSV and reports
-spread, imbalance, gaps and depth metrics. 2026-11-20 real Upstox result: 36
-rows, 87.07 s, 1 capture gap, mean spread 0.0219 paise, mean imbalance -0.3034,
-minimum depth 5 levels.
+KDB-X 5.0 is installed at `/Users/tourist/.kx/bin/q`. The checked-in q contract
+is `analytics/kdb/mbp_metrics.q`; the repo-native harness is `apps/kdb-lab`
+(`cargo run -p kdb-lab --bin nirnay-kdb`) and is driven by `make kdb-analyze`.
+It validates the header-prefixed CSV input, runs q with absolute paths, parses
+the typed `metric,value` output, and writes `metrics.csv` plus a digest-bearing
+`report.json` (schema `schemas/analytics/kdb-metrics-report.v1.schema.json`).
+`make kdb-golden` replays the checked-in synthetic golden with a real q and
+requires byte-identical output; the same golden is checked numerically by
+Rust tests in normal `make check`, so CI does not need q installed.
+
+The q contract accepts one source at a time and never merges books. Price and
+spread metrics use the input price unit (rupees as exported by
+`upstox-decode-export`); no metric name implies paise. 2026-11-20 real Upstox
+result: 36 rows, 87.07 s, 0 capture gaps, mean spread 0.0219 rupees, mean
+imbalance -0.3034, minimum depth 5 levels.

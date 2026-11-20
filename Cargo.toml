@@ -3,7 +3,7 @@
 # under .local/extras and is not part of any build or CI job.
 [workspace]
 resolver = "3"
-members = ["crates/*", "apps/cost-cli", "apps/upstox-tools", "apps/fundamental-tools", "apps/fyers-importer", "apps/paper-runner", "xtask"]
+members = ["crates/*", "apps/cost-cli", "apps/upstox-tools", "apps/fundamental-tools", "apps/fyers-importer", "apps/paper-runner", "apps/kdb-lab", "xtask"]
 
 [workspace.package]
 edition = "2024"

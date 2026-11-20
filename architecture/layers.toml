@@ -36,7 +36,7 @@ crates = ["upstox-feed-proto", "broker-adapter"]
 [[layer]]
 name = "apps"
 leaf = true
-crates = ["cost-cli", "upstox-tools", "fundamental-tools", "fyers-importer", "paper-runner"]
+crates = ["cost-cli", "upstox-tools", "fundamental-tools", "fyers-importer", "paper-runner", "kdb-lab"]
 
 [tooling]
 crates = ["xtask"]

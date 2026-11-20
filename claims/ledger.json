@@ -239,6 +239,20 @@
         ]
       },
       "falsifier": "A golden message decodes to a different canonical line, a canonical re-encoding differs from the original bytes, or any of the seven malformed inputs is accepted."
+    },
+    {
+      "id": "CLM-021",
+      "statement": "KDB-X analytics is a checked-in, gated repository capability: a typed q contract drives one book per source, its output is pinned by byte-identical golden files and schema-validated digest reports, and a reference check verifies the golden numerically when q is not installed.",
+      "status": "implemented",
+      "scope": {
+        "packages": [
+          "analytics/kdb/mbp_metrics.q",
+          "apps/kdb-lab",
+          "schemas/analytics/kdb-metrics-report.v1.schema.json",
+          "scripts/validate_contracts.py"
+        ]
+      },
+      "falsifier": "A q run merges or sums two sources, emits an unknown, missing or duplicated metric, produces different bytes on a fresh process, produces a report that fails its schema, or a golden file that the Rust reference cannot reproduce."
     }
   ]
 }
