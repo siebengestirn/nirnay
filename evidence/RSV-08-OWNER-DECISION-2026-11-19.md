@@ -7,7 +7,7 @@ capability or claim state is promoted here.
 ## 1. Decision requested
 
 The frozen P1-04 storage contract
-`extras/engineering/reference-store-contract.json` (`status: frozen`,
+`.local/extras/engineering/reference-store-contract.json` (`status: frozen`,
 `release_gate: P1-04`, baseline `12f4b27`) defines RSV-08 as: "Kill a writer at
 each publication boundary: before archive, after archive, during the
 transaction, after insert before commit and after commit before return." The
@@ -112,7 +112,7 @@ not a decision and does not authorize any code change.
 
 - No publication-journal implementation, ADR change or frozen-contract edit.
 - No `capabilities.json`, `claims/ledger.json` or `README.md` capability update.
-- No `extras/` change, no live path, no broker or trading integration.
+- No `.local/extras/` change, no live path, no broker or trading integration.
 - This record is an owner decision pack, not evidence that RSV-08 passed.
 
 ## 7. Owner decision (to be completed by the owner)

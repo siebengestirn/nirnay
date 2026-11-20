@@ -1,8 +1,8 @@
 # Extras promotion and retirement audit
 
-**Scope:** `extras/**`, the promoted reference workspace retained from the
+**Scope:** `.local/extras/**`, the promoted reference workspace retained from the
 predecessor Nirnay Quant ZIP. The predecessor material was formerly stored under
-`legacy/`; the useful, tested subset was promoted to `extras/` on 2026-11-13 and
+`legacy/`; the useful, tested subset was promoted to `.local/extras/` on 2026-11-13 and
 the auxiliary, parallel and duplicate material was removed to an external
 snapshot.  
 **Policy:** preserve provenance; promote by contract and tests; keep the active
@@ -12,22 +12,22 @@ production graph free of predecessor dependencies.
 
 | Item | State |
 |---|---|
-| Directory | `extras/` |
+| Directory | `.local/extras/` |
 | Cargo package | `nirnay-extras` (library crate `nirnay_extras`) |
 | Workspace | Separate `[workspace]`; **not** a member of the root workspace |
-| Tests | `cargo test --manifest-path extras/Cargo.toml` — **96 passed** (5 unit, 42 ingestion, 49 durable-store) |
+| Tests | `cargo test --manifest-path .local/extras/Cargo.toml` — **96 passed** (5 unit, 42 ingestion, 49 durable-store) |
 | C++ probes | `ctest --test-dir <build>` — **1/1 passed** |
 | Runtime / broker path | Not imported, not linked, not required |
-| Licence | MIT, Copyright (c) 2026 Kartik Jangid (`extras/LICENSE`) |
+| Licence | MIT, Copyright (c) 2026 Kartik Jangid (`.local/extras/LICENSE`) |
 
-`extras/` is named extras rather than legacy because it contains tested,
+`.local/extras/` is named extras rather than legacy because it contains tested,
 licensed reference material that may be promoted later. It is not dead code and
 it is not a second production tree.
 
 ## Promoted into the active workspace
 
 These predecessor assets are already active and must not be re-imported from
-`extras/`:
+`.local/extras/`:
 
 | Predecessor material | Active destination | Evidence / caveat |
 |---|---|---|
@@ -36,7 +36,7 @@ These predecessor assets are already active and must not be re-imported from
 | C++ fixed-point arithmetic and aggregated market-book components | `verification/cpp-oracle/` | Promoted to an independent verification-only C++20 target; not wired into production Rust or a broker path. |
 | Architecture, verification and provenance conventions | `engineering/` docs, `scripts/check_repo.py`, active contracts | Selective concepts rewritten against active module boundaries; predecessor JSON registries were not copied wholesale. |
 
-## Retained under `extras/`
+## Retained under `.local/extras/`
 
 - `src/venue/india/**`: unique NSE/BSE master ingestion, ISIN-first
   reconciliation, bitemporal snapshots, durable SQLite store, backup/restore and
@@ -61,7 +61,7 @@ verified evidence.
 The SBE decoder and golden corpus are inventoried in
 `evidence/SBE-GAP-2-INVENTORY-2026-11-19.md`. Each obligation is mapped to a
 proposed active Rust home and an independent differential test. That inventory
-is a scope record, not a promotion: no file has been copied and `extras/`
+is a scope record, not a promotion: no file has been copied and `.local/extras/`
 retirement remains blocked until every obligation has an active home.
 
 ## Removed to the external snapshot
@@ -73,7 +73,7 @@ tests:
 
 - parallel copies of active crates (`legacy/crates/**`);
 - the predecessor monolith runtime/collector/session/paper code and
-  Kalshi/Polymarket adapters;
+  archived prediction-market adapters;
 - `experimental/**`, `archive/**`, `claims/**`, `company/**`, historical
   engineering registries, `measurements/**`, `q/**`, `benches/**`, `deploy/**`,
   `.github/**`, `xtask/**`;
@@ -90,19 +90,19 @@ Removed manifest:   ../legacy-snapshot-2026-11-13/legacy-removed-manifest-2026-1
 The cleanup and promotion are recorded in `engineering/migration-map.csv`; the
 detailed evidence is in `engineering/legacy-audit-2026-11-13.md`.
 
-## Rules for `extras/`
+## Rules for `.local/extras/`
 
-1. `extras/**` stays excluded from the root Cargo workspace, default Python test
+1. `.local/extras/**` stays excluded from the root Cargo workspace, default Python test
    discovery and production runtime paths.
-2. No active code may import, copy or depend on `extras/**` without an ADR,
+2. No active code may import, copy or depend on `.local/extras/**` without an ADR,
    source provenance, licence check, domain owner and executable tests.
 3. Promote individual modules, never the predecessor monolith. A promotion that
    adds SQLite or filesystem I/O to a pure domain crate needs a separate crate
    and an architecture dependency edge.
 4. Add every promotion or removal to `engineering/migration-map.csv`.
-5. Keep `extras/LICENSE` and `extras/UPSTREAM-ARCHIVE.txt` with any copy or
+5. Keep `.local/extras/LICENSE` and `.local/extras/UPSTREAM-ARCHIVE.txt` with any copy or
    promotion.
-6. `extras/` is not scheduled for deletion. If it is ever retired, retain the
+6. `.local/extras/` is not scheduled for deletion. If it is ever retired, retain the
    external snapshot and the licence first.
 
 ## Re-audit 2026-11-19
@@ -121,7 +121,7 @@ record for the corrected classification.
 
 ## Prose sweep disposition 2026-11-19
 
-The full-tree prose sweep recorded one finding in `extras/README.md:91`
+The full-tree prose sweep recorded one finding in `.local/extras/README.md:91`
 (PROSE-002). It is left unchanged to preserve predecessor provenance; active
 repositories and canonical documents carry no rewritten predecessor text.
 The finding remains visible in `evidence/PROSE-SWEEP-2026-11-19.md` and is not

@@ -2,7 +2,7 @@
 
 **Scope:** offline consumption of canonical events by the existing
 single-instrument paper engine. No engine rewrite, strategy semantics, live
-path, trading or `extras/` change.
+path, trading or `.local/extras/` change.
 
 ## Contract
 

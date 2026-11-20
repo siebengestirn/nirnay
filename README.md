@@ -56,7 +56,10 @@ make verify-local
 Style is enforced on added lines for Rust, Python, C/C++, Shell, Makefile,
 JSON/JSONL and Markdown; see `engineering/style-policy.md`.
 
-The root `pytest.ini` collects only the active test suites and excludes `extras/`, `target/`, virtual environments and generated caches. The Parquet round-trip runs when PyArrow is installed from the `research` extra; CI installs it and fails if the test is skipped.
+The root `pytest.ini` collects only the active test suites and excludes
+`.local/extras/`, `target/`, virtual environments and generated caches. The
+Parquet round-trip runs when PyArrow is installed from the `research` extra;
+CI installs it and fails if the test is skipped.
 
 Check dependency integrity — workflow SHA pins, resolved Python constraints and the SBOM:
 
@@ -304,10 +307,11 @@ ctest --test-dir /tmp/nirnay-cpp-oracle --output-on-failure
 
 The oracle is not wired into production Rust. On 2026-11-18 the pinned Rust
 1.99.1 gates were rerun on `main` at `c91ad3f`: local `make check` passed with
-410 Rust test cases across the workspace and extras targets, 156 Python tests
-and 2 subtests, plus formatting, style, Clippy `-D warnings` for both
-workspaces, `cargo deny check`, `cargo xtask check` and contract validation.
-Hosted CI run `44199935228` passed 11/11 jobs. CI also builds both C++ targets
+410 Rust test cases across the then-active workspace and archived reference
+targets, 156 Python tests and 2 subtests, plus formatting, style, Clippy
+`-D warnings` for that baseline, `cargo deny check`, `cargo xtask check` and
+contract validation.
+Hosted CI run `44199935228` passed 11/11 jobs at that baseline. CI also builds the active C++ target
 under GCC and runs schema validation and the required Parquet round-trip. The
 Parquet test executes rather than skips. Live Upstox/FYERS/Kite accounts were
 not accessed; provider tests use deterministic fixtures and fake clients/SDK
@@ -318,12 +322,13 @@ historical. See `BUILD-RESULTS.md`,
 
 ## Extras policy
 
-`extras/**` is the promoted reference workspace (`nirnay-extras`) and is
-excluded from all active build/runtime dependencies. On 2026-11-13 the useful
+`.local/extras/**` is an operator-local archive of the predecessor reference
+workspace (`nirnay-extras`). It is outside version control and excluded from
+all active build, test and CI graphs. On 2026-11-13 the useful
 subset was trimmed from 325 to 61 files and promoted from `legacy/` to
-`extras/`: the India ingestion/durable-store crate and tests, the C++
+`.local/extras/`: the India ingestion/durable-store crate and tests, the C++
 SBE/conformance probes, synthetic fixtures and challenge/internal schemas. The
-old monolith, prediction-market sessions, q experiments, archived measurements,
+old monolith, prediction-market material, q experiments, archived measurements,
 historical registries, duplicate active-crate copies, old locks and old deploy
 workflows were moved to the external snapshot
 `../legacy-snapshot-2026-11-13/legacy-full-backup-2026-11-13.tar.gz` (SHA-256
@@ -331,13 +336,26 @@ workflows were moved to the external snapshot
 predecessor's useful Upstox decoder and protocol schema are active; selected
 C++ numeric/book code is promoted as an isolated oracle; corporate-action and
 provenance concepts are reimplemented behind current bitemporal contracts.
-`cargo test --manifest-path extras/Cargo.toml` and the extras C++ probes are
-part of the active gates. Historical counts from 2026-11-13 and 2026-11-17 are
+The archived workspace and its C++ probes are no longer part of the active
+gates. Historical counts from 2026-11-13 and 2026-11-17 are
 retained in the dated verification documents; the current baseline is the
 2026-11-19 state note below. See `engineering/extras-audit.md`,
 `engineering/legacy-audit-2026-11-13.md` and `engineering/migration-map.csv`.
 Promotion of the retained India code into the active workspace still requires a
 new crate, ADR, owner and tests.
+
+## Compile performance
+
+Development and test profiles emit line-table debug information, preserving
+source-line backtraces while keeping the debug target small. Release quality is
+unchanged. Measured scope, size and gate improvements are recorded in
+`evidence/COMPILE-PERFORMANCE-2026-11-20.md`.
+
+```bash
+make perf    # cold compile measurement with enforced budgets
+```
+
+The budget job runs in CI in parallel with the other gates.
 
 ## Documentation map and maintenance
 

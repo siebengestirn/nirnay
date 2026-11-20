@@ -41,7 +41,7 @@ guarantees; it does not assert procedure-level equivalence.
 ## Scope
 
 Decision only. No contract edit, capability or claim promotion, journal, code
-change, `extras/` change, live path or trading component.
+change, `.local/extras/` change, live path or trading component.
 
 Owner signature: **recorded in this session** (owner-directed selection of
 Option B). Decision date: 2026-11-19.

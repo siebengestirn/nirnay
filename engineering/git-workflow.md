@@ -104,7 +104,7 @@ it and `git commit -a` on an old index does not. The validator checks the index
 directly, because a tracked build directory is how these files reach a release.
 
 One exception is recorded in the policy, with its reason: the archived
-predecessor gate report at `extras/evidence/conformance_report.json` is kept on
+predecessor gate report at `.local/extras/evidence/conformance_report.json` is kept on
 purpose as evidence that the original conformance gate did not pass. It is not
 a build output of this repository — the generator writes to
 `target/evidence/` — and it is not regenerated. Every other path matching the

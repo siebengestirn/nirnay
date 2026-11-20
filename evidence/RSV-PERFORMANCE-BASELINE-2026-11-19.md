@@ -45,4 +45,4 @@ production durability boundary.
 RSV-12 now has a reproducible measurement procedure and a first dated baseline.
 RSV-08 remains an unresolved owner decision (`evidence/RSV-COMPLETION-2026-11-19.md`)
 and is not claimed passed. RSV-01…07 and 09…11 have active implementations and
-tests. `extras/` is unchanged throughout.
+tests. `.local/extras/` is unchanged throughout.

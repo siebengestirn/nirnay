@@ -2,7 +2,7 @@
 
 **Scope:** third promotion step for GAP-1. Active crate `india-reference`,
 base `0c05641`. The frozen P1-04 source contract is
-`extras/engineering/reference-store-contract.json`. `extras/` is unchanged.
+`.local/extras/engineering/reference-store-contract.json`. `.local/extras/` is unchanged.
 
 ## Covered in this step
 

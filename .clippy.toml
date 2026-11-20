@@ -1,6 +1,6 @@
 # Clippy policy. Lint levels live in Cargo.toml [workspace.lints]; this file
 # sets the analysis thresholds shared by the workspace and the separate
-# extras/ reference workspace. Test-only allowances are restricted to test
+# archived local reference workspace under .local/extras. Test-only allowances are restricted to test
 # code and do not weaken production lints.
 
 # Fail instead of silently preserving a semver-breaking public API.

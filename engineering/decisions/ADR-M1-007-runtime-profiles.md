@@ -62,7 +62,7 @@ Declare six logical profiles. Each is a *contract namespace* with nine policy di
 
 | Class | Workloads (baseline paths) | Profile(s) | Status |
 | --- | --- | --- | --- |
-| **C0 batch/scheduled** | `upstox_decode_export.rs`, `point_in_time.py`, `quantlab/{backtest,portfolio_backtest,alpha_search,experiments}.py`, `extras/**` | `research` (and `standard` for pure CLI transforms) | Present as workload; profile contract is design-only |
+| **C0 batch/scheduled** | `upstox_decode_export.rs`, `point_in_time.py`, `quantlab/{backtest,portfolio_backtest,alpha_search,experiments}.py`, `.local/extras/**` | `research` (and `standard` for pure CLI transforms) | Present as workload; profile contract is design-only |
 | **C1 streaming** | `upstox_recorder.rs`, `upstox_smoke.rs`, `fyers_recorder.py` | `streaming` | Present as workload; bounded/backpressure contract partly unmet at baseline (A6-03) |
 | **C2 interactive** | `cost-cli`, `kite-ops`, `ops/market_session.py` | `standard` | Present as workload |
 | **C3 event-driven quant** | `paper-engine`, `risk-engine`, `execution-policy`, `account-journal`, Python simulators, `providers.py` | `execution` (state/risk) + `research` (Python replay) | Present as workload; live routing hard-disabled (A5 F-A5-00) |

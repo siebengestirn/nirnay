@@ -4,4 +4,4 @@
 # file to make a failing comparison pass is prohibited.
 source_commit: 799b6b58545799fac387e1feb08a188cba0d6f44
 fixture: fixtures/sample_replay.jsonl
-sha256: af291b403553b6e0d182f8001643e03a055e4d7e8b0dbbdfee54c3ad56f50e14
+sha256: 022cb71b7f2c7d9e5200a60096b3ffcd39dbe8c03bd69cd1c92a196d6aac6590

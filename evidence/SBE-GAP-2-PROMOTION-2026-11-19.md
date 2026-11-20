@@ -2,22 +2,22 @@
 
 **Code commit:** `1b737784a7897d4647add01292676e6fb8351adc`.
 **Scope:** promotion of the challenge SBE decoder and golden corpus into an
-active, self-contained Rust crate. No `extras/` edit, no live path, no broker or
+active, self-contained Rust crate. No `.local/extras/` edit, no live path, no broker or
 trading integration.
 
 ## What was promoted
 
-- `extras/cpp/src/sbe.cpp` → `crates/sbe-codec/src/decode.rs`: schema id 1,
+- `.local/extras/cpp/src/sbe.cpp` → `crates/sbe-codec/src/decode.rs`: schema id 1,
   version 2, `Snapshot` template 1 and `PriceLevelUpdate` template 2, with
   `decode_message`, `encode_message`, `decode_capture`, a canonical dump
   formatter and typed `SbeError` variants. No predecessor monolith types.
-- `extras/tests/golden/sample_replay.sbe` → `crates/sbe-codec/tests/golden/`,
+- `.local/extras/tests/golden/sample_replay.sbe` → `crates/sbe-codec/tests/golden/`,
   copied verbatim with its `.sha256` sidecar, `.meta` provenance and the MIT
   `LICENSE`.
 - The independent C++ canonical dump is frozen as
   `tests/golden/cpp_canonical_dump.txt` with its own SHA-256 sidecar. It was
   produced by `eng_sbe_dump <golden> 4096` from the C++ SBE decoder retained
-  under `extras/cpp`; it is a **protocol** oracle only.
+  under `.local/extras/cpp`; it is a **protocol** oracle only.
 
 ## Inventory closure
 
@@ -68,4 +68,13 @@ All corpus symbols are ASCII, so byte-for-byte equivalence is established for
 this frozen corpus, not for arbitrary non-ASCII symbol bytes; a non-UTF-8 symbol
 is refused by the active decoder.
 
-`extras/` retirement remains blocked until a fresh audit and owner approval.
+`.local/extras/` retirement remains blocked until a fresh audit and owner approval.
+## Later amendment (2026-11-20)
+
+The synthetic golden was subsequently re-symbolized to `nirnay:TEST-A` and
+`nirnay:TEST-B` (same 6-byte symbol field) to remove predecessor venue names
+from the active workspace. The current golden SHA-256 is
+`022cb71b7f2c7d9e5200a60096b3ffcd39dbe8c03bd69cd1c92a196d6aac6590` and the
+current independent C++ canonical dump SHA-256 is
+`aa555aae39f9cd30f911e533d1a2227f2d6a14425c906b472be7473c3b2a2a5c`.
+The digests above remain the historical values recorded at promotion time.

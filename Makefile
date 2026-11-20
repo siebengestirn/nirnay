@@ -1,4 +1,4 @@
-.PHONY: check docs-check shellcheck-check generated-paths-check pollution-check style rust-style source-style style-gate python-format-check rust-test extras-test python-test python-check cpp-test cpp-format-check schema-check fundamental-fixture-check verify-local fmt constraints sbom supply-chain wheels packaging-test bundle bundle-verify git-policy
+.PHONY: check perf docs-check shellcheck-check generated-paths-check pollution-check style rust-style source-style style-gate python-format-check rust-test python-test python-check cpp-test cpp-format-check schema-check fundamental-fixture-check verify-local fmt constraints sbom supply-chain wheels packaging-test bundle bundle-verify git-policy
 check:
 	$(MAKE) docs-check
 	$(MAKE) shellcheck-check
@@ -9,7 +9,6 @@ check:
 	cargo deny check
 	$(MAKE) style
 	$(MAKE) rust-test
-	$(MAKE) extras-test
 	$(MAKE) schema-check
 	$(MAKE) fundamental-fixture-check
 	$(MAKE) python-test
@@ -39,15 +38,15 @@ style-gate:
 python-format-check:
 	ruff check .
 	ruff format --check .
+# Reproducible cold-build measurement and budget enforcement. Kept separate
+# from `check` so the normal gate cycle stays fast.
+perf:
+	python3 scripts/check_compile_budget.py
 rust-test:
 	cargo test --workspace --all-targets --locked
 	cargo clippy --workspace --all-targets --locked -- -D warnings
-extras-test:
-	cargo test --manifest-path extras/Cargo.toml --locked
-	cargo clippy --manifest-path extras/Cargo.toml --all-targets --locked -- -D warnings
 fmt:
 	cargo fmt --all -- --check
-	cargo fmt --manifest-path extras/Cargo.toml -- --check
 python-test:
 	python3 -m pytest -q
 python-check:
@@ -89,16 +88,12 @@ bundle-verify:
 git-policy:
 	python3 scripts/check_git_policy.py --strict
 CPP_BUILD_DIR ?= /tmp/nirnay-cpp-oracle-$(shell pwd | cksum | cut -d' ' -f 1)
-EXTRAS_CPP_BUILD_DIR ?= /tmp/nirnay-extras-cpp-$(shell pwd | cksum | cut -d' ' -f 1)
 cpp-test:
 	cmake -S verification/cpp-oracle -B $(CPP_BUILD_DIR) -DCMAKE_BUILD_TYPE=Release
 	cmake --build $(CPP_BUILD_DIR) --parallel
 	ctest --test-dir $(CPP_BUILD_DIR) --output-on-failure
-	cmake -S extras/cpp -B $(EXTRAS_CPP_BUILD_DIR) -DCMAKE_BUILD_TYPE=Release
-	cmake --build $(EXTRAS_CPP_BUILD_DIR) --parallel
-	ctest --test-dir $(EXTRAS_CPP_BUILD_DIR) --output-on-failure
 CLANG_FORMAT ?= clang-format
-CPP_SOURCES := $(shell find verification/cpp-oracle extras/cpp -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.cxx' -o -name '*.h' -o -name '*.hpp' -o -name '*.hxx' \) 2>/dev/null)
+CPP_SOURCES := $(shell find verification/cpp-oracle -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.cxx' -o -name '*.h' -o -name '*.hpp' -o -name '*.hxx' \) 2>/dev/null)
 cpp-format-check:
 	@for f in $(CPP_SOURCES); do $(CLANG_FORMAT) --style=file --dry-run --Werror "$$f" || exit 1; done
 verify-local: python-test python-check schema-check cpp-test

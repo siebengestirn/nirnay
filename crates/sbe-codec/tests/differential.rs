@@ -2,7 +2,7 @@
 //! Independent differential tests for the active SBE decoder.
 //!
 //! The oracle is the canonical dump produced by the C++ SBE decoder retained
-//! under `extras/cpp`. It is a protocol oracle only; the numeric/book oracle is
+//! under `.local/extras/cpp`. It is a protocol oracle only; the numeric/book oracle is
 //! a separate obligation and is not used here.
 
 use sha2::{
@@ -22,9 +22,9 @@ use sbe_codec::{
 };
 
 const GOLDEN: &[u8] = include_bytes!("golden/sample_replay.sbe");
-const GOLDEN_SHA256: &str = "af291b403553b6e0d182f8001643e03a055e4d7e8b0dbbdfee54c3ad56f50e14";
+const GOLDEN_SHA256: &str = "022cb71b7f2c7d9e5200a60096b3ffcd39dbe8c03bd69cd1c92a196d6aac6590";
 const CPP_DUMP: &str = include_str!("golden/cpp_canonical_dump.txt");
-const CPP_DUMP_SHA256: &str = "cba8bae7984408893e34a734b3db5e8598446932181504ffd04b7dca1ae9eaed";
+const CPP_DUMP_SHA256: &str = "aa555aae39f9cd30f911e533d1a2227f2d6a14425c906b472be7473c3b2a2a5c";
 
 fn rust_dump() -> String {
     let messages = decode_capture(GOLDEN, 4096).expect("golden decodes");

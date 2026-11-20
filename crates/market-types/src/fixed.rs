@@ -193,20 +193,6 @@ pub fn from_sbe_micros(value: i64, scale: u8) -> anyhow::Result<i64> {
     rescale_exact(value, u8::try_from(DECIMALS)?, scale)
 }
 
-/// Parse Kalshi's legacy integer-cent price.
-pub fn cents_to_micros(cents: i64) -> anyhow::Result<i64> {
-    cents
-        .checked_mul(10_000)
-        .context("cent price overflows fixed-point range")
-}
-
-/// Parse a whole-contract legacy quantity.
-pub fn contracts_to_micros(contracts: i64) -> anyhow::Result<i64> {
-    contracts
-        .checked_mul(SCALE)
-        .context("contract quantity overflows fixed-point range")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -306,7 +292,6 @@ mod tests {
     #[test]
     fn rejects_overflow() {
         assert!(parse_micros("9223372036855").is_err());
-        assert!(cents_to_micros(i64::MAX).is_err());
         assert!(rescale_exact(i64::MAX, 0, 6).is_err());
         assert!(parse_scaled("9223372036854775808", 0).is_err());
     }
