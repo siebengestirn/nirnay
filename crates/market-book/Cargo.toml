@@ -9,6 +9,7 @@ description = "Venue-neutral order-book representation."
 
 [dependencies]
 market-types.workspace = true
+serde.workspace = true
 thiserror.workspace = true
 
 [lints]

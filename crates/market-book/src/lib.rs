@@ -4,6 +4,7 @@
 
 pub mod mbp;
 pub mod orderbook;
+pub mod reconciliation;
 pub use mbp::{
     BookPhase, //
     MbpBook,
@@ -11,3 +12,4 @@ pub use mbp::{
     SnapshotEvidence,
 };
 pub use orderbook::{BookError, OrderBook};
+pub use reconciliation::{BookComparison, SourceBookView, compare_books, is_live};

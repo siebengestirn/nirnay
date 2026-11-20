@@ -10,7 +10,9 @@ description = "Deterministic projection of verified source observations into ker
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+market-book.workspace = true
 market-event.workspace = true
+market-types.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
