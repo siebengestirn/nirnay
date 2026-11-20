@@ -58,7 +58,7 @@ Two narrower defects were found after the initial correction:
   item was the ref itself. The verifier now requires exact agreement between
   every declared `git_refs` entry and a bundled ref, and rejects bundled refs
   the manifest does not declare. A self-test covers a declared-but-unbundled
-  ref. The archive contract is narrowed to the refs it actually preserves.
+  ref. The archive contract is narrowed to the refs it preserves.
 - The verifier self-tests assumed Git's default branch was `main`, so four of
   five failed under a machine configured otherwise. Each synthetic repository
   is now created with `git init --initial-branch=main`, and every test-local
