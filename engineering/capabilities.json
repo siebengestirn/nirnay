@@ -239,6 +239,14 @@
       "evidence_status": "A newly constructed RiskAuthority now has session closed, account snapshot unavailable, kill switch engaged and reconciliation blocked, so it denies new risk until readiness facts are supplied by their owners. Readiness control flags no longer bump the economic-state revision. A fresh-authority test asserts all four fail-closed checks; the synthetic paper runner supplies readiness explicitly and records that these values are fixtures, not measured evidence. This is the M3.6.0 prerequisite only, not complete health-to-risk integration.",
       "owner": "risk-authority",
       "scope": "crates/risk-authority/src/authority.rs; crates/risk-authority/tests/authority.rs; apps/paper-runner/src/lib.rs"
+    },
+    {
+      "id": "CAP-030",
+      "name": "Exclusive-writer OMS journal with poison-on-uncertain-commit",
+      "status": "implemented",
+      "evidence_status": "OmsStore::open takes an exclusive writer lock (second writer fails WriterLocked); append marks the writer poisoned before writing and clears it only after a successful sync_all, so partial writes and uncertain durability results leave the instance refusing all mutations until an explicit fresh replay through recover(). Deterministic fault-injection tests cover two writers, partial write, sync failure, restart and contiguous replay. This is the M3.5.0 durability prerequisite only; typed per-fill events and account projection are separate milestones.",
+      "owner": "oms",
+      "scope": "crates/authoritative-oms/src/store.rs; crates/authoritative-oms/tests/durability.rs"
     }
   ]
 }

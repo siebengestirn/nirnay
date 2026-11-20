@@ -6,6 +6,10 @@ use thiserror::Error;
 pub enum OmsError {
     #[error("storage error: {0}")]
     Storage(String),
+    #[error("another process holds the OMS journal writer lock")]
+    WriterLocked,
+    #[error("OMS writer is poisoned after an uncertain commit; recover before writing")]
+    WriterPoisoned,
     #[error("client order id `{0}` already exists with different terms")]
     ConflictingClientOrder(String),
     #[error("unknown client order id `{0}`")]
