@@ -342,6 +342,21 @@ pub fn run_paper(input: &PaperInput, oms_path: &Path) -> Result<PaperRun, String
     authority
         .set_now(LogicalNanos::new(input.feed_age_ns))
         .map_err(|e| e.to_string())?;
+    // M3.6.0: readiness is now fail-closed. These are synthetic run inputs,
+    // not measured operational evidence; M3.6.1 replaces them with typed,
+    // owned health observations enforced inside the authority.
+    authority
+        .set_session_open(true)
+        .map_err(|e| e.to_string())?;
+    authority
+        .set_snapshot_available(true)
+        .map_err(|e| e.to_string())?;
+    authority
+        .set_kill_switch(false)
+        .map_err(|e| e.to_string())?;
+    authority
+        .set_reconciliation_blocked(false)
+        .map_err(|e| e.to_string())?;
     let mut store = OmsStore::open(oms_path).map_err(|e| e.to_string())?;
     let mut strategy = RationalEmaCross::from_artifact(
         &frozen_artifact(input),
