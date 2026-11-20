@@ -247,6 +247,14 @@
       "evidence_status": "OmsStore::open takes an exclusive writer lock (second writer fails WriterLocked); append marks the writer poisoned before writing and clears it only after a successful sync_all, so partial writes and uncertain durability results leave the instance refusing all mutations until an explicit fresh replay through recover(). Deterministic fault-injection tests cover two writers, partial write, sync failure, restart and contiguous replay. This is the M3.5.0 durability prerequisite only; typed per-fill events and account projection are separate milestones.",
       "owner": "oms",
       "scope": "crates/authoritative-oms/src/store.rs; crates/authoritative-oms/tests/durability.rs"
+    },
+    {
+      "id": "CAP-031",
+      "name": "Typed durable per-execution event record",
+      "status": "implemented",
+      "evidence_status": "Every fill is persisted as a typed FillEvent with stable execution id, broker event id, order ids, side, quantity, price, currency, broker and receive timestamps, source, account scope, charges with Estimated/BrokerConfirmed status, schema version and provenance. Cumulative filled quantity/notional are no longer the only execution history. Duplicate ids are idempotent and unsupported schemas fail closed. This does not project events into the account journal or claim accounting correctness.",
+      "owner": "oms",
+      "scope": "crates/authoritative-oms/src/store.rs; crates/authoritative-oms/tests/fill_events.rs"
     }
   ]
 }

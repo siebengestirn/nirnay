@@ -24,6 +24,7 @@ use std::{
 };
 
 use fs2::FileExt;
+use trading_core::Side;
 
 use serde::{
     Deserialize, //
@@ -174,6 +175,35 @@ struct AttemptRecord {
     reason: Option<String>,
 }
 
+/// Whether charge values are an estimate or broker-confirmed amounts.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChargeStatus {
+    Estimated,
+    BrokerConfirmed,
+}
+
+/// One durable, independently identifiable execution event.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FillEvent {
+    pub schema_version: u32,
+    pub execution_id: String,
+    pub broker_event_id: String,
+    pub client_order_id: ClientOrderId,
+    pub oms_order_id: String,
+    pub side: Side,
+    pub quantity: i64,
+    pub price_paise: i64,
+    pub currency: String,
+    pub broker_timestamp_ns: i64,
+    pub received_at_ns: i64,
+    pub source: String,
+    pub account_scope: String,
+    pub charges_paise: i64,
+    pub charge_status: ChargeStatus,
+    pub provenance: String,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 struct OmsState {
     seq: u64,
@@ -181,6 +211,8 @@ struct OmsState {
     orders: std::collections::BTreeMap<String, OrderRecord>,
     outbox: std::collections::BTreeMap<i64, AttemptRecord>,
     events: std::collections::BTreeSet<String>,
+    #[serde(default)]
+    fills: std::collections::BTreeMap<String, FillEvent>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -649,19 +681,27 @@ impl OmsStore {
         })
     }
 
-    /// Apply a broker fill. Duplicate execution ids are ignored.
-    #[allow(clippy::too_many_arguments)] // the complete typed broker fill report
-    pub fn apply_fill(
-        &mut self,
-        client_order_id: ClientOrderId,
-        execution_id: &str,
-        broker_event_id: &str,
-        quantity: i64,
-        price_paise: i64,
-        now_ns: i64,
-    ) -> Result<bool, OmsError> {
+    /// Apply a typed execution event. Duplicate execution ids and broker
+    /// event ids are ignored; the full event is persisted in the journal.
+    pub fn apply_typed_fill(&mut self, event: FillEvent) -> Result<bool, OmsError> {
+        let execution_id = event.execution_id.clone();
+        let broker_event_id = event.broker_event_id.clone();
+        let client_order_id = event.client_order_id;
+        let quantity = event.quantity;
+        let price_paise = event.price_paise;
+        let now_ns = event.received_at_ns;
+        if event.schema_version != 1 {
+            return Err(OmsError::InvalidIdentifier(
+                "unsupported fill event schema version".to_owned(),
+            ));
+        }
+        if execution_id.is_empty() || broker_event_id.is_empty() {
+            return Err(OmsError::InvalidIdentifier(
+                "fill requires stable execution and broker event ids".to_owned(),
+            ));
+        }
         let execution_key = format!("execution:{execution_id}");
-        if event_seen(&self.state, broker_event_id) || event_seen(&self.state, &execution_key) {
+        if event_seen(&self.state, &broker_event_id) || event_seen(&self.state, &execution_key) {
             return Ok(false);
         }
         if quantity <= 0 || price_paise <= 0 {
@@ -669,7 +709,7 @@ impl OmsStore {
                 "fill must have positive quantity and price".to_owned(),
             ));
         }
-        self.apply("apply_fill", |state| {
+        self.apply("apply_typed_fill", |state| {
             let mut next = state.clone();
             let order = next
                 .orders
@@ -709,7 +749,7 @@ impl OmsStore {
             order.filled_notional = new_notional;
             record_event(
                 &mut next,
-                broker_event_id,
+                &broker_event_id,
                 client_order_id,
                 "BROKER_FILL",
                 now_ns,
@@ -721,11 +761,57 @@ impl OmsStore {
                 "EXECUTION",
                 now_ns,
             )?;
+            if next.fills.contains_key(&execution_id) {
+                return Err(OmsError::DuplicateBrokerEvent(execution_id));
+            }
+            next.fills.insert(execution_id, event);
             Ok((next, true))
         })
     }
 
-    /// Request cancellation, producing a CANCEL outbox command.
+    /// Apply a broker fill from a minimal simulated report. The typed event
+    /// records estimated charges and paper provenance; broker-confirmed charge
+    /// values require `apply_typed_fill` with real evidence.
+    pub fn apply_fill(
+        &mut self,
+        client_order_id: ClientOrderId,
+        execution_id: &str,
+        broker_event_id: &str,
+        quantity: i64,
+        price_paise: i64,
+        now_ns: i64,
+    ) -> Result<bool, OmsError> {
+        let event = FillEvent {
+            schema_version: 1,
+            execution_id: execution_id.to_owned(),
+            broker_event_id: broker_event_id.to_owned(),
+            client_order_id,
+            oms_order_id: client_order_id.to_string(),
+            side: Side::Buy,
+            quantity,
+            price_paise,
+            currency: "INR".to_owned(),
+            broker_timestamp_ns: now_ns,
+            received_at_ns: now_ns,
+            source: "paper-simulated-broker".to_owned(),
+            account_scope: "paper".to_owned(),
+            charges_paise: 0,
+            charge_status: ChargeStatus::Estimated,
+            provenance: "paper-runner fill report".to_owned(),
+        };
+        self.apply_typed_fill(event)
+    }
+
+    /// Read-only view of a persisted execution event.
+    pub fn fill(&self, execution_id: &str) -> Option<&FillEvent> {
+        self.state.fills.get(execution_id)
+    }
+
+    /// All persisted execution events in execution-id order.
+    pub fn fills(&self) -> Vec<FillEvent> {
+        self.state.fills.values().cloned().collect()
+    }
+
     pub fn request_cancel(
         &mut self,
         client_order_id: ClientOrderId,

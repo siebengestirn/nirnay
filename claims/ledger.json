@@ -306,6 +306,18 @@
         ]
       },
       "falsifier": "A second writer can append, a poisoned writer accepts a mutation, a torn tail is accepted on recovery, or a sync failure leaves the writer usable."
+    },
+    {
+      "id": "CLM-026",
+      "statement": "Each broker execution is persisted as a typed, independently identifiable event with charge provenance; duplicate delivery is idempotent and malformed events are refused.",
+      "status": "implemented",
+      "scope": {
+        "packages": [
+          "crates/authoritative-oms/src/store.rs",
+          "crates/authoritative-oms/tests/fill_events.rs"
+        ]
+      },
+      "falsifier": "A fill exists only as cumulative quantity, a duplicate execution id replaces the persisted event or creates a second economic effect, charge status cannot distinguish estimate from confirmation, or an unsupported schema version is accepted."
     }
   ]
 }
