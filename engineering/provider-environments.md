@@ -89,3 +89,56 @@ turning a documented incompatibility into an untested deployment assumption.
 | `provider-boundary` | both, dry-run | Known conflict is still present |
 
 No provider credential, Keychain item or live session is used by these jobs.
+
+## Live capture runbook (owner-local, read-only)
+
+Verified on 2026-11-20 after the M3.1 programme. All commands run from the
+repository root. No command in this section places an order or writes to a
+broker.
+
+### Credentials in Keychain (metadata only)
+
+| Service | Purpose |
+|---|---|
+| `NIRNAY_UPSTOX_ANALYTICS_TOKEN` | Upstox V3 market-data feed, read-only |
+| `NIRNAY_FYERS_APP_ID`, `NIRNAY_FYERS_APP_SECRET` | FYERS v3 app, used only to mint a token |
+| `NIRNAY_FYERS_ACCESS_TOKEN` | FYERS Data Socket access token (short-lived) |
+| `NIRNAY_KITE_API_KEY`, `NIRNAY_KITE_API_SECRET` | Kite login inputs; no order capability in Nirnay |
+
+Never print these values. The recorder reads them into the process environment.
+
+### Provider status
+
+- **Upstox: READY.** WebSocket smoke connected and decoded 2/2 frames with 0
+  errors on 2026-11-20. Real 90-second Full capture produced 37 frames, 0
+  decode errors and 36 five-level observations. Token expires 2027-11-09.
+- **FYERS: credential-ready, market-timing blocked.** `profile` and `depth`
+  REST calls return `s=ok`; the Data Socket capture on 2026-11-20 evening
+  produced zero callbacks because NSE was `CLOSED`/`POSTCLOSE_CLOSED`. The
+  access token expires overnight, so regenerate it on the morning of capture
+  with the operator-local v3 helper under `.local/perf/`.
+- **Zerodha: login inputs present, daily token missing.** Generate the Kite
+  daily access token from the dashboard before any read-only reconciliation.
+  Nirnay keeps live order submission disabled.
+
+### Monday sequence
+
+1. Confirm NSE is open (09:15-15:30 IST). The FYERS token must be freshly
+   minted that morning; Upstox remains valid.
+2. Run the bounded read-only recorders into `.local/live-sessions/YYYY-MM-DD/`.
+   Raw journals and manifests stay outside Git and outside the source tree.
+3. Decode and project each session with the existing tools:
+   `upstox-decode-export`, `upstox-kernel-session`, `session-replay`.
+   FYERS callbacks use the committed `fyers-importer` typed projection.
+4. Run `session-replay` over both sessions to produce per-source books and the
+   cross-source reconciliation report. Never merge or sum displayed depth.
+5. Results are written under `.local/perf/`; the full evidence record is
+   `evidence/M3-1-REAL-SOURCE-STATUS-2026-11-20.md`.
+
+### KDB-X analysis
+
+KDB-X 5.0 is installed at `/Users/tourist/.kx/bin/q`. The operator-local
+`.local/perf/kdb/analyze.q` loads the exported five-level book CSV and reports
+spread, imbalance, gaps and depth metrics. 2026-11-20 real Upstox result: 36
+rows, 87.07 s, 1 capture gap, mean spread 0.0219 paise, mean imbalance -0.3034,
+minimum depth 5 levels.
