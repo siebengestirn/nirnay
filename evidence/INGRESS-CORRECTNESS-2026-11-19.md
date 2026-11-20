@@ -56,5 +56,5 @@ added-line style PASS; `cargo test -p market-archive --test ingress` — 16 pass
 
 ## Open boundaries
 
-RSV-08 remains unresolved and `extras/` is unchanged. `ADR-M1-012` authorizes
+RSV-08 remains unresolved and `.local/extras/` is unchanged. `ADR-M1-012` authorizes
 this specific ingress boundary without amending the Proposed `ADR-M1-004`.

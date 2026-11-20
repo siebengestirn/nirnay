@@ -9,28 +9,28 @@ crates/risk-engine,crates/risk-engine,migrated,fail-closed risk library retained
 crates/execution-policy,crates/execution-policy,migrated,signed execution policy retained; no RSA dependency in the active workspace
 crates/paper-engine,crates/paper-engine,migrated,paper engine retained; simulator still needs work
 crates/upstox-feed-proto,crates/upstox-feed-proto,migrated,provider-specific V3 decoder/schema active; verified raw-frame decode-export added; preserve provider protocol semantics
-legacy,extras,promoted-reference,useful tested subset promoted from legacy/ to extras/ as the separate nirnay-extras workspace; auxiliary/parallel/duplicate material moved to the external snapshot
-src,not-promoted,archived,predecessor monolith removed to external backup; unique India modules retained under extras/src/venue/india
+legacy,extras,promoted-reference,useful tested subset promoted from legacy/ to .local/extras/ as the separate nirnay-extras workspace; auxiliary/parallel/duplicate material moved to the external snapshot
+src,not-promoted,archived,predecessor monolith removed to external backup; unique India modules retained under .local/extras/src/venue/india
 cpp,verification/cpp-oracle,promoted-verification-only,C++20 fixed-point/order-book oracle isolated from production; CMake/CTest passed 1/1; duplicate predecessor numeric sources removed
-rust,extras/rust,retained-reference,Rust conformance/SBE drivers retained as reference; port to active types before use
+rust,.local/extras/rust,retained-reference,Rust conformance/SBE drivers retained as reference; port to active types before use
 q,not-promoted,archived,no approved kdb+ entitlement/licence/operations case in active scope
-fixtures/polymarket,not-promoted,archived,redistribution rights/provenance not established; removed to external backup
+prediction-market fixtures,not-promoted,archived,redistribution rights/provenance not established; removed to external backup
 measurements,not-promoted,archived,predecessor performance/smoke records are not transferable evidence; removed to external backup
 legacy/crates,not-promoted,removed,parallel copies of active crates; active crates canonical
 legacy/experimental,not-promoted,removed,byte-identical copies of cpp/q/upstox-feed-proto
 legacy/archive,not-promoted,removed,byte-identical snapshots of engineering/claims/company
 legacy/schemas/execution+india+research+upstox,not-promoted,removed,byte-identical to active schemas
-legacy/cpp/src,verification/cpp-oracle,removed,duplicates of the active oracle; SBE/conformance probes retained under extras/cpp
-legacy/tests,not-promoted,archived,prediction-market/session/replay tests depend on removed monolith; India tests retained under extras/tests
-legacy/engineering,not-promoted,archived,historical registries not current capability or compliance evidence; reference-store contract retained under extras/engineering
+legacy/cpp/src,verification/cpp-oracle,removed,duplicates of the active oracle; SBE/conformance probes retained under .local/extras/cpp
+legacy/tests,not-promoted,archived,prediction-market/session/replay tests depend on removed monolith; India tests retained under .local/extras/tests
+legacy/engineering,not-promoted,archived,historical registries not current capability or compliance evidence; reference-store contract retained under .local/extras/engineering
 legacy/claims,not-promoted,archived,unverified historical claims; conformance report recorded gate_passed false
 legacy/company,not-promoted,archived,historical business thesis
 legacy/deploy,not-promoted,archived,old runtime deployment
-extras/Cargo.toml,extras/Cargo.toml,tested-reference,separate nirnay-extras workspace; cargo test passes 96 tests and C++ probes pass 1/1; excluded from root workspace
-extras/src/venue/india,extras/src/venue/india,retained-reference,unique India ingestion/durable store; not active; 96 tests pass
-extras/tests/fixtures,extras/tests/fixtures,retained-reference,differential conformance corpus
-extras/cpp,extras/cpp,retained-reference,SBE/conformance probes; C++ test passes 1/1
-extras/schemas/challenge,extras/schemas/challenge,retained-reference,synthetic SBE schema
-extras/cpp/src/sbe.cpp,crates/sbe-codec/src/decode.rs,promoted,self-contained challenge SBE decoder with typed fail-closed errors
-extras/tests/golden/sample_replay.sbe,crates/sbe-codec/tests/golden/sample_replay.sbe,promoted,verbatim golden with provenance digest af291b4050e14
-extras/LICENSE,crates/sbe-codec/LICENSE,promoted,MIT licence retained with the promoted decoder
+.local/extras/Cargo.toml,.local/extras/Cargo.toml,tested-reference,separate nirnay-extras workspace; cargo test passes 96 tests and C++ probes pass 1/1; excluded from root workspace
+.local/extras/src/venue/india,.local/extras/src/venue/india,retained-reference,unique India ingestion/durable store; not active; 96 tests pass
+.local/extras/tests/fixtures,.local/extras/tests/fixtures,retained-reference,differential conformance corpus
+.local/extras/cpp,.local/extras/cpp,retained-reference,SBE/conformance probes; C++ test passes 1/1
+.local/extras/schemas/challenge,.local/extras/schemas/challenge,retained-reference,synthetic SBE schema
+.local/extras/cpp/src/sbe.cpp,crates/sbe-codec/src/decode.rs,promoted,self-contained challenge SBE decoder with typed fail-closed errors
+.local/extras/tests/golden/sample_replay.sbe,crates/sbe-codec/tests/golden/sample_replay.sbe,promoted,verbatim golden with provenance digest af291b4050e14
+.local/extras/LICENSE,crates/sbe-codec/LICENSE,promoted,MIT licence retained with the promoted decoder

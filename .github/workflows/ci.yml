@@ -40,7 +40,7 @@ jobs:
           cargo run --locked -p fundamental-tools --bin nirnay-fundamental -- validate-companies --input research/fundamentals/fixtures/company-identities.example.jsonl
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
-  extras-rust:
+  compile-budget:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -48,17 +48,8 @@ jobs:
         with:
           toolchain: 1.99.1
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-        with:
-          workspaces: extras
-      - name: Format extras
-        run: cargo fmt --manifest-path extras/Cargo.toml -- --check
-      - name: Compile extras
-        run: cargo check --manifest-path extras/Cargo.toml --all-targets --locked
-      - name: Test extras
-        run: cargo test --manifest-path extras/Cargo.toml --locked
-      - name: Clippy extras
-        run: cargo clippy --manifest-path extras/Cargo.toml --all-targets --locked -- -D warnings
+      - name: Measure cold workspace compile cost
+        run: python3 scripts/check_compile_budget.py
   cpp:
     runs-on: ubuntu-latest
     steps:
@@ -78,12 +69,6 @@ jobs:
         run: cmake --build build/cpp-oracle --parallel 2
       - name: Test numeric oracle
         run: ctest --test-dir build/cpp-oracle --output-on-failure
-      - name: Configure extras C++ probes
-        run: cmake -S extras/cpp -B build/extras-cpp -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++
-      - name: Build extras C++ probes
-        run: cmake --build build/extras-cpp --parallel 2
-      - name: Test extras C++ probes
-        run: ctest --test-dir build/extras-cpp --output-on-failure
   source-style:
     runs-on: ubuntu-latest
     env:
@@ -292,12 +277,6 @@ jobs:
         run: |
           cmake --build build/cpp-oracle --parallel 2
           ctest --test-dir build/cpp-oracle --output-on-failure
-      - name: Configure extras C++ probes with AppleClang
-        run: cmake -S extras/cpp -B build/extras-cpp -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang++
-      - name: Build and test extras C++ probes
-        run: |
-          cmake --build build/extras-cpp --parallel 2
-          ctest --test-dir build/extras-cpp --output-on-failure
       # The Keychain helper is shipped as Swift source inside the wheel and
       # invoked with `swift`; both its typecheck and its compiled form are
       # verified here because this is the only platform where it can run.

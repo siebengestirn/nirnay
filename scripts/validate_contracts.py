@@ -8,7 +8,17 @@ import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-EXCLUDED = {"extras", "legacy", "target", ".git", ".pytest_cache", "__pycache__", ".venv", "venv"}
+EXCLUDED = {
+    "extras",
+    ".local",
+    "legacy",
+    "target",
+    ".git",
+    ".pytest_cache",
+    "__pycache__",
+    ".venv",
+    "venv",
+}
 
 
 def active(path: Path) -> bool:

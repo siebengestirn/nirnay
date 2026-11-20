@@ -12,7 +12,7 @@ remediation, then ran again after it.
 |---|---|---|
 | Resolved | 38 | Meaning-preserving rewrites in approved scopes |
 | Blocked: owner authorization | 3 | `BUILD-RESULTS.md`, unchanged |
-| Blocked: predecessor provenance | 1 | `extras/README.md`, unchanged |
+| Blocked: predecessor provenance | 1 | `.local/extras/README.md`, unchanged |
 | Accepted risk | 0 | None |
 | Unresolved other | 0 | None |
 
@@ -57,7 +57,7 @@ resolved, and none was suppressed to obtain a clean audit.
 
 ## Blocked — predecessor provenance preserved
 
-`extras/README.md:91` (PROSE-002, `merely`) is historical predecessor reference
+`.local/extras/README.md:91` (PROSE-002, `merely`) is historical predecessor reference
 material. It stays unchanged to preserve provenance; the disposition is recorded
 in `engineering/extras-audit.md`.
 

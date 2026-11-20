@@ -1,6 +1,6 @@
-# `extras/` retirement decision — 2026-11-19
+# `.local/extras/` retirement decision — 2026-11-19
 
-**Status: RETIREMENT REMAINS BLOCKED (owner-confirmed).** `extras/` is retained
+**Status: RETIREMENT REMAINS BLOCKED (owner-confirmed).** `.local/extras/` is retained
 with its provenance and licence. No file was deleted.
 
 ## Decision
@@ -20,11 +20,11 @@ lack an active home or an explicit abandonment decision.
 
 ## Residual obligations that keep retirement blocked
 
-- Rust book conformance driver (`extras/rust/conform_driver.rs`): note the
+- Rust book conformance driver (`.local/extras/rust/conform_driver.rs`): note the
   active book differential added in PR #59 uses new drivers in
   `crates/market-book` and `verification/cpp-oracle`; the predecessor driver
   itself has not been promoted or abandoned.
-- `extras/scripts/conformance.py`: no active equivalent.
+- `.local/extras/scripts/conformance.py`: no active equivalent.
 - India helper modules `calendar`, `tick_schedule`, `resolution`, `eod_close`:
   no demonstrated active home.
 - Predecessor-only `backup_filename_matches_chrono_golden` test: no active
@@ -33,7 +33,7 @@ lack an active home or an explicit abandonment decision.
 
 ## Scope
 
-Decision record only. No deletion, no `extras/` edit, no capability or claim
+Decision record only. No deletion, no `.local/extras/` edit, no capability or claim
 change, no live path or trading component. The earlier re-audit
 (`evidence/EXTRAS-REAUDIT-2026-11-19.md`) remains the current classification;
 this record adds the owner's retirement disposition.

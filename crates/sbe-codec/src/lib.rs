@@ -2,7 +2,7 @@
 //! Self-contained decoder for the challenge SBE order-book schema.
 //!
 //! This is the active home for the protocol obligation retained under
-//! `extras/cpp`. It implements schema id 1, version 2, templates 1 and 2, with
+//! `.local/extras/cpp`. It implements schema id 1, version 2, templates 1 and 2, with
 //! no dependency on the removed predecessor monolith types and no use of the
 //! numeric/book oracle as SBE evidence.
 

@@ -110,7 +110,7 @@ impl UpstoxClient {
             // be re-issued against a different host.
             .redirect(redirect::Policy::none())
             .user_agent(concat!(
-                "engineering-challenge/upstox-smoke/",
+                "nirnay/upstox-smoke/",
                 env!("CARGO_PKG_VERSION")
             ))
             .build()

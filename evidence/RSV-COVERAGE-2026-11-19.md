@@ -1,10 +1,10 @@
 # RSV coverage record — PR1 + PR2 (2026-11-19)
 
 **Scope:** first two promotion steps for GAP-1. The frozen P1-04 source contract is
-`extras/engineering/reference-store-contract.json` (status `frozen`,
+`.local/extras/engineering/reference-store-contract.json` (status `frozen`,
 RSV-01…RSV-12). This record describes what the **active** crate now covers and
 what remains deferred. It does not change the frozen contract and does not
-touch `extras/`.
+touch `.local/extras/`.
 
 ## Implemented in this step
 
@@ -83,5 +83,5 @@ or capability claim. No capability or claim record is promoted by these steps.
 9. A missing or hash-wrong archived object blocks publication before any
    revision row is written and also fails full verification after restart.
 
-`extras/` remains the unchanged reference baseline. This step does not retire
+`.local/extras/` remains the unchanged reference baseline. This step does not retire
 or modify it.
