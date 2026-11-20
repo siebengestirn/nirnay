@@ -20,6 +20,7 @@ pub use lifecycle::{
 pub use store::{
     BrokerOrderId, //
     ClientOrderId,
+    CommitFault,
     DispatchClaim,
     OmsStore,
     OrderView,

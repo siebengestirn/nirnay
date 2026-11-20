@@ -294,6 +294,18 @@
         ]
       },
       "falsifier": "A fresh authority accepts a reservation, any default readiness flag is permissive, a control setter changes the revision, or the fresh-authority test does not fail all four checks."
+    },
+    {
+      "id": "CLM-025",
+      "statement": "The OMS journal has one exclusive writer and refuses all further mutations after an uncertain append or sync result until an explicit fresh replay; a torn tail fails closed.",
+      "status": "implemented",
+      "scope": {
+        "packages": [
+          "crates/authoritative-oms/src/store.rs",
+          "crates/authoritative-oms/tests/durability.rs"
+        ]
+      },
+      "falsifier": "A second writer can append, a poisoned writer accepts a mutation, a torn tail is accepted on recovery, or a sync failure leaves the writer usable."
     }
   ]
 }

@@ -13,6 +13,7 @@ use std::{
     io::{
         BufRead, //
         BufReader,
+        ErrorKind,
         Write,
     },
     num::NonZeroU64,
@@ -21,6 +22,8 @@ use std::{
         PathBuf,
     },
 };
+
+use fs2::FileExt;
 
 use serde::{
     Deserialize, //
@@ -215,6 +218,21 @@ pub struct OmsStore {
     journal: File,
     state: OmsState,
     last_digest: String,
+    /// Set before an uncertain append and cleared only after a successful
+    /// `sync_all`. A poisoned writer refuses every subsequent mutation.
+    poisoned: bool,
+    /// Deterministic fault injection for durability tests. Never set in
+    /// production paths.
+    commit_fault: Option<CommitFault>,
+}
+
+/// Injected commit faults for durability tests.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum CommitFault {
+    /// Write only part of the record, then fail.
+    PartialWrite,
+    /// Write the complete record but fail the durability step.
+    SyncFailure,
 }
 
 impl OmsStore {
@@ -265,11 +283,19 @@ impl OmsStore {
             .append(true)
             .open(&path)
             .map_err(|error| OmsError::Storage(error.to_string()))?;
+        journal
+            .try_lock_exclusive()
+            .map_err(|error| match error.kind() {
+                ErrorKind::WouldBlock => OmsError::WriterLocked,
+                _ => OmsError::Storage(error.to_string()),
+            })?;
         Ok(Self {
             path,
             journal,
             state,
             last_digest,
+            poisoned: false,
+            commit_fault: None,
         })
     }
 
@@ -278,7 +304,26 @@ impl OmsStore {
         &self.path
     }
 
+    /// Re-open and replay the journal into a fresh writer. The poisoned
+    /// instance remains unusable; recovery is an explicit owner action.
+    pub fn recover(path: impl AsRef<Path>) -> Result<Self, OmsError> {
+        Self::open(path)
+    }
+
+    #[must_use]
+    pub fn is_poisoned(&self) -> bool {
+        self.poisoned
+    }
+
+    /// Inject a commit fault for deterministic durability tests.
+    pub fn force_commit_fault(&mut self, fault: CommitFault) {
+        self.commit_fault = Some(fault);
+    }
+
     fn append(&mut self, op: &str, mut next: OmsState) -> Result<(), OmsError> {
+        if self.poisoned {
+            return Err(OmsError::WriterPoisoned);
+        }
         next.seq = self
             .state
             .seq
@@ -293,13 +338,30 @@ impl OmsStore {
             digest: digest.clone(),
         };
         let line = serde_json::to_string(&record).map_err(|e| OmsError::Storage(e.to_string()))?;
-        self.journal
-            .write_all(line.as_bytes())
-            .and_then(|()| self.journal.write_all(b"\n"))
-            .and_then(|()| self.journal.sync_all())
-            .map_err(|e| OmsError::Storage(e.to_string()))?;
+        // Any error after this point leaves the writer poisoned: the commit
+        // may be partial or may not be durable, so this instance cannot safely
+        // append again. Recovery is a fresh replay through `Self::recover`.
+        self.poisoned = true;
+        let outcome = self.write_commit(&line);
+        outcome.map_err(|e| OmsError::Storage(e.to_string()))?;
         self.state = next;
         self.last_digest = digest;
+        self.poisoned = false;
+        Ok(())
+    }
+
+    fn write_commit(&mut self, line: &str) -> std::io::Result<()> {
+        if self.commit_fault == Some(CommitFault::PartialWrite) {
+            let split = line.len() / 2;
+            self.journal.write_all(&line.as_bytes()[..split])?;
+            return Err(std::io::Error::other("injected partial write"));
+        }
+        self.journal.write_all(line.as_bytes())?;
+        self.journal.write_all(b"\n")?;
+        if self.commit_fault == Some(CommitFault::SyncFailure) {
+            return Err(std::io::Error::other("injected sync failure"));
+        }
+        self.journal.sync_all()?;
         Ok(())
     }
 
