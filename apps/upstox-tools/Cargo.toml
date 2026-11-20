@@ -29,6 +29,8 @@ clap.workspace = true
 futures-util.workspace = true
 jiff.workspace = true
 market-archive.workspace = true
+market-event.workspace = true
+market-kernel.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -39,3 +41,7 @@ upstox-feed-proto.workspace = true
 
 [lints]
 workspace = true
+
+[[bin]]
+name = "upstox-kernel-session"
+path = "src/bin/upstox_kernel_session.rs"

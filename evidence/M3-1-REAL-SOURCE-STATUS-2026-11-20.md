@@ -20,24 +20,43 @@ Local gates: `make check` exit 0; workspace tests, clippy `-D warnings`, 21 JSON
 schemas, 175 Python tests and 2 subtests all pass. Each PR had exact-head CI
 12/12 and independent review closure.
 
-## Real-source certification: BLOCKED
+## Real Upstox session — captured and replayed
 
-No entitlement-approved captured NSE cash session from Upstox or FYERS was
-supplied. The only real provider frames in the repository are two Upstox
-MarketInfo + LTPC frames with **no Full depth**; the FYERS session fixture is
-explicitly synthetic. NSE/BSE files under `.local/nirnay-source-fixtures/` are
-reference masters, not captured market data.
+With the owner's explicit read-only authorization, a bounded 90-second live
+Upstox V3 Full capture was taken on 2026-11-20 from the keychain analytics
+token. Credential values were never printed or exported; all artifacts are
+outside Git under `.local/live-sessions/2026-11-20/upstox/`.
 
-Therefore none of the twelve real-source acceptance conditions is claimed as
-met. Passing synthetic systems fixtures are not real-source evidence.
+- Instrument: `NSE_EQ|INE848E01016` (NHPC), resolved to `IN:INE848E01016`
+  against the dated NSE cash master.
+- Manifest: 37 frames, 0 decode errors, 1 connection, capture-local sequence;
+  `provider_sequence_available: false`.
+- Raw journal SHA-256:
+  `762b87c07e6b720980850c53afa233ae1852be373c16d3c6971bf641e9f2f143`.
+- Decoded offline into 36 five-level Full-feed observations and projected by
+  `upstox-kernel-session` into a verified kernel session (SHA-256
+  `fda9291a240ef226fd374a73d74fc265de7b3bd1868fd782bfe331c69523a1aa`).
+- `session-replay` rebuilt one live five-level MBP book: best bid 7,644 paise,
+  best ask 7,648 paise, 5 bid and 5 ask levels. Report SHA-256
+  `6dc63204f2862b146ab36cb54e5873f5bd89a537471d7590361f9f80690acc0a`;
+  fresh-process replay is byte-identical.
+
+Continuity is capture-local receive order, not exchange packet completeness.
+No order was submitted and no broker write occurred.
+
+## Real-source certification: PARTIAL
+
+Upstox five-level capture, decode, identity, book reconstruction and replay are
+demonstrated. FYERS remains blocked: the keychain holds only app ID and secret,
+not the required Data Socket access token, so no FYERS live capture was run.
+Cross-provider reconciliation against two real sessions and the remaining
+twelve acceptance conditions are therefore **not claimed**.
 
 ## Required owner input
 
-One entitled NSE cash session per provider including initial snapshot,
-continuous updates, reconnect, gap and close phases, with entitlement and
-storage/replay rights confirmation, preserved outside public Git. Replay that
-evidence through `session-replay` and the paper runner, then issue a separate
-certification record with session digests.
+A FYERS Data Socket access token (or an entitled captured FYERS session),
+plus a session covering open, reconnect and close phases, before full M3.1
+real-source certification.
 
 No live order submission, broker write, D30, FYERS TBT, MBO, BSE, MCX or
 derivatives work was performed.

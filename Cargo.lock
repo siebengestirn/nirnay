@@ -2331,6 +2331,8 @@ dependencies = [
  "futures-util",
  "jiff",
  "market-archive",
+ "market-event",
+ "market-kernel",
  "reqwest",
  "serde",
  "serde_json",
