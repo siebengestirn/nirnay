@@ -1,4 +1,4 @@
-.PHONY: check perf docs-check shellcheck-check generated-paths-check pollution-check style rust-style source-style style-gate python-format-check rust-test python-test python-check cpp-test cpp-format-check schema-check fundamental-fixture-check verify-local fmt constraints sbom supply-chain wheels packaging-test bundle bundle-verify git-policy kdb-analyze kdb-golden
+.PHONY: check perf docs-check shellcheck-check generated-paths-check pollution-check style rust-style source-style q-style prose-style style-gate python-format-check rust-test python-test python-check cpp-test cpp-format-check schema-check fundamental-fixture-check verify-local fmt constraints sbom supply-chain wheels packaging-test bundle bundle-verify git-policy kdb-analyze kdb-golden
 check:
 	$(MAKE) docs-check
 	$(MAKE) shellcheck-check
@@ -21,7 +21,7 @@ generated-paths-check:
 	python3 scripts/check_generated_paths.py
 pollution-check:
 	python3 scripts/check_no_cross_pollution.py
-style: rust-style source-style prose-style style-gate
+style: rust-style source-style q-style prose-style style-gate
 rust-style:
 	python3 scripts/check_rust_style.py --self-test
 	python3 scripts/check_rust_style.py
@@ -31,6 +31,9 @@ source-style:
 prose-style:
 	python3 scripts/check_prose_style.py --self-test
 	python3 scripts/check_prose_style.py
+q-style:
+	python3 scripts/check_q_style.py --self-test
+	python3 scripts/check_q_style.py
 style-gate:
 	python3 scripts/check_style_gate.py --self-test
 	python3 scripts/check_style_gate.py
@@ -109,3 +112,12 @@ kdb-analyze:
 
 kdb-golden:
 	cargo run --locked -p kdb-lab --bin nirnay-kdb -- check-golden
+
+# In-process q unit tests of the checked-in library (k4unit CSV model).
+Q_BIN ?= /Users/tourist/.kx/bin/q
+KDB_Q_DIR ?= analytics/kdb
+kdb-q-test:
+	$(Q_BIN) $(KDB_Q_DIR)/mbp-test.q \
+	  $(abspath apps/kdb-lab/tests/golden/mbp-observation-v1.csv) \
+	  $(abspath $(KDB_Q_DIR)/tests/empty.csv) \
+	  $(abspath $(KDB_Q_DIR)/tests/mbp-unit.csv)

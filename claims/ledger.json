@@ -253,6 +253,21 @@
         ]
       },
       "falsifier": "A q run merges or sums two sources, emits an unknown, missing or duplicated metric, produces different bytes on a fresh process, produces a report that fails its schema, or a golden file that the Rust reference cannot reproduce."
+    },
+    {
+      "id": "CLM-022",
+      "statement": "q / kdb+ analytics has the same style-gate treatment as other languages: a canonical style guide with authoritative sources, an added-lines q checker with self-tests wired into make check and CI, and in-process q unit tests over a CSV assertion harness that fail closed on a broken case.",
+      "status": "implemented",
+      "scope": {
+        "packages": [
+          "engineering/q-kdb-style.md",
+          "scripts/check_q_style.py",
+          "scripts/check_style_gate.py",
+          "analytics/kdb/mbp-test.q",
+          "analytics/kdb/tests/mbp-unit.csv"
+        ]
+      },
+      "falsifier": "A bare / line, unparenthesised count comparison or dotted column access inside a lambda passes the q gate; removing the q checker or its wiring does not fail the style-gate integrity check; or a deliberately failing q assertion exits zero."
     }
   ]
 }

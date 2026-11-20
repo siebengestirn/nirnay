@@ -23,11 +23,13 @@ ROOT = Path(__file__).resolve().parent.parent
 
 REQUIRED_TEXT: dict[str, tuple[str, ...]] = {
     "Makefile": (
-        "style: rust-style source-style prose-style style-gate",
+        "style: rust-style source-style q-style prose-style style-gate",
         "$(MAKE) style",
         "prose-style:",
         "python3 scripts/check_prose_style.py --self-test",
         "python3 scripts/check_prose_style.py",
+        "python3 scripts/check_q_style.py --self-test",
+        "python3 scripts/check_q_style.py",
         "python3 scripts/check_rust_style.py --self-test",
         "python3 scripts/check_source_style.py --self-test",
         "python3 scripts/check_style_gate.py",
@@ -39,7 +41,13 @@ REQUIRED_TEXT: dict[str, tuple[str, ...]] = {
         "python3 scripts/check_rust_style.py",
         "python3 scripts/check_source_style.py",
         "python3 scripts/check_prose_style.py",
+        "python3 scripts/check_q_style.py",
         "python3 scripts/check_style_gate.py",
+    ),
+    "scripts/check_q_style.py": (
+        "def check_q_line(",
+        "--self-test",
+        "def main()",
     ),
     "scripts/check_rust_style.py": (
         "ASSERT_MACRO",
@@ -74,6 +82,7 @@ MIN_TESTS: dict[str, int] = {
     "scripts/check_source_style.py": 26,
     "scripts/check_style_gate.py": 7,
     "scripts/check_prose_style.py": 12,
+    "scripts/check_q_style.py": 16,
 }
 
 
@@ -89,6 +98,7 @@ def behavioural_checks(root: Path = ROOT) -> list[str]:
         import check_rust_style as rust
         import check_source_style as source
         import check_prose_style as prose
+        import check_q_style as qstyle
     except ImportError as error:
         return [f"cannot import style checker: {error}"]
 
@@ -100,6 +110,8 @@ def behavioural_checks(root: Path = ROOT) -> list[str]:
             failures.append(f"rule behaviour lost: {needle!r} for {text!r}")
 
     expect(prose.check_prose_line, "we require evidence", "PROSE-001")
+    expect(qstyle.check_q_line, "/", "bare /")
+    expect(qstyle.check_q_line, "if[count args < 2;x]", "count")
     expect(source.check_python_line, "x = 1;", "semicolon")
     expect(source.check_cpp_line, "int *p = NULL;", "nullptr", header=False, cpp=True)
     expect(source.check_shell_line, "echo `date`", "backticks")
@@ -191,6 +203,8 @@ class GateIntegrityTests(unittest.TestCase):
         for needle in EXPECTED_LANGUAGE_FUNCTIONS:
             self.assertIn(needle, required)
         self.assertEqual(len(EXPECTED_LANGUAGE_FUNCTIONS), 6)
+        self.assertIn("scripts/check_q_style.py", REQUIRED_TEXT)
+        self.assertIn("def check_q_line(", REQUIRED_TEXT["scripts/check_q_style.py"])
 
     def test_complete_gate_passes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

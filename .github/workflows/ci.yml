@@ -87,6 +87,8 @@ jobs:
         run: python3 scripts/check_source_style.py
       - name: Prose style on added lines
         run: python3 scripts/check_prose_style.py
+      - name: q / kdb+ style on added lines
+        run: python3 scripts/check_q_style.py
       - name: ShellCheck and tool isolation
         run: |
           python3 scripts/check_shellcheck.py
