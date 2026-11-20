@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "registry_id": "nse-cash-source-products-2026-11-20",
+  "products": [
+    {
+      "provider": "upstox",
+      "product": "full",
+      "venue": "NSE",
+      "segment": "Cash",
+      "instrument_scope": "entitlement-approved NSE cash watchlist",
+      "depth_model": "mbp",
+      "depth_levels": 5,
+      "trade_prints": true,
+      "order_level_identity": false,
+      "snapshot": true,
+      "incremental_updates": "delta",
+      "source_sequence": "unavailable",
+      "recovery": [
+        "reconnect",
+        "fresh_snapshot"
+      ],
+      "protocol": {
+        "name": "upstox-market-data-feed-v3-protobuf",
+        "schema_digest": "3e1c939dce2c83a3fef91405c5ca268dfa089aae973319f56685f12a5afcf612"
+      },
+      "entitlement": {
+        "reference": "owner-reported:upstox-analytics-read-only",
+        "verified": false
+      },
+      "rights": {
+        "capture": true,
+        "store": false,
+        "replay": false,
+        "redistribute": false
+      },
+      "limits": {
+        "max_symbols": 300,
+        "connections": 1,
+        "requests_per_second": null
+      }
+    },
+    {
+      "provider": "fyers",
+      "product": "data_socket",
+      "venue": "NSE",
+      "segment": "Cash",
+      "instrument_scope": "entitlement-approved NSE cash watchlist",
+      "depth_model": "mbp",
+      "depth_levels": 5,
+      "trade_prints": true,
+      "order_level_identity": false,
+      "snapshot": true,
+      "incremental_updates": "delta",
+      "source_sequence": "unavailable",
+      "recovery": [
+        "reconnect",
+        "fresh_snapshot"
+      ],
+      "protocol": {
+        "name": "fyers-python-sdk-callback-json",
+        "schema_digest": null,
+        "schema_reference": "apps/fyers-recorder/src/fyers_recorder/recorder.py"
+      },
+      "entitlement": {
+        "reference": "owner-reported:fyers-data-socket",
+        "verified": false
+      },
+      "rights": {
+        "capture": true,
+        "store": false,
+        "replay": false,
+        "redistribute": false
+      },
+      "limits": {
+        "max_symbols": 300,
+        "connections": 1,
+        "requests_per_second": null
+      }
+    },
+    {
+      "provider": "zerodha_kite",
+      "product": "quote",
+      "venue": "NSE",
+      "segment": "Cash",
+      "instrument_scope": "account-linked instruments",
+      "depth_model": "mbp",
+      "depth_levels": 5,
+      "trade_prints": false,
+      "order_level_identity": false,
+      "snapshot": false,
+      "incremental_updates": "snapshot_only",
+      "source_sequence": "unavailable",
+      "recovery": [],
+      "protocol": {
+        "name": "kite-connect-v3-rest-quote",
+        "schema_digest": null,
+        "schema_reference": "engineering/brokers/zerodha-adapter-spec.md"
+      },
+      "entitlement": {
+        "reference": "owner-reported:kite-connect-personal-plan",
+        "verified": false
+      },
+      "rights": {
+        "capture": false,
+        "store": false,
+        "replay": false,
+        "redistribute": false
+      },
+      "limits": {
+        "max_symbols": 200,
+        "connections": 1,
+        "requests_per_second": 3
+      }
+    }
+  ]
+}

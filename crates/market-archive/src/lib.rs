@@ -5,6 +5,7 @@
 //! Provider adapters must pass original payload bytes and a reference to the
 //! account's applicable entitlement. A raw frame is not a normalized event.
 
+mod capability;
 mod capture;
 mod continuity;
 mod error;
@@ -13,6 +14,20 @@ mod ingress;
 mod journal;
 mod manifest;
 
+pub use capability::{
+    CapabilityError, //
+    DataRights,
+    DepthModel,
+    EntitlementRef,
+    MarketDataRequirement,
+    ProtocolRef,
+    RecoveryMode,
+    SourceLimits,
+    SourceProduct,
+    SourceProductRegistry,
+    SourceSequence,
+    UpdateMode,
+};
 pub use capture::{
     CaptureManifest, //
     SessionVerification,
