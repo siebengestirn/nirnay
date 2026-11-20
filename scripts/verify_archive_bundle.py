@@ -153,6 +153,21 @@ def verify(archive: Path) -> list[str]:
         except subprocess.CalledProcessError as error:
             return errors + [f"git bundle list-heads failed: {error}"]
 
+        declared_refs = {}
+        for line in manifest.get("git_refs", []):
+            ref, _, oid = str(line).partition(" ")
+            if ref and oid:
+                declared_refs[ref.strip()] = oid.strip()
+        for ref, oid in sorted(declared_refs.items()):
+            if ref not in heads:
+                errors.append(f"declared git ref {ref} is absent from the bundle")
+            elif heads[ref] != oid and not heads[ref].startswith(oid):
+                errors.append(
+                    f"declared git ref {ref} points to {oid}, bundle has {heads[ref]}"
+                )
+        for ref in sorted(set(heads) - set(declared_refs) - {"HEAD"}):
+            errors.append(f"bundled ref {ref} is not declared in the manifest")
+
         main_ref = heads.get("refs/heads/main", "")
         if not main_ref:
             errors.append("bundle has no refs/heads/main")
@@ -210,6 +225,7 @@ def make_archive(
         "checked_out_commit": declared,
         "main_commit": declared,
         "git_bundle": {"sha256": sha256(bundle)},
+        "git_refs": [f"refs/heads/main {declared}"],
         "untracked_source_files": [],
     }
     tree = subprocess.check_output(
@@ -229,15 +245,26 @@ def make_archive(
 
 
 class ArchiveBundleTests(unittest.TestCase):
+    """Self-tests must not depend on a developer's global Git configuration."""
+
+    def env(self) -> dict[str, str]:
+        import os
+
+        isolated = dict(os.environ)
+        isolated["GIT_CONFIG_GLOBAL"] = "/dev/null"
+        isolated["GIT_CONFIG_NOSYSTEM"] = "1"
+        isolated["GIT_CONFIG_COUNT"] = "0"
+        return isolated
+
     def git(self, directory: Path, *args: str) -> str:
         return subprocess.check_output(
-            ["git", "-C", str(directory), *args], text=True
+            ["git", "-C", str(directory), *args], text=True, env=self.env()
         ).strip()
 
     def make_repo(self, directory: Path, commits: int) -> tuple[Path, str]:
         repo = directory / "repo"
         repo.mkdir()
-        self.git(repo, "init", "-q")
+        self.git(repo, "init", "-q", "--initial-branch=main")
         self.git(repo, "config", "user.name", "Test")
         self.git(repo, "config", "user.email", "test@example.invalid")
         head = ""
@@ -251,9 +278,10 @@ class ArchiveBundleTests(unittest.TestCase):
     def make_bundle(self, directory: Path, repo: Path, name: str) -> Path:
         bundle = directory / name
         subprocess.check_call(
-            ["git", "-C", str(repo), "bundle", "create", str(bundle), "refs/heads/main"],
+            ["git", "-C", str(repo), "bundle", "create", str(bundle), "refs/heads/main", "HEAD"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            env=self.env(),
         )
         return bundle
 
@@ -264,6 +292,26 @@ class ArchiveBundleTests(unittest.TestCase):
             bundle = self.make_bundle(root, repo, "good.bundle")
             archive = make_archive(root, {"bundle_source": str(bundle)}, head, repo)
             self.assertEqual(verify(archive), [])
+
+    def test_declared_ref_absent_from_bundle_is_caught(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo, head = self.make_repo(root, 1)
+            bundle = self.make_bundle(root, repo, "good.bundle")
+            archive = make_archive(root, {"bundle_source": str(bundle)}, head, repo)
+            with zipfile.ZipFile(archive) as original:
+                manifest = json.loads(original.read(MANIFEST_MEMBER))
+                payloads = {name: original.read(name) for name in original.namelist()}
+            manifest["git_refs"] = manifest["git_refs"] + [f"refs/heads/gone {head}"]
+            payloads[MANIFEST_MEMBER] = json.dumps(manifest).encode()
+            with zipfile.ZipFile(archive, "w") as rewritten:
+                for name, payload in payloads.items():
+                    rewritten.writestr(name, payload)
+            messages = verify(archive)
+            self.assertTrue(
+                any("is absent from the bundle" in m for m in messages),
+                f"a declared-but-unbundled ref must fail: {messages}",
+            )
 
     def test_stale_bundle_is_caught(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
