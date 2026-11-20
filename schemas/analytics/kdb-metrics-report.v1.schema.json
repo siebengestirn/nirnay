@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nirnay.local/schemas/analytics/kdb-metrics-report.v1.schema.json",
+  "title": "Nirnay KDB-X analytics report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schema_version",
+    "source_id",
+    "engine",
+    "input",
+    "output",
+    "metrics"
+  ],
+  "properties": {
+    "schema": {
+      "const": "schemas/analytics/kdb-metrics-report.v1.schema.json"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "source_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "engine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "binary"],
+      "properties": {
+        "name": {
+          "const": "kdb-x"
+        },
+        "binary": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "rows"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "rows": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha256", "bytes"],
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "source_id",
+        "rows",
+        "duration_s",
+        "gap_count",
+        "spread_mean",
+        "spread_median",
+        "spread_max",
+        "imbalance_mean",
+        "imbalance_min",
+        "imbalance_max",
+        "levels_min",
+        "bid1_mean",
+        "ask1_mean",
+        "bid1_max_qty",
+        "ask1_max_qty"
+      ],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "source_id": { "type": "string", "minLength": 1 },
+        "rows": { "type": "integer", "minimum": 1 },
+        "duration_s": { "type": "number", "minimum": 0 },
+        "gap_count": { "type": "integer", "minimum": 0 },
+        "spread_mean": { "type": "number", "minimum": 0 },
+        "spread_median": { "type": "number", "minimum": 0 },
+        "spread_max": { "type": "number", "minimum": 0 },
+        "imbalance_mean": { "type": "number", "minimum": -1, "maximum": 1 },
+        "imbalance_min": { "type": "number", "minimum": -1, "maximum": 1 },
+        "imbalance_max": { "type": "number", "minimum": -1, "maximum": 1 },
+        "levels_min": { "type": "integer", "minimum": 1 },
+        "bid1_mean": { "type": "number", "minimum": 0 },
+        "ask1_mean": { "type": "number", "minimum": 0 },
+        "bid1_max_qty": { "type": "integer", "minimum": 0 },
+        "ask1_max_qty": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

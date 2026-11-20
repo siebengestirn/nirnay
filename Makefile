@@ -1,4 +1,4 @@
-.PHONY: check perf docs-check shellcheck-check generated-paths-check pollution-check style rust-style source-style style-gate python-format-check rust-test python-test python-check cpp-test cpp-format-check schema-check fundamental-fixture-check verify-local fmt constraints sbom supply-chain wheels packaging-test bundle bundle-verify git-policy
+.PHONY: check perf docs-check shellcheck-check generated-paths-check pollution-check style rust-style source-style style-gate python-format-check rust-test python-test python-check cpp-test cpp-format-check schema-check fundamental-fixture-check verify-local fmt constraints sbom supply-chain wheels packaging-test bundle bundle-verify git-policy kdb-analyze kdb-golden
 check:
 	$(MAKE) docs-check
 	$(MAKE) shellcheck-check
@@ -97,3 +97,15 @@ CPP_SOURCES := $(shell find verification/cpp-oracle -type f \( -name '*.c' -o -n
 cpp-format-check:
 	@for f in $(CPP_SOURCES); do $(CLANG_FORMAT) --style=file --dry-run --Werror "$$f" || exit 1; done
 verify-local: python-test python-check schema-check cpp-test
+
+# KDB-X analytics: owner-local, read-only. Requires a locally installed q;
+# the Rust golden tests in `make check` validate the same contract without q.
+KDB_INPUT ?= .local/perf/kdb/book.csv
+KDB_SOURCE ?= upstox-live
+KDB_OUT ?= .local/perf/kdb-lab-run
+
+kdb-analyze:
+	cargo run --locked -p kdb-lab --bin nirnay-kdb -- analyze --input $(KDB_INPUT) --source $(KDB_SOURCE) --out $(KDB_OUT)
+
+kdb-golden:
+	cargo run --locked -p kdb-lab --bin nirnay-kdb -- check-golden

@@ -215,6 +215,14 @@
       "evidence_status": "crates/sbe-codec decodes challenge schema id 1 version 2 templates 1 and 2 with no predecessor type dependency. Four differential tests verify the frozen golden digest, reproduce the independent C++ SBE canonical dump byte for byte, assert byte-identical canonical re-encoding, and refuse the seven malformed cases. The oracle is the C++ SBE decoder only; the numeric/book oracle is not used as SBE evidence.",
       "owner": "market-data",
       "scope": "crates/sbe-codec/src; crates/sbe-codec/tests; crates/sbe-codec/tests/golden"
+    },
+    {
+      "id": "CAP-027",
+      "name": "Checked-in KDB-X analytics contract and deterministic golden harness",
+      "status": "implemented",
+      "evidence_status": "analytics/kdb/mbp_metrics.q is a checked-in typed per-source MBP contract; apps/kdb-lab parses typed observations and metrics, runs a local KDB-X engine with absolute paths, records input/output digests, and pins behaviour with byte-identical synthetic golden files. Thirteen Rust tests cover contract shape, gap/unit invariants, reference arithmetic, report golden equality (schema validation via the contract gate) and real-engine replay; the golden replay is skipped where q is absent. The 2026-11-20 real Upstox run produced 36 rows and 87.07 s with 0 gaps. No broker, order or licensed session data is used; this is research analytics, not authoritative money arithmetic or a profitability claim.",
+      "owner": "research-data",
+      "scope": "analytics/kdb/mbp_metrics.q; apps/kdb-lab; schemas/analytics/kdb-metrics-report.v1.schema.json; Makefile"
     }
   ]
 }

@@ -62,8 +62,13 @@ def main() -> int:
             except Exception as exc:
                 errors.append(f"SCHEMA {path.relative_to(ROOT)}: {type(exc).__name__}: {exc}")
         # Contract vectors: instance files under tests/golden are validated
-        # against the schema whose basename matches their `schema` field.
-        for path in sorted(ROOT.glob("crates/*/tests/golden/*.json")):
+        # against the schema named by their `schema` field. A vector may wrap
+        # its payload in `instance`, or be the instance itself.
+        vectors = (
+            *ROOT.glob("crates/*/tests/golden/*.json"),
+            *ROOT.glob("apps/*/tests/golden/*.json"),
+        )
+        for path in sorted(vectors):
             if not active(path):
                 continue
             try:
@@ -74,7 +79,8 @@ def main() -> int:
                     continue
                 schema_path = ROOT / schema_name
                 schema = json.loads(schema_path.read_text(encoding="utf-8"))
-                Draft202012Validator(schema).validate(vector["instance"])
+                instance = vector.get("instance", vector)
+                Draft202012Validator(schema).validate(instance)
             except Exception as exc:
                 errors.append(f"VECTOR {path.relative_to(ROOT)}: {type(exc).__name__}: {exc}")
     if errors:
