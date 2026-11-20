@@ -47,16 +47,18 @@ No order was submitted and no broker write occurred.
 ## Real-source certification: PARTIAL
 
 Upstox five-level capture, decode, identity, book reconstruction and replay are
-demonstrated. FYERS remains blocked: the keychain holds only app ID and secret,
-not the required Data Socket access token, so no FYERS live capture was run.
-Cross-provider reconciliation against two real sessions and the remaining
-twelve acceptance conditions are therefore **not claimed**.
+demonstrated. FYERS credentials are complete and a read-only Data Socket capture
+was attempted, but NSE was closed and the session has zero callbacks, so it is
+not usable market evidence. Cross-provider reconciliation against two real
+sessions and the remaining twelve acceptance conditions are therefore **not
+claimed**.
 
 ## Required owner input
 
-A FYERS Data Socket access token (or an entitled captured FYERS session),
-plus a session covering open, reconnect and close phases, before full M3.1
-real-source certification.
+A real FYERS Data Socket capture taken while NSE is open (09:15-15:30 IST),
+including initial snapshot, continuous updates and a reconnect, before full
+M3.1 real-source certification. The token and app configuration are ready;
+only market timing is blocking.
 
 No live order submission, broker write, D30, FYERS TBT, MBO, BSE, MCX or
 derivatives work was performed.
