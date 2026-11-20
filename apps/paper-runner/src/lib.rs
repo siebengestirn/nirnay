@@ -25,6 +25,10 @@ use broker_adapter::{
     SubmitBehavior,
 };
 use market_event::{
+    KernelEvent, //
+    MarketByPriceSnapshot,
+    MarketDataEvent,
+    MbpLevel,
     OriginClass, //
     SequenceScope,
     StreamState,
@@ -174,15 +178,32 @@ fn instrument(input: &PaperInput) -> Result<Instrument, String> {
     })
 }
 
-fn synthetic_session(input: &PaperInput) -> Result<(KernelSession, Vec<QuoteSnapshot>), String> {
+fn synthetic_session(input: &PaperInput) -> Result<KernelSession, String> {
     let mut observations = Vec::new();
-    let mut quotes = Vec::new();
     for (index, (bid, ask, age_ns)) in input.quotes.iter().enumerate() {
         let payload = format!("paper:{bid}:{ask}:{index}");
         let bytes = payload.as_bytes();
         let frame = capture_frame_id(bytes).map_err(|e| e.to_string())?;
         let sequence = (index as u64) + 1;
         let receive_utc_ns = 1_700_000_000_000_000_000_i64 + sequence as i64;
+        let level = |price: i64| MbpLevel {
+            price_paise: price,
+            quantity: 1,
+            order_count: Some(1),
+        };
+        let book = MarketByPriceSnapshot {
+            instrument_id: input.instrument_id.clone(),
+            venue: "NSE".to_owned(),
+            source_id: "upstox".to_owned(),
+            product: "full".to_owned(),
+            depth_levels: 1,
+            bids: vec![level(*bid)],
+            asks: vec![level(*ask)],
+            source_time_ns: Some(1_699_999_999_000_000_000 + sequence as i64),
+            last_trade_time_ns: None,
+            received_utc_ns: receive_utc_ns,
+        };
+        book.validate().map_err(|error| error.to_string())?;
         observations.push(SourceObservation {
             raw_frame_hash: frame.clone(),
             source_id: "upstox".to_owned(),
@@ -202,27 +223,15 @@ fn synthetic_session(input: &PaperInput) -> Result<(KernelSession, Vec<QuoteSnap
             reference_revision: Some("paper-revision".to_owned()),
             instrument_id: Some(input.instrument_id.clone()),
             evidence_token: None,
-        });
-        quotes.push(QuoteSnapshot {
-            instrument_id: InstrumentId::new(input.instrument_id.clone())
-                .map_err(|e| e.to_string())?,
-            venue: Venue::Nse,
-            bid_price: Some(PricePaise::new(Paise(*bid)).map_err(|e| e.to_string())?),
-            bid_quantity: Quantity::new(1).map_err(|e| e.to_string())?,
-            ask_price: Some(PricePaise::new(Paise(*ask)).map_err(|e| e.to_string())?),
-            ask_quantity: Quantity::new(1).map_err(|e| e.to_string())?,
-            continuity: Continuity::Snapshot,
+            payload: Some(MarketDataEvent::MarketByPriceSnapshot(book)),
         });
     }
-    Ok((
-        KernelSession {
-            schema_version: market_kernel::KERNEL_SESSION_SCHEMA_VERSION,
-            source_scope: "NSE".to_owned(),
-            session_reference_revision: Some("paper-revision".to_owned()),
-            observations,
-        },
-        quotes,
-    ))
+    Ok(KernelSession {
+        schema_version: market_kernel::KERNEL_SESSION_SCHEMA_VERSION,
+        source_scope: "NSE".to_owned(),
+        session_reference_revision: Some("paper-revision".to_owned()),
+        observations,
+    })
 }
 
 fn frozen_artifact(input: &PaperInput) -> FrozenArtifact {
@@ -295,9 +304,32 @@ fn thresholds() -> RuntimeThresholds {
     }
 }
 
+/// Derive the top of book from the kernel's typed payload. No parallel quote
+/// collection is used by the strategy or the risk authority.
+fn kernel_top_of_book(event: &KernelEvent) -> Result<(i64, i64), String> {
+    let Some(MarketDataEvent::MarketByPriceSnapshot(book)) = &event.payload else {
+        return Err("kernel event carries no market-by-price snapshot".to_owned());
+    };
+    let bid = book.best_bid_paise().ok_or("kernel book has no bid")?;
+    let ask = book.best_ask_paise().ok_or("kernel book has no ask")?;
+    Ok((bid, ask))
+}
+
+fn kernel_quote(bid: i64, ask: i64, instrument_id: &str) -> Result<QuoteSnapshot, String> {
+    Ok(QuoteSnapshot {
+        instrument_id: InstrumentId::new(instrument_id).map_err(|e| e.to_string())?,
+        venue: Venue::Nse,
+        bid_price: Some(PricePaise::new(Paise(bid)).map_err(|e| e.to_string())?),
+        bid_quantity: Quantity::new(1).map_err(|e| e.to_string())?,
+        ask_price: Some(PricePaise::new(Paise(ask)).map_err(|e| e.to_string())?),
+        ask_quantity: Quantity::new(1).map_err(|e| e.to_string())?,
+        continuity: Continuity::Snapshot,
+    })
+}
+
 /// Execute one bounded paper pass over a synthetic session.
 pub fn run_paper(input: &PaperInput, oms_path: &Path) -> Result<PaperRun, String> {
-    let (session, quotes) = synthetic_session(input)?;
+    let session = synthetic_session(input)?;
     let events = project_session(&session).map_err(|e| e.to_string())?;
     let instrument = instrument(input)?;
     let policy = ValidatedRiskPolicy::from_policy(&input.policy).map_err(|e| e.to_string())?;
@@ -358,9 +390,7 @@ pub fn run_paper(input: &PaperInput, oms_path: &Path) -> Result<PaperRun, String
     let mut position = 0_i64;
 
     for (index, event) in events.iter().enumerate() {
-        let quote = &quotes[index];
-        let bid = quote.bid_price.map(|price| price.get().0).unwrap_or(0);
-        let ask = quote.ask_price.map(|price| price.get().0).unwrap_or(0);
+        let (bid, ask) = kernel_top_of_book(event)?;
         let midpoint = Rational::fraction(bid + ask, 2).map_err(|e| e.to_string())?;
         let strategy_event = StrategyEvent {
             observation_sequence: event.sequence.unwrap_or((index as u64) + 1),
@@ -428,7 +458,7 @@ pub fn run_paper(input: &PaperInput, oms_path: &Path) -> Result<PaperRun, String
             None
         };
         let feed_observation = FeedObservation {
-            quote: Some(quote.clone()),
+            quote: Some(kernel_quote(bid, ask, input.instrument_id.as_str())?),
             received_at: LogicalNanos::new(input.feed_age_ns),
             gap,
             book_complete: true,
@@ -559,4 +589,54 @@ pub fn run_paper(input: &PaperInput, oms_path: &Path) -> Result<PaperRun, String
         input_digest,
     );
     Ok(PaperRun { report, oms: store })
+}
+
+#[cfg(test)]
+mod kernel_payload_tests {
+    use super::*;
+
+    #[test]
+    fn top_of_book_comes_from_the_kernel_payload() {
+        let level = |price: i64| MbpLevel {
+            price_paise: price,
+            quantity: 1,
+            order_count: None,
+        };
+        let book = MarketByPriceSnapshot {
+            instrument_id: "nse.cash.paperidx".to_owned(),
+            venue: "NSE".to_owned(),
+            source_id: "upstox".to_owned(),
+            product: "full".to_owned(),
+            depth_levels: 1,
+            bids: vec![level(9_995)],
+            asks: vec![level(10_005)],
+            source_time_ns: None,
+            last_trade_time_ns: None,
+            received_utc_ns: 1,
+        };
+        let base = KernelEvent::observation_only(
+            capture_frame_id(b"frame").expect("frame"),
+            market_event::observation_id("upstox", "NSE", "nse.cash.paperidx", b"frame")
+                .expect("id"),
+            capture_frame_id(b"frame").expect("hash"),
+            OriginClass::SdkCallback,
+            "upstox",
+            "session",
+            "nse.cash.paperidx",
+            1,
+            1,
+        )
+        .expect("event");
+        let mut with_book = base.clone();
+        with_book.payload = Some(MarketDataEvent::MarketByPriceSnapshot(book));
+        assert_eq!(
+            kernel_top_of_book(&with_book).expect("top"),
+            (9_995, 10_005),
+            "prices come from the kernel payload"
+        );
+        assert!(
+            kernel_top_of_book(&base).is_err(),
+            "an event without a typed book fails closed"
+        );
+    }
 }

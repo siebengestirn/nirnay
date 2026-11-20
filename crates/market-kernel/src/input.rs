@@ -54,6 +54,9 @@ pub struct SourceObservation {
     pub instrument_id: Option<String>,
     /// Optional evidence token (e.g. exchange-origin evidence).
     pub evidence_token: Option<String>,
+    /// Typed payload carried through the kernel to the book. The envelope
+    /// still owns identity and quality; this is not a second authority.
+    pub payload: Option<market_event::MarketDataEvent>,
 }
 
 impl SourceObservation {

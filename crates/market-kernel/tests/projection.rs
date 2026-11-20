@@ -46,6 +46,7 @@ fn observation(frame: &str, instrument: &str, payload: &str, sequence: u64) -> S
         reference_revision: Some("revision-a".to_owned()),
         instrument_id: Some(format!("IN:{instrument}")),
         evidence_token: None,
+        payload: None,
     }
 }
 

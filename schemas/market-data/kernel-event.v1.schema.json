@@ -144,6 +144,23 @@
         "string",
         "null"
       ]
+    },
+    "payload": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "market_by_price_snapshot": {
+          "$ref": "#/$defs/mbpSnapshot"
+        },
+        "market_by_price_delta": {
+          "$ref": "#/$defs/mbpDelta"
+        }
+      },
+      "minProperties": 1,
+      "maxProperties": 1,
+      "additionalProperties": false
     }
   },
   "allOf": [
@@ -215,5 +232,148 @@
         ]
       }
     }
-  ]
+  ],
+  "$defs": {
+    "mbpLevel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "price_paise",
+        "quantity",
+        "order_count"
+      ],
+      "properties": {
+        "price_paise": {
+          "type": "integer"
+        },
+        "quantity": {
+          "type": "integer"
+        },
+        "order_count": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      }
+    },
+    "mbpSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "instrument_id",
+        "venue",
+        "source_id",
+        "product",
+        "depth_levels",
+        "bids",
+        "asks",
+        "source_time_ns",
+        "last_trade_time_ns",
+        "received_utc_ns"
+      ],
+      "properties": {
+        "instrument_id": {
+          "type": "string"
+        },
+        "venue": {
+          "type": "string"
+        },
+        "source_id": {
+          "type": "string"
+        },
+        "product": {
+          "type": "string"
+        },
+        "depth_levels": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "bids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/mbpLevel"
+          }
+        },
+        "asks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/mbpLevel"
+          }
+        },
+        "source_time_ns": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "last_trade_time_ns": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "received_utc_ns": {
+          "type": "integer"
+        }
+      }
+    },
+    "mbpDelta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "instrument_id",
+        "venue",
+        "source_id",
+        "product",
+        "sequence",
+        "side",
+        "price_paise",
+        "quantity_change",
+        "order_count",
+        "received_utc_ns"
+      ],
+      "properties": {
+        "instrument_id": {
+          "type": "string"
+        },
+        "venue": {
+          "type": "string"
+        },
+        "source_id": {
+          "type": "string"
+        },
+        "product": {
+          "type": "string"
+        },
+        "sequence": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "side": {
+          "enum": [
+            "bid",
+            "ask"
+          ]
+        },
+        "price_paise": {
+          "type": "integer"
+        },
+        "quantity_change": {
+          "type": "integer"
+        },
+        "order_count": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "received_utc_ns": {
+          "type": "integer"
+        }
+      }
+    }
+  }
 }
