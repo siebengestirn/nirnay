@@ -7,8 +7,8 @@
 <!-- CURRENT-STATE
 code_commit: caa4fb711646f4e078ec19da70823decd98320ca
 verified_on: 2026-11-20
-ci_run: none
-scope: make check PASS locally; hosted CI pending at this head
+ci_run: 44792772979
+scope: make check + CI 44792772979 on dabfe12 (12/12)
 -->
 
 ## Implemented scope
