@@ -23,6 +23,7 @@
     "raw_frame_hash": "6259228f4ffb1a3bda397c86ae78cdb3d3ae1f8fecce5384f387f8cd90335c7d",
     "reference_revision": "revision-a",
     "quality": "clean",
-    "evidence_token": null
+    "evidence_token": null,
+    "payload": null
   }
 }

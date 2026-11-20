@@ -139,6 +139,7 @@ pub fn project_observation(
             .map_err(|_| KernelError::MissingReferenceRevision)?;
     }
     event.evidence_token = observation.evidence_token.clone();
+    event.payload = observation.payload.clone();
     Ok(event)
 }
 

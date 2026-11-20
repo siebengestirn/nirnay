@@ -64,6 +64,9 @@ pub struct KernelEvent {
     pub reference_revision: Option<String>,
     pub quality: super::continuity::StreamState,
     pub evidence_token: Option<String>,
+    /// Typed market payload. The envelope keeps identity and quality; the
+    /// payload keeps financial meaning. None for bare state observations.
+    pub payload: Option<crate::mbp::MarketDataEvent>,
 }
 
 impl KernelEvent {
@@ -110,6 +113,7 @@ impl KernelEvent {
             reference_revision: None,
             quality: super::continuity::StreamState::Clean,
             evidence_token: None,
+            payload: None,
         })
     }
 
@@ -258,6 +262,7 @@ impl<'de> Deserialize<'de> for KernelEvent {
             reference_revision: Option<String>,
             quality: super::continuity::StreamState,
             evidence_token: Option<String>,
+            payload: Option<crate::mbp::MarketDataEvent>,
         }
         let wire = Wire::deserialize(deserializer)?;
         let event = Self {
@@ -284,6 +289,7 @@ impl<'de> Deserialize<'de> for KernelEvent {
             reference_revision: wire.reference_revision,
             quality: wire.quality,
             evidence_token: wire.evidence_token,
+            payload: wire.payload,
         };
         event
             .validate_invariants()
