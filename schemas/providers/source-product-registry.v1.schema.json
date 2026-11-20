@@ -2,12 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://nirnay.dev/schemas/providers/source-product-registry.v1.schema.json",
   "title": "Nirnay source product and entitlement registry v1",
-  "description": "Declares what each enabled market-data product actually supplies. Absence of a capability is a rejection, not an inference. This registry makes no claim that rights or entitlements have been verified unless verified is true.",
+  "description": "Declares what each enabled market-data product actually supplies. Absence of a capability is a rejection, not an inference. Rights are tri-state with evidence provenance; UNKNOWN never grants a right.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schema_version",
     "registry_id",
+    "rights_review",
     "products"
   ],
   "properties": {
@@ -23,6 +24,33 @@
       "minItems": 1,
       "items": {
         "$ref": "#/$defs/product"
+      }
+    },
+    "rights_review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "review_date",
+        "required_evidence"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "review_date": {
+          "type": "string",
+          "format": "date"
+        },
+        "required_evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
       }
     }
   },
@@ -125,7 +153,77 @@
         "limits": {
           "$ref": "#/$defs/limits"
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "incremental_updates": {
+                "const": "snapshot_only"
+              }
+            },
+            "required": [
+              "incremental_updates"
+            ]
+          },
+          "then": {
+            "properties": {
+              "snapshot": {
+                "const": true
+              }
+            },
+            "required": [
+              "snapshot"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "recovery": {
+                "contains": {
+                  "const": "fresh_snapshot"
+                }
+              }
+            },
+            "required": [
+              "recovery"
+            ]
+          },
+          "then": {
+            "properties": {
+              "snapshot": {
+                "const": true
+              }
+            },
+            "required": [
+              "snapshot"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "depth_model": {
+                "const": "mbo"
+              }
+            },
+            "required": [
+              "depth_model"
+            ]
+          },
+          "then": {
+            "properties": {
+              "order_level_identity": {
+                "const": true
+              }
+            },
+            "required": [
+              "order_level_identity"
+            ]
+          }
+        }
+      ]
     },
     "protocol": {
       "type": "object",
@@ -183,16 +281,176 @@
       ],
       "properties": {
         "capture": {
-          "type": "boolean"
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "source",
+            "document_reference",
+            "scope",
+            "review_date"
+          ],
+          "properties": {
+            "state": {
+              "type": "string",
+              "enum": [
+                "UNKNOWN",
+                "PERMITTED",
+                "PROHIBITED"
+              ]
+            },
+            "source": {
+              "type": "string",
+              "enum": [
+                "owner_reported",
+                "provider_agreement",
+                "exchange_rules",
+                "internal_policy",
+                "none"
+              ]
+            },
+            "document_reference": {
+              "type": "string",
+              "minLength": 1
+            },
+            "scope": {
+              "type": "string",
+              "minLength": 1
+            },
+            "review_date": {
+              "type": "string",
+              "format": "date"
+            }
+          }
         },
         "store": {
-          "type": "boolean"
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "source",
+            "document_reference",
+            "scope",
+            "review_date"
+          ],
+          "properties": {
+            "state": {
+              "type": "string",
+              "enum": [
+                "UNKNOWN",
+                "PERMITTED",
+                "PROHIBITED"
+              ]
+            },
+            "source": {
+              "type": "string",
+              "enum": [
+                "owner_reported",
+                "provider_agreement",
+                "exchange_rules",
+                "internal_policy",
+                "none"
+              ]
+            },
+            "document_reference": {
+              "type": "string",
+              "minLength": 1
+            },
+            "scope": {
+              "type": "string",
+              "minLength": 1
+            },
+            "review_date": {
+              "type": "string",
+              "format": "date"
+            }
+          }
         },
         "replay": {
-          "type": "boolean"
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "source",
+            "document_reference",
+            "scope",
+            "review_date"
+          ],
+          "properties": {
+            "state": {
+              "type": "string",
+              "enum": [
+                "UNKNOWN",
+                "PERMITTED",
+                "PROHIBITED"
+              ]
+            },
+            "source": {
+              "type": "string",
+              "enum": [
+                "owner_reported",
+                "provider_agreement",
+                "exchange_rules",
+                "internal_policy",
+                "none"
+              ]
+            },
+            "document_reference": {
+              "type": "string",
+              "minLength": 1
+            },
+            "scope": {
+              "type": "string",
+              "minLength": 1
+            },
+            "review_date": {
+              "type": "string",
+              "format": "date"
+            }
+          }
         },
         "redistribute": {
-          "type": "boolean"
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "source",
+            "document_reference",
+            "scope",
+            "review_date"
+          ],
+          "properties": {
+            "state": {
+              "type": "string",
+              "enum": [
+                "UNKNOWN",
+                "PERMITTED",
+                "PROHIBITED"
+              ]
+            },
+            "source": {
+              "type": "string",
+              "enum": [
+                "owner_reported",
+                "provider_agreement",
+                "exchange_rules",
+                "internal_policy",
+                "none"
+              ]
+            },
+            "document_reference": {
+              "type": "string",
+              "minLength": 1
+            },
+            "scope": {
+              "type": "string",
+              "minLength": 1
+            },
+            "review_date": {
+              "type": "string",
+              "format": "date"
+            }
+          }
         }
       }
     },

@@ -5,7 +5,7 @@
 **Release status:** research/paper engineering candidate. This repository is not a certified broker-connected trading system, not a SEBI/exchange-approved algo product, and not evidence of profitable alpha. Live order routing is hard-disabled. Every capability statement below distinguishes code present from external verification still required.
 
 <!-- CURRENT-STATE
-code_commit: caa4fb711646f4e078ec19da70823decd98320ca
+code_commit: a10358176e8c90150b9634a5b54d381877a0e7e4
 verified_on: 2026-11-20
 ci_run: 44792772979
 scope: make check + CI 44792772979 on dabfe12 (12/12)
@@ -377,6 +377,7 @@ once published; a new run adds a new dated file instead of rewriting history.
 | Dated evidence | `evidence/BUILD-INVENTORY-2026-11-13.json` | machine-readable release inventory |
 | Dated evidence | `evidence/M2-AUTHORIZATION-2026-11-20.md` | signed M1 exit and bounded M2 scope |
 | Dated evidence | `evidence/KDB-ANALYTICS-2026-11-20.md` | checked-in KDB-X contract, golden pin and real-capture measurements |
+| Dated evidence | `evidence/DATA-RIGHTS-2026-11-20.md` | tri-state data rights and Kite semantics correction |
 | Dated evidence | `evidence/Q-TESTS-STYLE-2026-11-20.md` | q unit harness, style guide, added-lines gate and measured results |
 | Dated evidence | `evidence/A0-ARCHIVE-BUNDLE-2026-11-20.md` | archive Git-bundle defect, correction and verification |
 

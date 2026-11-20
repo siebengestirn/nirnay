@@ -91,13 +91,59 @@ pub struct EntitlementRef {
     pub verified: bool,
 }
 
+/// Permission state for one data-right. UNKNOWN never grants a right.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum PermissionState {
+    Unknown,
+    Permitted,
+    Prohibited,
+}
+
+impl PermissionState {
+    pub fn is_permitted(self) -> bool {
+        self == Self::Permitted
+    }
+}
+
+/// Where a permission claim comes from. Owner reports are not written evidence.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EvidenceSource {
+    OwnerReported,
+    ProviderAgreement,
+    ExchangeRules,
+    InternalPolicy,
+    None,
+}
+
+/// One permission with its evidence provenance and review scope.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RightEvidence {
+    pub state: PermissionState,
+    pub source: EvidenceSource,
+    pub document_reference: String,
+    pub scope: String,
+    pub review_date: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DataRights {
-    pub capture: bool,
-    pub store: bool,
-    pub replay: bool,
-    pub redistribute: bool,
+    pub capture: RightEvidence,
+    pub store: RightEvidence,
+    pub replay: RightEvidence,
+    pub redistribute: RightEvidence,
+}
+
+/// Written-evidence review status for the whole registry.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RightsReview {
+    pub status: String,
+    pub review_date: String,
+    pub required_evidence: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -135,6 +181,7 @@ pub struct SourceProduct {
 pub struct SourceProductRegistry {
     pub schema_version: u32,
     pub registry_id: String,
+    pub rights_review: RightsReview,
     pub products: Vec<SourceProduct>,
 }
 
@@ -232,10 +279,10 @@ impl SourceProductRegistry {
         {
             return Err(CapabilityError::NoSourceContinuity);
         }
-        if requirement.requires_store && !declared.rights.store {
+        if requirement.requires_store && !declared.rights.store.state.is_permitted() {
             return Err(CapabilityError::MissingRight("store".to_owned()));
         }
-        if requirement.requires_replay && !declared.rights.replay {
+        if requirement.requires_replay && !declared.rights.replay.state.is_permitted() {
             return Err(CapabilityError::MissingRight("replay".to_owned()));
         }
         if (requirement.requires_store || requirement.requires_replay)
