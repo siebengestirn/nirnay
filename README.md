@@ -5,10 +5,10 @@
 **Release status:** research/paper engineering candidate. This repository is not a certified broker-connected trading system, not a SEBI/exchange-approved algo product, and not evidence of profitable alpha. Live order routing is hard-disabled. Every capability statement below distinguishes code present from external verification still required.
 
 <!-- CURRENT-STATE
-code_commit: 861e97cb784f5a1d505889fbed1f0710a6f0fc1e
-verified_on: 2026-11-19
-ci_run: 44579744783
-scope: make check + hosted CI 44579744783 on 861e97c (12/12); no later-commit claim
+code_commit: caa4fb711646f4e078ec19da70823decd98320ca
+verified_on: 2026-11-20
+ci_run: none
+scope: make check PASS locally; hosted CI pending at this head
 -->
 
 ## Implemented scope
@@ -378,6 +378,7 @@ once published; a new run adds a new dated file instead of rewriting history.
 | Dated evidence | `evidence/M2-AUTHORIZATION-2026-11-20.md` | signed M1 exit and bounded M2 scope |
 | Dated evidence | `evidence/KDB-ANALYTICS-2026-11-20.md` | checked-in KDB-X contract, golden pin and real-capture measurements |
 | Dated evidence | `evidence/Q-TESTS-STYLE-2026-11-20.md` | q unit harness, style guide, added-lines gate and measured results |
+| Dated evidence | `evidence/A0-ARCHIVE-BUNDLE-2026-11-20.md` | archive Git-bundle defect, correction and verification |
 
 The current-state block above names the verified commit, date, CI run and
 scope. Update it in the PR that changes the verified baseline. Do not add a
