@@ -5,7 +5,7 @@
 **Release status:** research/paper engineering candidate. This repository is not a certified broker-connected trading system, not a SEBI/exchange-approved algo product, and not evidence of profitable alpha. Live order routing is hard-disabled. Every capability statement below distinguishes code present from external verification still required.
 
 <!-- CURRENT-STATE
-code_commit: 448622f5f2019aa168325c28df75845d37a802cf
+code_commit: 425c059e418aebd4bef9df0a4ba18407c3c1a176
 verified_on: 2026-11-20
 ci_run: 44865283018
 scope: make check + CI 44865283018 on be0dbbd (12/12)
@@ -384,6 +384,7 @@ once published; a new run adds a new dated file instead of rewriting history.
 | Dated evidence | `evidence/Q-TESTS-STYLE-2026-11-20.md` | q unit harness, style guide, added-lines gate and measured results |
 | Dated evidence | `evidence/A0-ARCHIVE-BUNDLE-2026-11-20.md` | archive Git-bundle defect, correction and verification |
 | Dated evidence | `evidence/PROGRAMME-2026-11-21.md` | external-review remediation programme and verified results |
+| Dated evidence | `evidence/RISK-CONTROLS-RECOVERY-DRILL-2026-11-21.md` | typed risk-control fixtures, permit binding and in-process recovery drill |
 
 The current-state block above names the verified commit, date, CI run and
 scope. Update it in the PR that changes the verified baseline. Do not add a
