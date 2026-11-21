@@ -31,12 +31,16 @@ use thiserror::Error;
 
 use crate::{
     ArchiveError, //
+    CapabilityError,
     ContinuityTracker,
+    DataOperation,
     JournalReader,
     JournalWriter,
     MAX_PAYLOAD_BYTES,
     Observation,
+    ProductKey,
     RawFrame,
+    SourceProductRegistry,
 };
 
 /// The on-disk source identity is `upstox`, as required by the established
@@ -152,6 +156,8 @@ pub enum IngressError {
     Disconnected,
     #[error("adapter reported a malformed frame: {0}")]
     Malformed(String),
+    #[error("replay was not authorized: {0}")]
+    ReplayDenied(#[from] CapabilityError),
 }
 
 pub trait IngressSource {
@@ -605,7 +611,9 @@ impl IngressSource for FyersCallbackAdapter {
 }
 
 /// Streaming replay source. It holds one `JournalReader`, not a journal-sized
-/// collection, so memory is bounded by the record limit.
+/// collection, so memory is bounded by the record limit. Construction requires
+/// an explicit registry and product identity so no replay can start without a
+/// `Replay` right; there is no default or inferred registry.
 pub struct JournalReplaySource {
     source_id: String,
     reader: JournalReader<BufReader<File>>,
@@ -613,7 +621,13 @@ pub struct JournalReplaySource {
 }
 
 impl JournalReplaySource {
-    pub fn open(path: impl AsRef<std::path::Path>, source_id: &str) -> Result<Self, IngressError> {
+    pub fn open(
+        path: impl AsRef<std::path::Path>,
+        source_id: &str,
+        registry: &SourceProductRegistry,
+        product_key: &ProductKey,
+    ) -> Result<Self, IngressError> {
+        registry.authorize(product_key, DataOperation::Replay)?;
         let file = File::open(path).map_err(ArchiveError::from)?;
         Ok(Self {
             source_id: source_id.to_owned(),

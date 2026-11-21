@@ -49,11 +49,38 @@
           "scope": "entitlement-approved NSE cash watchlist",
           "review_date": "2026-11-20"
         },
-        "redistribute": {
+        "backup": {
           "state": "UNKNOWN",
           "source": "owner_reported",
           "document_reference": "owner-reported:upstox-analytics-read-only",
           "scope": "entitlement-approved NSE cash watchlist",
+          "review_date": "2026-11-20"
+        },
+        "internal_analytics": {
+          "state": "UNKNOWN",
+          "source": "owner_reported",
+          "document_reference": "owner-reported:upstox-analytics-read-only",
+          "scope": "entitlement-approved NSE cash watchlist",
+          "review_date": "2026-11-20"
+        },
+        "external_redistribution": {
+          "state": "UNKNOWN",
+          "source": "owner_reported",
+          "document_reference": "owner-reported:upstox-analytics-read-only",
+          "scope": "entitlement-approved NSE cash watchlist",
+          "review_date": "2026-11-20"
+        },
+        "retention": {
+          "state": "UNKNOWN",
+          "source": "owner_reported",
+          "document_reference": "owner-reported:upstox-analytics-read-only",
+          "scope": "entitlement-approved NSE cash watchlist",
+          "review_date": "2026-11-20"
+        },
+        "retention_period": {
+          "duration_days": null,
+          "basis": "none",
+          "document_reference": "unspecified:pending_written_retention_policy",
           "review_date": "2026-11-20"
         }
       },
@@ -111,11 +138,38 @@
           "scope": "entitlement-approved NSE cash watchlist",
           "review_date": "2026-11-20"
         },
-        "redistribute": {
+        "backup": {
           "state": "UNKNOWN",
           "source": "owner_reported",
           "document_reference": "owner-reported:fyers-data-socket",
           "scope": "entitlement-approved NSE cash watchlist",
+          "review_date": "2026-11-20"
+        },
+        "internal_analytics": {
+          "state": "UNKNOWN",
+          "source": "owner_reported",
+          "document_reference": "owner-reported:fyers-data-socket",
+          "scope": "entitlement-approved NSE cash watchlist",
+          "review_date": "2026-11-20"
+        },
+        "external_redistribution": {
+          "state": "UNKNOWN",
+          "source": "owner_reported",
+          "document_reference": "owner-reported:fyers-data-socket",
+          "scope": "entitlement-approved NSE cash watchlist",
+          "review_date": "2026-11-20"
+        },
+        "retention": {
+          "state": "UNKNOWN",
+          "source": "owner_reported",
+          "document_reference": "owner-reported:fyers-data-socket",
+          "scope": "entitlement-approved NSE cash watchlist",
+          "review_date": "2026-11-20"
+        },
+        "retention_period": {
+          "duration_days": null,
+          "basis": "none",
+          "document_reference": "unspecified:pending_written_retention_policy",
           "review_date": "2026-11-20"
         }
       },
@@ -170,11 +224,38 @@
           "scope": "account-linked instruments",
           "review_date": "2026-11-20"
         },
-        "redistribute": {
+        "backup": {
           "state": "UNKNOWN",
           "source": "owner_reported",
           "document_reference": "owner-reported:kite-connect-personal-plan",
           "scope": "account-linked instruments",
+          "review_date": "2026-11-20"
+        },
+        "internal_analytics": {
+          "state": "UNKNOWN",
+          "source": "owner_reported",
+          "document_reference": "owner-reported:kite-connect-personal-plan",
+          "scope": "account-linked instruments",
+          "review_date": "2026-11-20"
+        },
+        "external_redistribution": {
+          "state": "UNKNOWN",
+          "source": "owner_reported",
+          "document_reference": "owner-reported:kite-connect-personal-plan",
+          "scope": "account-linked instruments",
+          "review_date": "2026-11-20"
+        },
+        "retention": {
+          "state": "UNKNOWN",
+          "source": "owner_reported",
+          "document_reference": "owner-reported:kite-connect-personal-plan",
+          "scope": "account-linked instruments",
+          "review_date": "2026-11-20"
+        },
+        "retention_period": {
+          "duration_days": null,
+          "basis": "none",
+          "document_reference": "unspecified:pending_written_retention_policy",
           "review_date": "2026-11-20"
         }
       },

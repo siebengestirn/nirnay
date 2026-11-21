@@ -1,0 +1,282 @@
+{
+  "schema_version": 1,
+  "registry_id": "test-only-replay-permitted",
+  "products": [
+    {
+      "provider": "upstox",
+      "product": "full",
+      "venue": "NSE",
+      "segment": "Cash",
+      "instrument_scope": "entitlement-approved NSE cash watchlist",
+      "depth_model": "mbp",
+      "depth_levels": 5,
+      "trade_prints": true,
+      "order_level_identity": false,
+      "snapshot": true,
+      "incremental_updates": "delta",
+      "source_sequence": "unavailable",
+      "recovery": [
+        "reconnect",
+        "fresh_snapshot"
+      ],
+      "protocol": {
+        "name": "upstox-market-data-feed-v3-protobuf",
+        "schema_digest": "3e1c939dce2c83a3fef91405c5ca268dfa089aae973319f56685f12a5afcf612"
+      },
+      "entitlement": {
+        "reference": "owner-reported:upstox-analytics-read-only",
+        "verified": true
+      },
+      "rights": {
+        "capture": {
+          "state": "PERMITTED",
+          "source": "provider_agreement",
+          "document_reference": "test-only:replay-permitted-fixture",
+          "scope": "entitlement-approved NSE cash watchlist",
+          "review_date": "2026-11-20"
+        },
+        "store": {
+          "state": "PERMITTED",
+          "source": "provider_agreement",
+          "document_reference": "test-only:replay-permitted-fixture",
+          "scope": "entitlement-approved NSE cash watchlist",
+          "review_date": "2026-11-20"
+        },
+        "replay": {
+          "state": "PERMITTED",
+          "source": "provider_agreement",
+          "document_reference": "test-only:replay-permitted-fixture",
+          "scope": "entitlement-approved NSE cash watchlist",
+          "review_date": "2026-11-20"
+        },
+        "backup": {
+          "state": "PERMITTED",
+          "source": "provider_agreement",
+          "document_reference": "test-only:replay-permitted-fixture",
+          "scope": "entitlement-approved NSE cash watchlist",
+          "review_date": "2026-11-20"
+        },
+        "internal_analytics": {
+          "state": "PERMITTED",
+          "source": "provider_agreement",
+          "document_reference": "test-only:replay-permitted-fixture",
+          "scope": "entitlement-approved NSE cash watchlist",
+          "review_date": "2026-11-20"
+        },
+        "external_redistribution": {
+          "state": "PERMITTED",
+          "source": "provider_agreement",
+          "document_reference": "test-only:replay-permitted-fixture",
+          "scope": "entitlement-approved NSE cash watchlist",
+          "review_date": "2026-11-20"
+        },
+        "retention": {
+          "state": "PERMITTED",
+          "source": "provider_agreement",
+          "document_reference": "test-only:replay-permitted-fixture",
+          "scope": "entitlement-approved NSE cash watchlist",
+          "review_date": "2026-11-20"
+        },
+        "retention_period": {
+          "duration_days": 30,
+          "basis": "provider_agreement",
+          "document_reference": "test-only:replay-permitted-fixture",
+          "review_date": "2026-11-20"
+        }
+      },
+      "limits": {
+        "max_symbols": 300,
+        "connections": 1,
+        "requests_per_second": null
+      }
+    },
+    {
+      "provider": "fyers",
+      "product": "data_socket",
+      "venue": "NSE",
+      "segment": "Cash",
+      "instrument_scope": "entitlement-approved NSE cash watchlist",
+      "depth_model": "mbp",
+      "depth_levels": 5,
+      "trade_prints": true,
+      "order_level_identity": false,
+      "snapshot": true,
+      "incremental_updates": "delta",
+      "source_sequence": "unavailable",
+      "recovery": [
+        "reconnect",
+        "fresh_snapshot"
+      ],
+      "protocol": {
+        "name": "fyers-python-sdk-callback-json",
+        "schema_digest": null,
+        "schema_reference": "apps/fyers-recorder/src/fyers_recorder/recorder.py"
+      },
+      "entitlement": {
+        "reference": "owner-reported:fyers-data-socket",
+        "verified": true
+      },
+      "rights": {
+        "capture": {
+          "state": "PERMITTED",
+          "source": "provider_agreement",
+          "document_reference": "test-only:replay-permitted-fixture",
+          "scope": "entitlement-approved NSE cash watchlist",
+          "review_date": "2026-11-20"
+        },
+        "store": {
+          "state": "PERMITTED",
+          "source": "provider_agreement",
+          "document_reference": "test-only:replay-permitted-fixture",
+          "scope": "entitlement-approved NSE cash watchlist",
+          "review_date": "2026-11-20"
+        },
+        "replay": {
+          "state": "PERMITTED",
+          "source": "provider_agreement",
+          "document_reference": "test-only:replay-permitted-fixture",
+          "scope": "entitlement-approved NSE cash watchlist",
+          "review_date": "2026-11-20"
+        },
+        "backup": {
+          "state": "PERMITTED",
+          "source": "provider_agreement",
+          "document_reference": "test-only:replay-permitted-fixture",
+          "scope": "entitlement-approved NSE cash watchlist",
+          "review_date": "2026-11-20"
+        },
+        "internal_analytics": {
+          "state": "PERMITTED",
+          "source": "provider_agreement",
+          "document_reference": "test-only:replay-permitted-fixture",
+          "scope": "entitlement-approved NSE cash watchlist",
+          "review_date": "2026-11-20"
+        },
+        "external_redistribution": {
+          "state": "PERMITTED",
+          "source": "provider_agreement",
+          "document_reference": "test-only:replay-permitted-fixture",
+          "scope": "entitlement-approved NSE cash watchlist",
+          "review_date": "2026-11-20"
+        },
+        "retention": {
+          "state": "PERMITTED",
+          "source": "provider_agreement",
+          "document_reference": "test-only:replay-permitted-fixture",
+          "scope": "entitlement-approved NSE cash watchlist",
+          "review_date": "2026-11-20"
+        },
+        "retention_period": {
+          "duration_days": 30,
+          "basis": "provider_agreement",
+          "document_reference": "test-only:replay-permitted-fixture",
+          "review_date": "2026-11-20"
+        }
+      },
+      "limits": {
+        "max_symbols": 300,
+        "connections": 1,
+        "requests_per_second": null
+      }
+    },
+    {
+      "provider": "zerodha_kite",
+      "product": "quote",
+      "venue": "NSE",
+      "segment": "Cash",
+      "instrument_scope": "account-linked instruments",
+      "depth_model": "mbp",
+      "depth_levels": 5,
+      "trade_prints": false,
+      "order_level_identity": false,
+      "snapshot": true,
+      "incremental_updates": "snapshot_only",
+      "source_sequence": "unavailable",
+      "recovery": [],
+      "protocol": {
+        "name": "kite-connect-v3-rest-quote",
+        "schema_digest": null,
+        "schema_reference": "engineering/brokers/zerodha-adapter-spec.md"
+      },
+      "entitlement": {
+        "reference": "owner-reported:kite-connect-personal-plan",
+        "verified": true
+      },
+      "rights": {
+        "capture": {
+          "state": "PERMITTED",
+          "source": "provider_agreement",
+          "document_reference": "test-only:replay-permitted-fixture",
+          "scope": "account-linked instruments",
+          "review_date": "2026-11-20"
+        },
+        "store": {
+          "state": "PERMITTED",
+          "source": "provider_agreement",
+          "document_reference": "test-only:replay-permitted-fixture",
+          "scope": "account-linked instruments",
+          "review_date": "2026-11-20"
+        },
+        "replay": {
+          "state": "PERMITTED",
+          "source": "provider_agreement",
+          "document_reference": "test-only:replay-permitted-fixture",
+          "scope": "account-linked instruments",
+          "review_date": "2026-11-20"
+        },
+        "backup": {
+          "state": "PERMITTED",
+          "source": "provider_agreement",
+          "document_reference": "test-only:replay-permitted-fixture",
+          "scope": "account-linked instruments",
+          "review_date": "2026-11-20"
+        },
+        "internal_analytics": {
+          "state": "PERMITTED",
+          "source": "provider_agreement",
+          "document_reference": "test-only:replay-permitted-fixture",
+          "scope": "account-linked instruments",
+          "review_date": "2026-11-20"
+        },
+        "external_redistribution": {
+          "state": "PERMITTED",
+          "source": "provider_agreement",
+          "document_reference": "test-only:replay-permitted-fixture",
+          "scope": "account-linked instruments",
+          "review_date": "2026-11-20"
+        },
+        "retention": {
+          "state": "PERMITTED",
+          "source": "provider_agreement",
+          "document_reference": "test-only:replay-permitted-fixture",
+          "scope": "account-linked instruments",
+          "review_date": "2026-11-20"
+        },
+        "retention_period": {
+          "duration_days": 30,
+          "basis": "provider_agreement",
+          "document_reference": "test-only:replay-permitted-fixture",
+          "review_date": "2026-11-20"
+        }
+      },
+      "limits": {
+        "max_symbols": 200,
+        "connections": 1,
+        "requests_per_second": 3
+      }
+    }
+  ],
+  "rights_review": {
+    "status": "pending_written_evidence",
+    "review_date": "2026-11-20",
+    "required_evidence": [
+      "personal_capture",
+      "local_retention",
+      "historical_replay",
+      "backup_retention",
+      "internal_analytics",
+      "external_redistribution",
+      "retention_period"
+    ]
+  }
+}
