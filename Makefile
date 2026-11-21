@@ -1,4 +1,4 @@
-.PHONY: check perf docs-check shellcheck-check generated-paths-check pollution-check style rust-style source-style q-style prose-style style-gate python-format-check rust-test python-test python-check cpp-test cpp-format-check schema-check fundamental-fixture-check verify-local fmt constraints sbom supply-chain wheels packaging-test bundle bundle-verify git-policy kdb-analyze kdb-golden kdb-q-test archive-verify
+.PHONY: check perf bench-ingress bench-research bench-experiments bench-risk-oms docs-check shellcheck-check generated-paths-check pollution-check style rust-style source-style q-style prose-style style-gate python-format-check rust-test python-test python-check cpp-test cpp-format-check schema-check fundamental-fixture-check verify-local fmt constraints sbom supply-chain wheels packaging-test bundle bundle-verify git-policy kdb-analyze kdb-golden kdb-q-test archive-verify
 check:
 	$(MAKE) docs-check
 	$(MAKE) shellcheck-check
@@ -45,6 +45,24 @@ python-format-check:
 # from `check` so the normal gate cycle stays fast.
 perf:
 	python3 scripts/check_compile_budget.py
+
+# Opt-in benchmarks. They print BENCH-* lines with measured counters and are
+# deliberately absent from `check` and from CI pass/fail gates. Emitted numbers
+# are not throughput or latency certificates; see evidence/PERFORMANCE-TEMPLATE.md
+# for the fields required of any dated result record.
+bench-ingress:
+	cargo test -p market-archive --test performance -- --ignored --nocapture --skip recovery_child
+
+bench-research:
+	PYTHONPATH=research/python/src python3 -m quantlab.bench --suite core --repeats 5 --sizes 200,800 --seed 7
+
+bench-experiments:
+	PYTHONPATH=research/python/src python3 -m quantlab.bench --suite experiments --workers 4 --repeats 5 --size 800 --seed 7
+
+bench-risk-oms:
+	cargo test -p risk-authority --test performance -- --ignored --nocapture
+	cargo test -p authoritative-oms --test performance -- --ignored --nocapture
+
 rust-test:
 	cargo test --workspace --all-targets --locked
 	cargo clippy --workspace --all-targets --locked -- -D warnings
