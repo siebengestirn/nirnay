@@ -331,6 +331,23 @@
         ]
       },
       "falsifier": "A fill exists only as cumulative quantity, a duplicate execution id replaces the persisted event or creates a second economic effect, charge status cannot distinguish estimate from confirmation, or an unsupported schema version is accepted."
+    },
+    {
+      "id": "CLM-027",
+      "statement": "Opt-in benchmark harnesses emit measured counters and distributions, remain excluded from make check and CI pass/fail gates, and grant no latency or throughput claim.",
+      "status": "implemented",
+      "scope": {
+        "packages": [
+          "Makefile",
+          "crates/market-archive/tests/performance.rs",
+          "research/python/src/quantlab/bench.py",
+          "research/python/tests/test_bench.py",
+          "crates/risk-authority/tests/performance.rs",
+          "crates/authoritative-oms/tests/performance.rs",
+          "evidence/PERFORMANCE-TEMPLATE.md"
+        ]
+      },
+      "falsifier": "A BENCH-* counter is a hard-coded literal, a benchmark runs as a pass/fail gate in make check or CI, a latency threshold is asserted, or a dated record presents local synthetic numbers as deployment or throughput evidence."
     }
   ]
 }

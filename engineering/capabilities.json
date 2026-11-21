@@ -255,6 +255,14 @@
       "evidence_status": "Every fill is persisted as a typed FillEvent with stable execution id, broker event id, order ids, side, quantity, price, currency, broker and receive timestamps, source, account scope, charges with Estimated/BrokerConfirmed status, schema version and provenance. Cumulative filled quantity/notional are no longer the only execution history. Duplicate ids are idempotent and unsupported schemas fail closed. This does not project events into the account journal or claim accounting correctness.",
       "owner": "oms",
       "scope": "crates/authoritative-oms/src/store.rs; crates/authoritative-oms/tests/fill_events.rs"
+    },
+    {
+      "id": "CAP-032",
+      "name": "Opt-in performance benchmark harnesses with measured counters",
+      "status": "implemented",
+      "evidence_status": "Four opt-in targets emit BENCH-* lines from ingestor checkpoints, synthetic PIT dataset build/write/verify and backtest timing, seeded concurrent authorization timing, and OMS recovery, duplicate-event and reconciliation timing. Latency and throughput are recorded but never asserted as gates; benchmarks remain outside make check and CI. A field template for future dated records is at evidence/PERFORMANCE-TEMPLATE.md. No dated result file is published and no latency or throughput claim is granted.",
+      "owner": "performance",
+      "scope": "Makefile; crates/market-archive/tests/performance.rs; research/python/src/quantlab/bench.py; research/python/tests/test_bench.py; crates/risk-authority/tests/performance.rs; crates/authoritative-oms/tests/performance.rs; evidence/PERFORMANCE-TEMPLATE.md"
     }
   ]
 }
