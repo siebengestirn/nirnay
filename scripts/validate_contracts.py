@@ -154,6 +154,7 @@ def main(argv: list[str] | None = None) -> int:
         vectors = (
             *ROOT.glob("crates/*/tests/golden/*.json"),
             *ROOT.glob("apps/*/tests/golden/*.json"),
+            *ROOT.glob("research/*/tests/golden/*.json"),
         )
         for path in sorted(vectors):
             if not active(path):
