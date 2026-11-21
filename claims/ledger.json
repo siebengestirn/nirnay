@@ -271,17 +271,30 @@
     },
     {
       "id": "CLM-023",
-      "statement": "Source data rights are tri-state with evidence provenance; UNKNOWN or PROHIBITED never authorizes store or replay, no right is silently upgraded to PERMITTED, and the registry and schema enforce coherent snapshot semantics.",
+      "statement": "All seven source data-rights operations are tri-state with evidence provenance; only PERMITTED authorizes, UNKNOWN/PROHIBITED and undeclared products never do, persistence operations also require a verified entitlement, and the registry instance is schema-validated with format checking. Recorder capture/store and Rust/Python replay boundaries fail closed before creating files or emitting frames. The checked-in registry grants no operation. Local deterministic gates pass; this is implemented, not independently verified, and no commit is claimed here.",
       "status": "implemented",
       "scope": {
         "packages": [
           "configs/providers/source-products.v1.json",
           "schemas/providers/source-product-registry.v1.schema.json",
           "crates/market-archive/src/capability.rs",
-          "crates/market-archive/tests/capability.rs"
+          "crates/market-archive/src/ingress.rs",
+          "crates/market-archive/src/lib.rs",
+          "crates/market-archive/tests/capability.rs",
+          "crates/market-archive/tests/ingress.rs",
+          "crates/market-archive/tests/performance.rs",
+          "apps/upstox-tools/src/bin/upstox_recorder.rs",
+          "apps/fyers-recorder/src/fyers_recorder/recorder.py",
+          "apps/fyers-recorder/src/fyers_recorder/rights.py",
+          "apps/fyers-recorder/src/fyers_recorder/cli.py",
+          "apps/fyers-recorder/tests/test_recorder.py",
+          "research/python/src/quantlab/cli.py",
+          "research/python/src/quantlab/data_rights.py",
+          "research/python/tests/test_paper_projection_consumption.py",
+          "scripts/validate_contracts.py"
         ]
       },
-      "falsifier": "An UNKNOWN store/replay right satisfies a requirement, a boolean permission is still accepted, a right changes to PERMITTED without written evidence, or a snapshot_only product declares snapshot=false."
+      "falsifier": "An UNKNOWN or PROHIBITED right satisfies authorize or evaluate, a recorder creates a journal before Capture and Store are authorized, a replay source emits frames without Replay, a registry instance fails its schema, a negative schema vector passes, a persistence operation succeeds without a verified entitlement, or any right becomes PERMITTED or entitlement.verified true without owner-supplied written evidence."
     },
     {
       "id": "CLM-024",
@@ -347,6 +360,23 @@
         ]
       },
       "falsifier": "A future feature definition is accepted for an earlier event, a knowledge time after as-of verifies, an edited feature lineage digest still verifies, or publication succeeds without the lineage block when one was declared."
+    },
+    {
+      "id": "CLM-027",
+      "statement": "Opt-in benchmark harnesses emit measured counters and distributions, remain excluded from make check and CI pass/fail gates, and grant no latency or throughput claim.",
+      "status": "implemented",
+      "scope": {
+        "packages": [
+          "Makefile",
+          "crates/market-archive/tests/performance.rs",
+          "research/python/src/quantlab/bench.py",
+          "research/python/tests/test_bench.py",
+          "crates/risk-authority/tests/performance.rs",
+          "crates/authoritative-oms/tests/performance.rs",
+          "evidence/PERFORMANCE-TEMPLATE.md"
+        ]
+      },
+      "falsifier": "A BENCH-* counter is a hard-coded literal, a benchmark runs as a pass/fail gate in make check or CI, a latency threshold is asserted, or a dated record presents local synthetic numbers as deployment or throughput evidence."
     }
   ]
 }

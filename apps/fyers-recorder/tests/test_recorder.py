@@ -7,6 +7,12 @@ import pytest
 
 from fyers_recorder.journal import HashChainJournal, verify
 from fyers_recorder.recorder import FyersRecorder, RecorderConfig
+from fyers_recorder.recorder import FYERS_PRODUCT_KEY
+from fyers_recorder.rights import ALL_OPERATIONS, RightsDenied, authorize
+
+ROOT = Path(__file__).resolve().parents[3]
+DENY_REGISTRY = ROOT / "configs" / "providers" / "source-products.v1.json"
+PERMIT_REGISTRY = Path(__file__).parent / "fixtures" / "registry-permitted.test.json"
 
 
 class FakeSocket:
@@ -32,6 +38,7 @@ def config(tmp_path: Path, **changes) -> RecorderConfig:
         symbols=("NSE:SBIN-EQ", "NSE:RELIANCE-EQ"),
         entitlement_ref="fyers-entitlement-2026-11",
         output_root=tmp_path,
+        registry_path=PERMIT_REGISTRY,
         queue_capacity=64,
         include_depth=True,
     )
@@ -202,3 +209,27 @@ def test_writer_failure_closes_the_sdk_socket(tmp_path):
     manifest = json.loads((recorder._run_dir / "manifest.json").read_text())
     assert manifest["writer_error"] == "disk write failed"
     assert manifest["research_grade"] is False
+
+
+def test_deny_all_registry_creates_no_journal_with_stub_socket(tmp_path):
+    calls = []
+
+    def factory(**kwargs):
+        calls.append(kwargs)
+        return FakeSocket(**kwargs)
+
+    denied = config(tmp_path, registry_path=DENY_REGISTRY)
+    with pytest.raises(RightsDenied, match="not permitted"):
+        FyersRecorder(denied, "app-id:access-token", factory)
+    assert calls == [], "the stub socket is never constructed on denial"
+    assert list(tmp_path.iterdir()) == [], "no run directory or journal was created"
+    for operation in ALL_OPERATIONS:
+        with pytest.raises(RightsDenied, match="not permitted"):
+            authorize(DENY_REGISTRY, FYERS_PRODUCT_KEY, operation)
+
+
+def test_rights_gate_reads_explicit_registry_path_only(tmp_path):
+    for operation in ALL_OPERATIONS:
+        authorize(PERMIT_REGISTRY, FYERS_PRODUCT_KEY, operation)
+    with pytest.raises(RightsDenied, match="could not be read"):
+        authorize(tmp_path / "missing.json", FYERS_PRODUCT_KEY, "capture")

@@ -17,12 +17,15 @@ use clap::{Parser, ValueEnum};
 use futures_util::{SinkExt, StreamExt};
 use jiff::Timestamp;
 use market_archive::{
+    DataOperation,
     DurableIngestor, //
     IngestOutcome,
     MAX_PAYLOAD_BYTES,
+    ProductKey,
     Sequence,
     SequencePolicy,
     SourceFrame,
+    SourceProductRegistry,
     UPSTOX_SOURCE_ID,
     verify_journal,
 };
@@ -133,6 +136,9 @@ impl FeedMode {
     about = "Capture Upstox Market Data Feed V3 binary frames"
 )]
 struct Args {
+    /// Explicit path to the source-product rights registry. No default is inferred.
+    #[arg(long)]
+    registry: PathBuf,
     /// Text file with one Upstox instrument_key per line.
     #[arg(long, default_value = "configs/providers/upstox-watchlist.txt")]
     instrument_file: PathBuf,
@@ -442,6 +448,29 @@ impl Session {
     }
 }
 
+fn registry_key(mode: FeedMode) -> ProductKey {
+    let product = match mode {
+        FeedMode::Ltpc => "ltpc",
+        FeedMode::Full => "full",
+    };
+    ProductKey::new("upstox", product, "NSE", "Cash")
+}
+
+/// The only production path to a session. Authorization happens before any
+/// directory, journal or manifest file is created; a denial leaves no files.
+fn create_authorized_session(args: &Args, instrument_keys: Vec<String>) -> anyhow::Result<Session> {
+    let registry = SourceProductRegistry::load(&args.registry)
+        .with_context(|| format!("loading rights registry {}", args.registry.display()))?;
+    let key = registry_key(args.mode);
+    registry
+        .authorize(&key, DataOperation::Capture)
+        .context("capture is not authorized by the registry")?;
+    registry
+        .authorize(&key, DataOperation::Store)
+        .context("store is not authorized by the registry")?;
+    Session::create(args, instrument_keys)
+}
+
 fn read_watchlist(path: &Path, mode: FeedMode) -> anyhow::Result<Vec<String>> {
     let text = fs::read_to_string(path)
         .with_context(|| format!("reading watchlist {}", path.display()))?;
@@ -609,7 +638,7 @@ async fn main() -> anyhow::Result<()> {
             env!("CARGO_PKG_VERSION")
         ))
         .build()?;
-    let mut session = Session::create(&args, instrument_keys)?;
+    let mut session = create_authorized_session(&args, instrument_keys)?;
     let mut stop: std::pin::Pin<Box<dyn std::future::Future<Output = std::io::Result<()>> + Send>> =
         Box::pin(signal::ctrl_c());
 
@@ -691,10 +720,34 @@ mod tests {
         Session,
         UPSTOX_SOURCE_ID,
         classify_failure,
+        create_authorized_session,
         validate_frame_size,
     };
     use base64::Engine as _;
-    use market_archive::MAX_PAYLOAD_BYTES;
+    use market_archive::{
+        MAX_PAYLOAD_BYTES, //
+        ProductKey,
+        SourceProductRegistry,
+    };
+    use std::path::PathBuf;
+
+    const DENY_REGISTRY: &str =
+        include_str!("../../../../configs/providers/source-products.v1.json");
+
+    fn registry_path() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../configs/providers/source-products.v1.json")
+    }
+
+    fn replay_source(path: &std::path::Path) -> market_archive::JournalReplaySource {
+        let text = DENY_REGISTRY
+            .replace("\"state\": \"UNKNOWN\"", "\"state\": \"PERMITTED\"")
+            .replace("\"verified\": false", "\"verified\": true");
+        let registry = SourceProductRegistry::from_bytes(text.as_bytes()).expect("test registry");
+        let key = ProductKey::new("upstox", "full", "NSE", "Cash");
+        market_archive::JournalReplaySource::open(path, UPSTOX_SOURCE_ID, &registry, &key)
+            .expect("replay source")
+    }
 
     #[test]
     fn payload_limit_is_the_shared_archive_limit() {
@@ -745,6 +798,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).expect("temp root");
         let args = Args {
+            registry: registry_path(),
             instrument_file: root.join("watchlist.txt"),
             mode: FeedMode::Full,
             output_root: root.clone(),
@@ -806,6 +860,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).expect("temp root");
         let args = Args {
+            registry: registry_path(),
             instrument_file: root.join("watchlist.txt"),
             mode: FeedMode::Ltpc,
             output_root: root.clone(),
@@ -818,8 +873,7 @@ mod tests {
         let journal_path = session.journal_path.clone();
         session.finish().expect("manifest");
 
-        let mut replay = market_archive::JournalReplaySource::open(&journal_path, UPSTOX_SOURCE_ID)
-            .expect("replay source");
+        let mut replay = replay_source(&journal_path);
         let mut ingestor = DurableIngestor::resume(
             &journal_path,
             UPSTOX_SOURCE_ID,
@@ -849,5 +903,68 @@ mod tests {
             classify_failure(&refusal) == ConnectionFailure::IngressRefusal,
             "a refused frame terminates capture instead of reconnecting"
         );
+    }
+
+    #[test]
+    fn deny_all_registry_refuses_recorder_file_creation() {
+        let root =
+            std::env::temp_dir().join(format!("nirnay-upstox-rights-{}-deny", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("temp root");
+        let registry_file = root.join("deny-registry.json");
+        std::fs::write(&registry_file, DENY_REGISTRY).expect("deny registry");
+        let args = Args {
+            registry: registry_file.clone(),
+            instrument_file: root.join("watchlist.txt"),
+            mode: FeedMode::Full,
+            output_root: root.join("sessions"),
+            max_reconnects: 0,
+            entitlement_ref: "entitlement:test:upstox".to_owned(),
+        };
+        let denied = create_authorized_session(&args, vec!["NSE_EQ|TEST".to_owned()]);
+        assert!(denied.is_err(), "a deny-all registry refuses the session");
+        assert!(
+            !args.output_root.exists(),
+            "no session directory is created on denial"
+        );
+        assert_eq!(
+            std::fs::read_dir(&root).expect("temp entries").count(),
+            1,
+            "only the registry file exists; no journal, manifest or observations"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn authorized_registry_allows_recorder_file_creation() {
+        let root =
+            std::env::temp_dir().join(format!("nirnay-upstox-rights-{}-allow", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("temp root");
+        let permitted = DENY_REGISTRY
+            .replace("\"state\": \"UNKNOWN\"", "\"state\": \"PERMITTED\"")
+            .replace("\"verified\": false", "\"verified\": true");
+        let registry_file = root.join("permitted-registry.json");
+        std::fs::write(&registry_file, permitted).expect("test registry");
+        let args = Args {
+            registry: registry_file,
+            instrument_file: root.join("watchlist.txt"),
+            mode: FeedMode::Full,
+            output_root: root.join("sessions"),
+            max_reconnects: 0,
+            entitlement_ref: "entitlement:test:upstox".to_owned(),
+        };
+        let session = create_authorized_session(&args, vec!["NSE_EQ|TEST".to_owned()])
+            .expect("test-only permitted registry");
+        assert!(
+            session.journal_path.exists(),
+            "the authorized session opens its authoritative journal"
+        );
+        let path = session.finish().expect("manifest");
+        assert!(
+            path.join("manifest.json").exists(),
+            "the authorized session writes its manifest"
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

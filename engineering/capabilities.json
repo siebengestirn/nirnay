@@ -228,9 +228,9 @@
       "id": "CAP-028",
       "name": "Tri-state source data-rights contract with evidence provenance",
       "status": "implemented",
-      "evidence_status": "The source-product registry records capture/store/replay/redistribute as UNKNOWN, PERMITTED or PROHIBITED with source, document reference, scope and review date; UNKNOWN never grants a right and store/replay requirements fail closed. A registry-level written-evidence review lists the seven required evidence classes. The Kite quote product now declares a snapshot, with cross-field schema rules enforcing snapshot/recovery/depth coherence. All rights remain UNKNOWN pending owner evidence; no entitlement or data right is claimed.",
+      "evidence_status": "IMPLEMENTED, NOT VERIFIED; no commit SHA or independent verification is claimed here. The registry now declares all seven operations (capture, store, replay, backup, internal_analytics, external_redistribution, retention) with tri-state evidence provenance; the former redistribute field is renamed to external_redistribution and a concrete retention_period object has duration_days=null and basis=none. All rights on all three products remain UNKNOWN with owner_reported provenance and entitlement.verified=false: no written evidence exists and no right is granted. DataOperation::ALL and SourceProductRegistry::authorize(product_key, op) deny UNKNOWN, PROHIBITED and undeclared products; persistence operations (store, replay, backup, retention) also require a verified entitlement. MarketDataRequirement has seven requires_* flags checked by evaluate(), which also mirrors the schema coherence rules. The Upstox recorder requires an explicit --registry argument and authorizes Capture and Store before creating any directory or journal; the FYERS recorder requires --registry and does the same in RecorderConfig.validate() before its writer thread and journal exist. JournalReplaySource::open requires a registry and a Replay authorization; quantlab paper-replay requires --registry and checks Replay before reading events. scripts/validate_contracts.py validates the registry instance against its own schema with FormatChecker and rejects five negative self-test vectors. Local evidence: `make check` exit 0; 178 Python tests plus 2 subtests; market-archive 54/19/17 tests; registry self-test 5/5 negative vectors rejected; 1 registry instance validated. These gates do not change any right.",
       "owner": "market-data",
-      "scope": "configs/providers/source-products.v1.json; schemas/providers/source-product-registry.v1.schema.json; crates/market-archive/src/capability.rs"
+      "scope": "configs/providers/source-products.v1.json; schemas/providers/source-product-registry.v1.schema.json; crates/market-archive/src/capability.rs; crates/market-archive/src/ingress.rs; crates/market-archive/src/lib.rs; crates/market-archive/tests/capability.rs; crates/market-archive/tests/ingress.rs; crates/market-archive/tests/performance.rs; apps/upstox-tools/src/bin/upstox_recorder.rs; apps/fyers-recorder/src/fyers_recorder; apps/fyers-recorder/tests; research/python/src/quantlab/cli.py; research/python/src/quantlab/data_rights.py; research/python/tests; scripts/validate_contracts.py"
     },
     {
       "id": "CAP-029",
@@ -271,6 +271,14 @@
       "evidence_status": "FeatureLineage records a definition digest, as-of time, knowledge time and declaration digest in both DatasetManifest and DatasetRow. Publication and verification reject knowledge-after-as-of, as-of-after-event or as-of-after-creation declarations and detect edits to the lineage block. No new service or database. Dedicated tests cover builder binding, publication and tampering. Implemented, not independently verified; source completeness and data rights remain unverified.",
       "owner": "research-data",
       "scope": "research/python/src/quantlab/features/lineage.py; research/python/src/quantlab/point_in_time.py; research/python/tests/test_feature_lineage.py"
+    },
+    {
+      "id": "CAP-032",
+      "name": "Opt-in performance benchmark harnesses with measured counters",
+      "status": "implemented",
+      "evidence_status": "Four opt-in targets emit BENCH-* lines from ingestor checkpoints, synthetic PIT dataset build/write/verify and backtest timing, seeded concurrent authorization timing, and OMS recovery, duplicate-event and reconciliation timing. Latency and throughput are recorded but never asserted as gates; benchmarks remain outside make check and CI. A field template for future dated records is at evidence/PERFORMANCE-TEMPLATE.md. No dated result file is published and no latency or throughput claim is granted.",
+      "owner": "performance",
+      "scope": "Makefile; crates/market-archive/tests/performance.rs; research/python/src/quantlab/bench.py; research/python/tests/test_bench.py; crates/risk-authority/tests/performance.rs; crates/authoritative-oms/tests/performance.rs; evidence/PERFORMANCE-TEMPLATE.md"
     }
   ]
 }

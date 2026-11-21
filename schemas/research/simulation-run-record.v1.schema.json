@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nirnay.local/schemas/research/simulation-run-record.v1.schema.json",
+  "title": "Nirnay simulation run record v1",
+  "description": "Content-addressed replay record; P&L basis is verifier-derived, never producer-asserted",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "run_id",
+    "record_sha256",
+    "input_events",
+    "engine_config",
+    "model_config",
+    "seeds",
+    "input_digest",
+    "config_hash",
+    "model_digests",
+    "seeds_digest",
+    "initial_state_hash",
+    "final_state_hash",
+    "emitted_digest",
+    "fills_digest",
+    "fill_rows",
+    "marks",
+    "starting_cash",
+    "ending_cash",
+    "positions",
+    "net_pnl",
+    "gross_pnl",
+    "fees",
+    "impact_cost",
+    "spread_cost",
+    "unmarked_residual",
+    "strategy_id"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "record_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "input_events": {"type": "array", "items": {"type": "object"}},
+    "engine_config": {"type": "object"},
+    "model_config": {"type": "object"},
+    "seeds": {"type": "object"},
+    "input_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "config_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "model_digests": {"type": "array", "items": {"type": "string", "pattern": "^[0-9a-f]{64}$"}},
+    "seeds_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "initial_state_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "final_state_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "emitted_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "fills_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "fill_rows": {"type": "array", "items": {"$ref": "#/$defs/fillRow"}},
+    "marks": {"type": "object", "additionalProperties": {"type": "string"}},
+    "starting_cash": {"type": "string"},
+    "ending_cash": {"type": "string"},
+    "positions": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "minItems": 2,
+        "maxItems": 2,
+        "prefixItems": [{"type": "string"}, {"type": "integer"}]
+      }
+    },
+    "net_pnl": {"type": "string"},
+    "gross_pnl": {"type": "string"},
+    "fees": {"type": "string"},
+    "impact_cost": {"type": "string"},
+    "spread_cost": {"type": "string"},
+    "unmarked_residual": {"type": "boolean"},
+    "strategy_id": {"type": "string", "minLength": 1}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "fillRow": {
+      "type": "object",
+      "required": [
+        "event_id",
+        "client_order_id",
+        "quantity",
+        "price",
+        "fees",
+        "impact_cost",
+        "spread_cost",
+        "liquidity",
+        "logical_time_ns"
+      ],
+      "properties": {
+        "event_id": {"type": "string"},
+        "client_order_id": {"type": "string"},
+        "quantity": {"type": "integer", "minimum": 1},
+        "price": {"type": "string"},
+        "fees": {"type": "string"},
+        "impact_cost": {"type": "string"},
+        "spread_cost": {"type": "string"},
+        "liquidity": {"type": "string", "enum": ["maker", "taker"]},
+        "logical_time_ns": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    }
+  }
+}

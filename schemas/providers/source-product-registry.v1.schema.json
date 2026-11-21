@@ -277,180 +277,116 @@
         "capture",
         "store",
         "replay",
-        "redistribute"
+        "backup",
+        "internal_analytics",
+        "external_redistribution",
+        "retention",
+        "retention_period"
       ],
       "properties": {
         "capture": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "state",
-            "source",
-            "document_reference",
-            "scope",
-            "review_date"
-          ],
-          "properties": {
-            "state": {
-              "type": "string",
-              "enum": [
-                "UNKNOWN",
-                "PERMITTED",
-                "PROHIBITED"
-              ]
-            },
-            "source": {
-              "type": "string",
-              "enum": [
-                "owner_reported",
-                "provider_agreement",
-                "exchange_rules",
-                "internal_policy",
-                "none"
-              ]
-            },
-            "document_reference": {
-              "type": "string",
-              "minLength": 1
-            },
-            "scope": {
-              "type": "string",
-              "minLength": 1
-            },
-            "review_date": {
-              "type": "string",
-              "format": "date"
-            }
-          }
+          "$ref": "#/$defs/right_evidence"
         },
         "store": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "state",
-            "source",
-            "document_reference",
-            "scope",
-            "review_date"
-          ],
-          "properties": {
-            "state": {
-              "type": "string",
-              "enum": [
-                "UNKNOWN",
-                "PERMITTED",
-                "PROHIBITED"
-              ]
-            },
-            "source": {
-              "type": "string",
-              "enum": [
-                "owner_reported",
-                "provider_agreement",
-                "exchange_rules",
-                "internal_policy",
-                "none"
-              ]
-            },
-            "document_reference": {
-              "type": "string",
-              "minLength": 1
-            },
-            "scope": {
-              "type": "string",
-              "minLength": 1
-            },
-            "review_date": {
-              "type": "string",
-              "format": "date"
-            }
-          }
+          "$ref": "#/$defs/right_evidence"
         },
         "replay": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "state",
-            "source",
-            "document_reference",
-            "scope",
-            "review_date"
-          ],
-          "properties": {
-            "state": {
-              "type": "string",
-              "enum": [
-                "UNKNOWN",
-                "PERMITTED",
-                "PROHIBITED"
-              ]
-            },
-            "source": {
-              "type": "string",
-              "enum": [
-                "owner_reported",
-                "provider_agreement",
-                "exchange_rules",
-                "internal_policy",
-                "none"
-              ]
-            },
-            "document_reference": {
-              "type": "string",
-              "minLength": 1
-            },
-            "scope": {
-              "type": "string",
-              "minLength": 1
-            },
-            "review_date": {
-              "type": "string",
-              "format": "date"
-            }
-          }
+          "$ref": "#/$defs/right_evidence"
         },
-        "redistribute": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "state",
-            "source",
-            "document_reference",
-            "scope",
-            "review_date"
+        "backup": {
+          "$ref": "#/$defs/right_evidence"
+        },
+        "internal_analytics": {
+          "$ref": "#/$defs/right_evidence"
+        },
+        "external_redistribution": {
+          "$ref": "#/$defs/right_evidence"
+        },
+        "retention": {
+          "$ref": "#/$defs/right_evidence"
+        },
+        "retention_period": {
+          "$ref": "#/$defs/retention_period"
+        }
+      }
+    },
+    "right_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "source",
+        "document_reference",
+        "scope",
+        "review_date"
+      ],
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "UNKNOWN",
+            "PERMITTED",
+            "PROHIBITED"
+          ]
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "owner_reported",
+            "provider_agreement",
+            "exchange_rules",
+            "internal_policy",
+            "none"
+          ]
+        },
+        "document_reference": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1
+        },
+        "review_date": {
+          "type": "string",
+          "format": "date"
+        }
+      }
+    },
+    "retention_period": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "duration_days",
+        "basis",
+        "document_reference",
+        "review_date"
+      ],
+      "properties": {
+        "duration_days": {
+          "type": [
+            "integer",
+            "null"
           ],
-          "properties": {
-            "state": {
-              "type": "string",
-              "enum": [
-                "UNKNOWN",
-                "PERMITTED",
-                "PROHIBITED"
-              ]
-            },
-            "source": {
-              "type": "string",
-              "enum": [
-                "owner_reported",
-                "provider_agreement",
-                "exchange_rules",
-                "internal_policy",
-                "none"
-              ]
-            },
-            "document_reference": {
-              "type": "string",
-              "minLength": 1
-            },
-            "scope": {
-              "type": "string",
-              "minLength": 1
-            },
-            "review_date": {
-              "type": "string",
-              "format": "date"
-            }
-          }
+          "minimum": 1
+        },
+        "basis": {
+          "type": "string",
+          "enum": [
+            "owner_reported",
+            "provider_agreement",
+            "exchange_rules",
+            "internal_policy",
+            "none"
+          ]
+        },
+        "document_reference": {
+          "type": "string",
+          "minLength": 1
+        },
+        "review_date": {
+          "type": "string",
+          "format": "date"
         }
       }
     },
