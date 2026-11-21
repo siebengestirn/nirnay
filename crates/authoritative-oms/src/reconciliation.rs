@@ -11,7 +11,10 @@ use std::collections::{
     BTreeSet,
 };
 
-use sha2::{Digest, Sha256};
+use sha2::{
+    Digest, //
+    Sha256,
+};
 use thiserror::Error;
 use trading_core::{
     InstrumentId, //

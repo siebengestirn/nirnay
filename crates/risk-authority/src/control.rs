@@ -10,7 +10,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize, //
+    Serialize,
+};
 use thiserror::Error;
 
 /// One authored kill-switch decision. Append-only; never rewritten.

@@ -2,9 +2,16 @@
 //! M3.5.2 / M3.5.3 deterministic projection and reconciliation tests.
 //! Fixtures are synthetic fills; no broker, live venue or account data exists.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{
+    BTreeMap, //
+    BTreeSet,
+};
 
-use account_journal::{CommitFault, Journal, JournalError};
+use account_journal::{
+    CommitFault, //
+    Journal,
+    JournalError,
+};
 use authoritative_oms::{
     ChargeStatus, ClientOrderId, FillEvent, LEDGER_STREAM_ID, OmsError, OmsStore, PermitRef,
     ProjectionError, Projector, ReconciliationInput, Resolution, reconcile,
@@ -159,7 +166,10 @@ fn same_execution_id_different_content_conflicts() -> TestResult {
     let oms_dir = tempfile::tempdir()?;
     let mut store = OmsStore::open(oms_dir.path().join("oms.journal"))?;
     setup_order(&mut store, 1, 10)?;
-    assert!(store.apply_typed_fill(fill_for_order("exec-1", 1, 2, 100, 0))?);
+    assert!(
+        store.apply_typed_fill(fill_for_order("exec-1", 1, 2, 100, 0))?,
+        "the OMS accepts the conflicting fixture fill"
+    );
     let mut oms_changed = fill_for_order("exec-1", 1, 2, 100, 0);
     oms_changed.price_paise = 101;
     assert!(
@@ -207,13 +217,21 @@ fn bust_reverses_exactly() -> TestResult {
     let mut ledger = projector(directory.path())?;
     ledger.project_fill(&fill("exec-1", 3, 100, 30), &instrument())?;
     assert!(ledger.bust("exec-1")?, "the bust is appended");
-    assert_eq!(ledger.state().positions["paper"][&instrument()], 0);
+    assert_eq!(
+        ledger.state().positions["paper"][&instrument()],
+        0,
+        "a bust leaves no residual position"
+    );
     assert_eq!(
         ledger.state().cash,
         Paise(10_000),
         "cash returns to opening"
     );
-    assert_eq!(ledger.state().charges_estimated, Paise(0));
+    assert_eq!(
+        ledger.state().charges_estimated,
+        Paise(0),
+        "no estimated charges remain"
+    );
     assert!(
         ledger.verify_replay()?.matched,
         "replay reproduces the reversed state"
@@ -235,11 +253,26 @@ fn estimated_to_confirmed_charges_rebooks_only_delta() -> TestResult {
     let directory = tempfile::tempdir()?;
     let mut ledger = projector(directory.path())?;
     ledger.project_fill(&fill("exec-1", 2, 100, 100), &instrument())?;
-    assert_eq!(ledger.state().charges_estimated, Paise(100));
-    assert_eq!(ledger.state().cash, Paise(9_700));
-    assert!(ledger.confirm_charges("exec-1", 150)?);
-    assert_eq!(ledger.state().charges_estimated, Paise(0));
-    assert_eq!(ledger.state().charges_confirmed, Paise(150));
+    assert_eq!(
+        ledger.state().charges_estimated,
+        Paise(100),
+        "the estimated charge bucket is recorded"
+    );
+    assert_eq!(ledger.state().cash, Paise(9_700), "fill cash is exact");
+    assert!(
+        ledger.confirm_charges("exec-1", 150)?,
+        "charges are confirmed"
+    );
+    assert_eq!(
+        ledger.state().charges_estimated,
+        Paise(0),
+        "no estimated charges remain"
+    );
+    assert_eq!(
+        ledger.state().charges_confirmed,
+        Paise(150),
+        "the confirmed charge bucket is recorded"
+    );
     assert_eq!(
         ledger.state().cash,
         Paise(9_650),
@@ -467,7 +500,10 @@ fn duplicate_fill_does_not_double_project() -> TestResult {
     let mut store = OmsStore::open(oms_dir.path().join("oms.journal"))?;
     setup_order(&mut store, 1, 10)?;
     let event = fill_for_order("exec-1", 1, 4, 100, 10);
-    assert!(store.apply_typed_fill(event.clone())?);
+    assert!(
+        store.apply_typed_fill(event.clone())?,
+        "the OMS accepts the first fill"
+    );
     assert!(!store.apply_typed_fill(event.clone())?, "OMS dedups");
     let mut ledger = projector(ledger_dir.path())?;
     ledger.project_fill(&event, &instrument())?;
@@ -519,7 +555,11 @@ fn same_id_different_content_raises_mismatch() -> TestResult {
             instruments: BTreeMap::from([("exec-1".to_owned(), instrument())]),
         },
     )?;
-    assert_eq!(outcome.report.status, ReconciliationStatus::Mismatch);
+    assert_eq!(
+        outcome.report.status,
+        ReconciliationStatus::Mismatch,
+        "the anomaly is reported as a mismatch"
+    );
     assert!(
         outcome
             .differences
@@ -554,7 +594,11 @@ fn partial_fill_sum_matches_order_aggregate() -> TestResult {
             ]),
         },
     )?;
-    assert_eq!(outcome.report.status, ReconciliationStatus::Matched);
+    assert_eq!(
+        outcome.report.status,
+        ReconciliationStatus::Matched,
+        "a consistent pair of sources is matched"
+    );
     assert_eq!(
         store
             .order(ClientOrderId::new(1).expect("client"))?
@@ -673,7 +717,11 @@ fn mismatch_does_not_auto_clear() -> TestResult {
     };
     let first = reconcile(&store, &ledger, &input)?;
     let second = reconcile(&store, &ledger, &input)?;
-    assert_eq!(first.report.status, ReconciliationStatus::Mismatch);
+    assert_eq!(
+        first.report.status,
+        ReconciliationStatus::Mismatch,
+        "the initial report is a mismatch"
+    );
     assert_eq!(
         second.report.status,
         ReconciliationStatus::Mismatch,
@@ -796,8 +844,16 @@ fn bust_after_confirm_charges_is_exact() -> TestResult {
         Paise(10_000),
         "the exact state survives restart"
     );
-    assert_eq!(reopened.state().charges_estimated, Paise(0));
-    assert_eq!(reopened.state().charges_confirmed, Paise(0));
+    assert_eq!(
+        reopened.state().charges_estimated,
+        Paise(0),
+        "no estimated charges survive the reopen"
+    );
+    assert_eq!(
+        reopened.state().charges_confirmed,
+        Paise(0),
+        "no confirmed charges survive the bust"
+    );
     Ok(())
 }
 
@@ -809,7 +865,11 @@ fn confirm_after_bust_is_a_typed_refusal() -> TestResult {
     let mut ledger = projector(directory.path())?;
     ledger.project_fill(&fill("exec-1", 2, 100, 100), &instrument())?;
     assert!(ledger.bust("exec-1")?, "bust the posting");
-    assert_eq!(ledger.state().cash, Paise(10_000));
+    assert_eq!(
+        ledger.state().cash,
+        Paise(10_000),
+        "cash is back at opening"
+    );
     assert!(
         matches!(
             ledger.confirm_charges("exec-1", 150),
@@ -822,8 +882,16 @@ fn confirm_after_bust_is_a_typed_refusal() -> TestResult {
         Paise(10_000),
         "the refused confirmation changed nothing"
     );
-    assert_eq!(ledger.state().charges_estimated, Paise(0));
-    assert_eq!(ledger.state().charges_confirmed, Paise(0));
+    assert_eq!(
+        ledger.state().charges_estimated,
+        Paise(0),
+        "no estimated charges remain"
+    );
+    assert_eq!(
+        ledger.state().charges_confirmed,
+        Paise(0),
+        "no confirmed charges remain"
+    );
     Ok(())
 }
 
@@ -834,8 +902,15 @@ fn repeated_confirm_with_different_amount_rebooks_exactly() -> TestResult {
     let directory = tempfile::tempdir()?;
     let mut ledger = projector(directory.path())?;
     ledger.project_fill(&fill("exec-1", 2, 100, 100), &instrument())?;
-    assert!(ledger.confirm_charges("exec-1", 150)?);
-    assert_eq!(ledger.state().cash, Paise(9_650));
+    assert!(
+        ledger.confirm_charges("exec-1", 150)?,
+        "charges are confirmed"
+    );
+    assert_eq!(
+        ledger.state().cash,
+        Paise(9_650),
+        "the charge delta is exact"
+    );
     assert!(
         ledger.confirm_charges("exec-1", 200)?,
         "a new amount is a new reversal"
@@ -845,10 +920,25 @@ fn repeated_confirm_with_different_amount_rebooks_exactly() -> TestResult {
         Paise(9_600),
         "the 50-paise delta is rebooked"
     );
-    assert_eq!(ledger.state().charges_estimated, Paise(0));
-    assert_eq!(ledger.state().charges_confirmed, Paise(200));
-    assert_eq!(ledger.state().positions["paper"][&instrument()], 2);
-    assert!(ledger.verify_replay()?.matched);
+    assert_eq!(
+        ledger.state().charges_estimated,
+        Paise(0),
+        "no estimated charges remain"
+    );
+    assert_eq!(
+        ledger.state().charges_confirmed,
+        Paise(200),
+        "the second confirmation is authoritative"
+    );
+    assert_eq!(
+        ledger.state().positions["paper"][&instrument()],
+        2,
+        "charge confirmations do not change position"
+    );
+    assert!(
+        ledger.verify_replay()?.matched,
+        "replay reproduces the exact state"
+    );
     Ok(())
 }
 
