@@ -7,7 +7,7 @@ same reducer, so P&L is always recomputed from emitted fills and marks.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal, localcontext
 from typing import Any, Protocol, Sequence
 
 from .events import (
@@ -36,6 +36,8 @@ from .execution.base import BaselineParams, ConservativeMbpModel, ExecutionModel
 from .execution.costs import BPS
 from .state import (
     BookState,
+    ChargeRecord,
+    ExposureState,
     MarkState,
     OrderState,
     QueueState,
@@ -46,6 +48,9 @@ from .state import (
     queue_key,
     state_hash,
 )
+
+_DAY_NS = 86_400_000_000_000
+_TRADABLE_STATUSES = frozenset({"open", "resume"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,6 +164,9 @@ class SimResult:
     spread_cost: Decimal
     unmarked_residual: bool
     unmarked_details: tuple[UnmarkedResidual, ...]
+    borrow_cost: Decimal
+    funding_cost: Decimal
+    charges: tuple[ChargeRecord, ...]
     final_state: SimState
     state_hash: str
     config_hash: str
@@ -179,6 +187,9 @@ class SimResult:
             "fees": format(self.fees, "f"),
             "impact_cost": format(self.impact_cost, "f"),
             "spread_cost": format(self.spread_cost, "f"),
+            "borrow_cost": format(self.borrow_cost, "f"),
+            "funding_cost": format(self.funding_cost, "f"),
+            "charge_basis": "research-only; borrow/margin/funding are assumed, not calibrated",
             "unmarked_residual": self.unmarked_residual,
             "state_hash": self.state_hash,
             "config_hash": self.config_hash,
@@ -204,6 +215,8 @@ def _report(
     reason: str | None = None,
     logical_time_ns: int | None = None,
     source_sequence: int | None = None,
+    sampled_ns: int | None = None,
+    effective_ns: int | None = None,
 ) -> ExecutionReport:
     """Derive an execution report from a causing event with full lineage."""
     return ExecutionReport(
@@ -226,6 +239,8 @@ def _report(
         spread_cost=spread_cost,
         liquidity=liquidity,
         reason=reason,
+        sampled_ns=sampled_ns,
+        effective_ns=effective_ns,
     )
 
 
@@ -271,6 +286,47 @@ def _print_hits_order(event: TradePrint, order: OrderState) -> bool:
     return event.aggressor_side == "buy" and event.price >= order.limit_price
 
 
+def _tradable(status: str) -> bool:
+    """Return whether a market status permits fills and new orders."""
+    return status in _TRADABLE_STATUSES
+
+
+def _tick_at(state: SimState, instrument: str, ns: int) -> Decimal | None:
+    """Return the latest instrument tick size effective at ``ns``."""
+    chosen: tuple[int, Decimal] | None = None
+    for effective_ns, tick in state.tick_rows.get(instrument, ()):
+        if effective_ns <= ns and (chosen is None or effective_ns > chosen[0]):
+            chosen = (effective_ns, tick)
+    return None if chosen is None else chosen[1]
+
+
+def _apply_tick(price: Decimal, tick: Decimal | None) -> Decimal:
+    """Round a fill price to the effective tick; no rounding when undeclared."""
+    if tick is None:
+        return price
+    with localcontext() as context:
+        context.prec = 50
+        steps = (price / tick).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    return tick * steps
+
+
+def _margin_allows(state: SimState, price: Decimal, quantity: int) -> bool:
+    """Apply the declared margin floor; research equity proxy, no ledger claim."""
+    margin = state.params.cost_model.margin
+    if margin is None:
+        return True
+    notional = price * quantity
+    equity = state.cash + sum(
+        (Decimal(qty) * mark.price for instrument, qty in state.positions.items()
+         if qty > 0 and (mark := state.marks.get(instrument)) is not None),
+        Decimal("0"),
+    )
+    if equity < notional * margin.initial_bps / BPS:
+        return False
+    gross = sum(abs(qty) * price for qty in state.positions.values()) + notional
+    return equity >= gross * margin.maintenance_bps / BPS
+
+
 def _risk_allows(state: SimState, order: OrderState, quantity: int,
                  price: Decimal, fees: Decimal) -> bool:
     notional = price * quantity
@@ -279,16 +335,98 @@ def _risk_allows(state: SimState, order: OrderState, quantity: int,
             return False
         if notional > state.risk_budgets.max_notional:
             return False
-        gross = sum(abs(qty) * price for qty in state.positions.values())
-        return gross + notional <= state.risk_budgets.max_gross_exposure
-    borrow = state.params.cost_model.borrow_terms(order.instrument_id)
-    allowed = state.positions.get(order.instrument_id, 0)
-    if borrow is not None and borrow.available:
-        allowed += borrow.max_quantity
-    if quantity > allowed:
+    else:
+        borrow = state.params.cost_model.borrow_terms(order.instrument_id)
+        allowed = state.positions.get(order.instrument_id, 0)
+        if borrow is not None and borrow.available:
+            allowed += borrow.max_quantity
+        if quantity > allowed:
+            return False
+    if not _margin_allows(state, price, quantity):
         return False
     gross = sum(abs(qty) * price for qty in state.positions.values())
     return gross + notional <= state.risk_budgets.max_gross_exposure
+
+
+def _update_exposure(state: SimState, event: ExecutionReport, new_position: int) -> dict:
+    """Rebasis the net exposure after a fill; accrual already reached fill time."""
+    exposures = dict(state.exposures)
+    instrument = event.instrument_id
+    if new_position == 0:
+        exposures.pop(instrument, None)
+        return exposures
+    side = "long" if new_position > 0 else "short"
+    prior = exposures.get(instrument)
+    if prior is not None and prior.side == side:
+        if abs(new_position) >= prior.quantity:
+            notional = prior.notional + event.price * event.quantity
+        else:
+            notional = event.price * abs(new_position)
+        opened_ns = prior.opened_ns
+    else:
+        notional = event.price * abs(new_position)
+        opened_ns = event.logical_time_ns
+    exposures[instrument] = ExposureState(
+        instrument=instrument,
+        side=side,
+        quantity=abs(new_position),
+        notional=notional,
+        opened_ns=opened_ns,
+        accrued_to_ns=event.logical_time_ns,
+    )
+    return exposures
+
+
+def _accrue(state: SimState, event: EventEnvelope) -> tuple[SimState, tuple]:
+    """Accrue borrow and funding over logical time, emitting derived charge reports."""
+    now = event.logical_time_ns
+    costs = state.params.cost_model
+    funding = costs.funding_rate(now)
+    exposures = dict(state.exposures)
+    charges = state.charges
+    borrow_cost = state.borrow_cost
+    funding_cost = state.funding_cost
+    out: list[SimulationEvent] = []
+    for instrument in sorted(exposures):
+        exposure = exposures[instrument]
+        held_ns = now - exposure.accrued_to_ns
+        if held_ns <= 0:
+            continue
+        if exposure.side == "short":
+            terms = costs.borrow_terms(instrument)
+            if terms is not None and terms.available:
+                amount = terms.cost_bps_per_day * exposure.notional * Decimal(held_ns) / (
+                    BPS * Decimal(_DAY_NS)
+                )
+                charges += (ChargeRecord(
+                    instrument, "borrow", amount, held_ns, now,
+                    terms.cost_bps_per_day, terms.assumption,
+                ),)
+                borrow_cost += amount
+                out.append(_report(
+                    event, f"charge:{instrument}:borrow", "charge", suffix=str(now),
+                    fees=amount,
+                    reason=f"borrow cost; assumption={terms.assumption or 'artifact-pinned'}",
+                ))
+        if funding is not None:
+            amount = funding.charge(exposure.notional, held_ns)
+            charges += (ChargeRecord(
+                instrument, "funding", amount, held_ns, now,
+                funding.rate_bps_per_day, funding.assumption,
+            ),)
+            funding_cost += amount
+            out.append(_report(
+                event, f"charge:{instrument}:funding", "charge", suffix=str(now),
+                fees=amount,
+                reason=f"funding cost; assumption={funding.assumption or 'artifact-pinned'}",
+            ))
+        exposures[instrument] = replace(exposure, accrued_to_ns=now)
+    return state.updated(
+        exposures=exposures,
+        charges=charges,
+        borrow_cost=borrow_cost,
+        funding_cost=funding_cost,
+    ), tuple(out)
 
 
 def _participation_cap(state: SimState, quantity: int, displayed_qty: int) -> int:
@@ -332,11 +470,20 @@ def _on_book(state: SimState, event: BookSnapshot | BookDelta) -> tuple[SimState
                 high_water=observed,
             )
 
+    if not _tradable(state.market_status):
+        unmarked = tuple(
+            item for item in state.unmarked_residual if item.instrument_id not in marks
+        )
+        return state.updated(
+            books=books, marks=marks, orders=orders, queues=queues,
+            unmarked_residual=unmarked,
+        ), tuple(out)
+
     for order_id in sorted(orders):
         order = orders[order_id]
         if order.venue != event.venue or order.instrument_id != event.instrument_id:
             continue
-        if not order.active:
+        if not order.active or not order.announced:
             continue
         fresh = 0 <= event.logical_time_ns - book.last_update_ns <= state.params.max_book_age_ns
         if not fresh:
@@ -370,6 +517,7 @@ def _on_book(state: SimState, event: BookSnapshot | BookDelta) -> tuple[SimState
                 price = price + price * (impact + slippage) / BPS
             else:
                 price = price - price * (impact + slippage) / BPS
+            price = _apply_tick(price, _tick_at(state, event.instrument_id, event.logical_time_ns))
             if order.side == "buy" and price > order.limit_price:
                 continue
             if order.side == "sell" and price < order.limit_price:
@@ -410,15 +558,15 @@ def _on_book(state: SimState, event: BookSnapshot | BookDelta) -> tuple[SimState
 def _on_trade(state: SimState, event: TradePrint) -> tuple[SimState, tuple]:
     state, timed = _timed_reports(state, event)
     out = list(timed)
-    if state.market_status != "open" or not event.queue_advancing:
-        return state, out
+    if not _tradable(state.market_status) or not event.queue_advancing:
+        return state, tuple(out)
     orders = dict(state.orders)
     queues = dict(state.queues)
     for order_id in sorted(orders):
         order = orders[order_id]
         if order.venue != event.venue or order.instrument_id != event.instrument_id:
             continue
-        if not order.active or not _print_hits_order(event, order):
+        if not order.active or not order.announced or not _print_hits_order(event, order):
             continue
         key = queue_key(event.venue, order_id)
         queue = queues.get(key, QueueState())
@@ -430,10 +578,14 @@ def _on_trade(state: SimState, event: TradePrint) -> tuple[SimState, tuple]:
         quantity = _participation_cap(state, min(order.remaining, executable), event.quantity)
         if quantity <= 0:
             continue
-        fees = order.limit_price * quantity * state.params.cost_model.fee_schedule.rate(
+        price = _apply_tick(
+            order.limit_price,
+            _tick_at(state, event.instrument_id, event.logical_time_ns),
+        )
+        fees = price * quantity * state.params.cost_model.fee_schedule.rate(
             event.logical_time_ns, event.venue, event.instrument_id, order.side, "maker"
         ) / BPS
-        if not _risk_allows(state, order, quantity, order.limit_price, fees):
+        if not _risk_allows(state, order, quantity, price, fees):
             continue
         out.append(
             _report(
@@ -442,7 +594,7 @@ def _on_trade(state: SimState, event: TradePrint) -> tuple[SimState, tuple]:
                 "fill",
                 suffix="maker",
                 quantity=quantity,
-                price=order.limit_price,
+                price=price,
                 fees=fees,
                 liquidity="maker",
             )
@@ -453,11 +605,19 @@ def _on_trade(state: SimState, event: TradePrint) -> tuple[SimState, tuple]:
 def _on_execution_report(state: SimState, event: ExecutionReport) -> tuple[SimState, tuple]:
     if event.report_type == "fill" and any(f.event_id == event.event_id for f in state.fills):
         return state, ()
+    if event.report_type in {"charge", "latency_sample"}:
+        cash = state.cash - event.fees if event.report_type == "charge" else state.cash
+        if cash < 0:
+            raise AssertionError("cash-equity accounting invariant violated")
+        return state.updated(cash=cash), ()
     orders = dict(state.orders)
     order = orders.get(event.client_order_id)
     if order is None:
+        if event.report_type == "reject":
+            return state, ()
         raise ValueError(f"execution report for unknown order: {event.client_order_id}")
     positions = dict(state.positions)
+    exposures = state.exposures
     cash = state.cash
     fills = state.fills
     unmarked = state.unmarked_residual
@@ -485,6 +645,7 @@ def _on_execution_report(state: SimState, event: ExecutionReport) -> tuple[SimSt
             positions[event.instrument_id] = positions.get(event.instrument_id, 0) - event.quantity
         if cash < 0:
             raise AssertionError("cash-equity accounting invariant violated")
+        exposures = _update_exposure(state, event, positions[event.instrument_id])
         remaining = order.remaining - event.quantity
         if remaining < 0:
             raise AssertionError("fill quantity exceeds order remaining")
@@ -510,6 +671,7 @@ def _on_execution_report(state: SimState, event: ExecutionReport) -> tuple[SimSt
     return state.updated(
         cash=cash,
         positions=positions,
+        exposures=exposures,
         orders=orders,
         fills=fills,
         unmarked_residual=unmarked,
@@ -519,6 +681,14 @@ def _on_execution_report(state: SimState, event: ExecutionReport) -> tuple[SimSt
 def _on_order_add(state: SimState, event: OrderAdd) -> tuple[SimState, tuple]:
     if event.client_order_id in state.orders:
         raise ValueError(f"duplicate client_order_id: {event.client_order_id}")
+    if not _tradable(state.market_status):
+        reject = _report(
+            event,
+            event.client_order_id,
+            "reject",
+            reason=f"order rejected: market status {state.market_status}",
+        )
+        return state, (reject,)
     if event.side == "sell":
         borrow = state.params.cost_model.borrow_terms(event.instrument_id)
         available = state.positions.get(event.instrument_id, 0)
@@ -532,7 +702,10 @@ def _on_order_add(state: SimState, event: OrderAdd) -> tuple[SimState, tuple]:
                 reason="short rejected: no borrow availability",
             )
             return state, (reject,)
-    activates = event.logical_time_ns + state.params.order_latency_ns
+    activation_latency = state.params.latency_sample_ns(
+        state.latency_seed, event.client_order_id, "order"
+    )
+    activates = event.logical_time_ns + activation_latency
     order = OrderState(
         client_order_id=event.client_order_id,
         venue=event.venue,
@@ -551,7 +724,19 @@ def _on_order_add(state: SimState, event: OrderAdd) -> tuple[SimState, tuple]:
     queues = dict(state.queues)
     queues[queue_key(event.venue, event.client_order_id)] = QueueState()
     ack = _report(event, event.client_order_id, "ack")
-    return state.updated(orders=orders, queues=queues), (ack,)
+    out: list[SimulationEvent] = [ack]
+    declared = state.params.latency
+    if declared is not None and declared.shape == "uniform":
+        out.append(_report(
+            event,
+            event.client_order_id,
+            "latency_sample",
+            suffix="order",
+            reason=f"seeded latency draw; assumption={declared.assumption or 'artifact-pinned'}",
+            sampled_ns=activation_latency,
+            effective_ns=activates,
+        ))
+    return state.updated(orders=orders, queues=queues), tuple(out)
 
 
 def _on_order_modify(state: SimState, event: OrderModify) -> tuple[SimState, tuple]:
@@ -572,13 +757,29 @@ def _on_order_cancel(state: SimState, event: OrderCancel) -> tuple[SimState, tup
     order = state.orders.get(event.client_order_id)
     if order is None:
         raise ValueError(f"cancel for unknown order: {event.client_order_id}")
+    cancel_latency = state.params.latency_sample_ns(
+        state.latency_seed, event.client_order_id, "cancel"
+    )
+    cancel_effective_ns = event.logical_time_ns + cancel_latency
     orders = dict(state.orders)
     orders[event.client_order_id] = replace_order(
         order,
         status="pending_cancel",
-        cancel_effective_ns=event.logical_time_ns + state.params.cancel_latency_ns,
+        cancel_effective_ns=cancel_effective_ns,
     )
-    return state.updated(orders=orders), ()
+    out: list[SimulationEvent] = []
+    declared = state.params.latency
+    if declared is not None and declared.shape == "uniform":
+        out.append(_report(
+            event,
+            event.client_order_id,
+            "latency_sample",
+            suffix="cancel",
+            reason=f"seeded cancel draw; assumption={declared.assumption or 'artifact-pinned'}",
+            sampled_ns=cancel_latency,
+            effective_ns=cancel_effective_ns,
+        ))
+    return state.updated(orders=orders), tuple(out)
 
 
 def _on_config_change(state: SimState, event: ConfigChange) -> tuple[SimState, tuple]:
@@ -590,16 +791,83 @@ def _on_config_change(state: SimState, event: ConfigChange) -> tuple[SimState, t
 
 
 def _on_instrument_change(state: SimState, event: InstrumentChange) -> tuple[SimState, tuple]:
+    effective_ns = event.logical_time_ns if event.effective_ns is None else event.effective_ns
     key = f"instrument:{event.instrument_id}:{event.field}"
     configs = dict(state.effective_configs)
     rows = list(configs.get(key, ()))
-    rows.append((event.effective_ns, digest(to_jsonable([event.old_value, event.new_value]))))
+    rows.append((effective_ns, digest(to_jsonable([event.old_value, event.new_value]))))
     configs[key] = tuple(sorted(set(rows)))
-    return state.updated(effective_configs=configs), ()
+    tick_rows = state.tick_rows
+    if event.field == "tick_size":
+        try:
+            tick = Decimal(event.new_value)
+        except (ArithmeticError, ValueError) as exc:
+            raise ValueError("tick_size new_value must be a decimal") from exc
+        if not tick.is_finite() or tick <= 0:
+            raise ValueError("tick_size new_value must be positive and finite")
+        instrument_rows = list(state.tick_rows.get(event.instrument_id, ()))
+        instrument_rows.append((effective_ns, tick))
+        tick_rows = {**state.tick_rows, event.instrument_id: tuple(sorted(set(instrument_rows)))}
+    return state.updated(effective_configs=configs, tick_rows=tick_rows), ()
 
 
-def reduce(state: SimState, event: SimulationEvent) -> tuple[SimState, tuple[SimulationEvent, ...]]:
-    """Pure reducer: advance state and emit typed output events."""
+def _on_auction(state: SimState, event: AuctionPhase) -> tuple[SimState, tuple]:
+    """Emit one synthetic uncross at the declared reference price.
+
+    The rule is an assumption: no venue call, priority or auction truth is
+    claimed.  A repeated uncross at the same venue/instrument/time is inert.
+    """
+    state, timed = _timed_reports(state, event)
+    out: list[SimulationEvent] = list(timed)
+    key = f"auction:{event.venue}:{event.instrument_id}"
+    configs = dict(state.effective_configs)
+    rows = list(configs.get(key, ()))
+    marker = (event.logical_time_ns, digest("uncross"))
+    already_uncrossed = event.phase == "uncross" and marker in rows
+    rows.append((event.logical_time_ns, digest(event.phase)))
+    configs[key] = tuple(sorted(set(rows)))
+    if (
+        event.phase == "uncross"
+        and event.reference_price is not None
+        and not already_uncrossed
+        and _tradable(state.market_status)
+    ):
+        price = _apply_tick(
+            event.reference_price,
+            _tick_at(state, event.instrument_id, event.logical_time_ns),
+        )
+        orders = dict(state.orders)
+        for order_id in sorted(orders):
+            order = orders[order_id]
+            if order.venue != event.venue or order.instrument_id != event.instrument_id:
+                continue
+            if not order.active or not order.announced:
+                continue
+            if order.side == "buy" and order.limit_price < price:
+                continue
+            if order.side == "sell" and order.limit_price > price:
+                continue
+            fees = price * order.remaining * state.params.cost_model.fee_schedule.rate(
+                event.logical_time_ns, event.venue, event.instrument_id, order.side, "taker"
+            ) / BPS
+            if not _risk_allows(state, order, order.remaining, price, fees):
+                continue
+            out.append(_report(
+                event,
+                order_id,
+                "fill",
+                suffix="auction",
+                quantity=order.remaining,
+                price=price,
+                fees=fees,
+                liquidity="taker",
+                reason="synthetic uncross at declared reference price; assumption",
+            ))
+    return state.updated(effective_configs=configs), tuple(out)
+
+
+def _dispatch(state: SimState, event: SimulationEvent) -> tuple[SimState, tuple]:
+    """Advance state for one typed input event without time-based accrual."""
     if isinstance(event, (BookSnapshot, BookDelta)):
         return _on_book(state, event)
     if isinstance(event, TradePrint):
@@ -619,13 +887,15 @@ def reduce(state: SimState, event: SimulationEvent) -> tuple[SimState, tuple[Sim
     if isinstance(event, MarketStatus):
         return state.updated(market_status=event.status), ()
     if isinstance(event, AuctionPhase):
-        key = f"auction:{event.venue}:{event.instrument_id}"
-        configs = dict(state.effective_configs)
-        rows = list(configs.get(key, ()))
-        rows.append((event.logical_time_ns, digest(event.phase)))
-        configs[key] = tuple(sorted(set(rows)))
-        return state.updated(effective_configs=configs), ()
+        return _on_auction(state, event)
     raise ValueError(f"unsupported simulation event: {type(event).__name__}")
+
+
+def reduce(state: SimState, event: SimulationEvent) -> tuple[SimState, tuple[SimulationEvent, ...]]:
+    """Pure reducer: accrue charges, then advance state and emit typed events."""
+    state, charges = _accrue(state, event)
+    state, out = _dispatch(state, event)
+    return state, charges + out
 
 
 class SimulationEngine:
@@ -667,7 +937,12 @@ class SimulationEngine:
             seen_ids.add(event.event_id)
             pending.append(event)
         pending.sort(key=event_ordering_key)
-        state = empty_state(self.config.starting_cash, models.params, self.config.risk_budgets)
+        state = empty_state(
+            self.config.starting_cash,
+            models.params,
+            self.config.risk_budgets,
+            latency_seed=seeds.latency_seed,
+        )
         emitted: list[SimulationEvent] = []
         consumed: list[SimulationEvent] = []
         insertion = 0
@@ -730,6 +1005,9 @@ class SimulationEngine:
             spread_cost=spread_cost,
             unmarked_residual=bool(state.unmarked_residual),
             unmarked_details=state.unmarked_residual,
+            borrow_cost=state.borrow_cost,
+            funding_cost=state.funding_cost,
+            charges=state.charges,
             final_state=state,
             state_hash=state_hash(state),
             config_hash=self.config.config_hash(),

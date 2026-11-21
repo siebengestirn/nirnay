@@ -158,6 +158,63 @@ class OrderState:
 
 
 @dataclass(frozen=True, slots=True)
+class ExposureState:
+    """One net instrument exposure with a time basis for research charges."""
+
+    instrument: str
+    side: str
+    quantity: int
+    notional: Decimal
+    opened_ns: int
+    accrued_to_ns: int
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.instrument, str) or not self.instrument:
+            raise ValueError("exposure instrument is required")
+        if self.side not in {"long", "short"}:
+            raise ValueError("exposure side must be long or short")
+        if type(self.quantity) is not int or self.quantity <= 0:
+            raise ValueError("exposure quantity must be a positive integer")
+        if not isinstance(self.notional, Decimal) or not self.notional.is_finite():
+            raise ValueError("exposure notional must be a finite Decimal")
+        if self.notional < 0:
+            raise ValueError("exposure notional cannot be negative")
+        for name in ("opened_ns", "accrued_to_ns"):
+            if type(getattr(self, name)) is not int or getattr(self, name) < 1:
+                raise ValueError(f"{name} must be a positive integer")
+        if self.accrued_to_ns < self.opened_ns:
+            raise ValueError("accrued_to_ns cannot precede opened_ns")
+
+
+@dataclass(frozen=True, slots=True)
+class ChargeRecord:
+    """One research-only borrow or funding charge derived from held exposure."""
+
+    instrument: str
+    kind: str
+    amount: Decimal
+    held_ns: int
+    as_of_ns: int
+    rate_bps_per_day: Decimal
+    assumption: str | None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.instrument, str) or not self.instrument:
+            raise ValueError("charge instrument is required")
+        if self.kind not in {"borrow", "funding"}:
+            raise ValueError("charge kind must be borrow or funding")
+        if not isinstance(self.amount, Decimal) or not self.amount.is_finite() or self.amount < 0:
+            raise ValueError("charge amount must be a non-negative finite Decimal")
+        for name in ("held_ns", "as_of_ns"):
+            if type(getattr(self, name)) is not int or getattr(self, name) < 1:
+                raise ValueError(f"{name} must be a positive integer")
+        if not isinstance(self.rate_bps_per_day, Decimal) or not self.rate_bps_per_day.is_finite():
+            raise ValueError("rate_bps_per_day must be a finite Decimal")
+        if self.assumption is not None and not isinstance(self.assumption, str):
+            raise ValueError("assumption must be a string or None")
+
+
+@dataclass(frozen=True, slots=True)
 class RiskBudgets:
     """Notional, gross and participation ceilings used by the reducer."""
 
@@ -192,6 +249,12 @@ class SimState:
     effective_configs: Mapping[str, tuple[tuple[int, str], ...]] = MappingProxyType({})
     unmarked_residual: tuple[UnmarkedResidual, ...] = ()
     consumed_event_ids: tuple[str, ...] = ()
+    latency_seed: int = 0
+    exposures: Mapping[str, ExposureState] = MappingProxyType({})
+    charges: tuple[ChargeRecord, ...] = ()
+    borrow_cost: Decimal = Decimal("0")
+    funding_cost: Decimal = Decimal("0")
+    tick_rows: Mapping[str, tuple[tuple[int, Decimal], ...]] = MappingProxyType({})
 
     def __post_init__(self) -> None:
         if not isinstance(self.cash, Decimal) or not self.cash.is_finite():
@@ -200,23 +263,32 @@ class SimState:
             raise ValueError("starting_cash must be a positive finite Decimal")
         if not isinstance(self.params, BaselineParams):
             raise ValueError("params must be a BaselineParams")
+        if type(self.latency_seed) is not int:
+            raise ValueError("latency_seed must be an integer")
+        for name in ("borrow_cost", "funding_cost"):
+            if not isinstance(getattr(self, name), Decimal) or not getattr(self, name).is_finite():
+                raise ValueError(f"{name} must be a finite Decimal")
 
     def updated(self, **changes: object) -> SimState:
         """Return a new state with selected fields replaced and maps frozen."""
-        for name in ("positions", "books", "queues", "orders", "marks", "effective_configs"):
+        for name in (
+            "positions", "books", "queues", "orders", "marks", "effective_configs",
+            "exposures", "tick_rows",
+        ):
             if name in changes:
                 changes[name] = frozen_map(changes[name])
         return replace(self, **changes)
 
 
 def empty_state(starting_cash: Decimal, params: BaselineParams,
-                risk_budgets: RiskBudgets | None = None) -> SimState:
+                risk_budgets: RiskBudgets | None = None, *, latency_seed: int = 0) -> SimState:
     """Build the initial state for a replay run."""
     return SimState(
         cash=starting_cash,
         starting_cash=starting_cash,
         params=params,
         risk_budgets=risk_budgets or RiskBudgets(),
+        latency_seed=latency_seed,
     )
 
 

@@ -5,6 +5,13 @@ events and seeds.  This is a research tool, not an exchange matching engine.
 """
 from __future__ import annotations
 
+from .calibration import (
+    ArtifactError,
+    ArtifactResolver,
+    CalibrationArtifact,
+    calibration_statement,
+    cost_provenance,
+)
 from .adapters import (
     market_event_to_sim_events,
     market_events_to_sim_events,
@@ -46,6 +53,7 @@ from .execution.base import (
     BaselineParams,
     ConservativeMbpModel,
     ExecutionModel,
+    LatencyDistribution,
     QueueTruthUnavailable,
     default_cost_model,
     default_impact,
@@ -71,6 +79,8 @@ from .replay import (
 )
 from .state import (
     BookState,
+    ChargeRecord,
+    ExposureState,
     MarkState,
     OrderState,
     QueueState,
@@ -79,28 +89,36 @@ from .state import (
     empty_state,
     state_hash,
 )
+from .store import DuplicateTrial, TrialConflict, TrialStore, TrialStoreError
 
 __all__ = [
     "EVENT_TYPES",
+    "ArtifactError",
+    "ArtifactResolver",
     "AuctionPhase",
     "BaselineParams",
     "BookDelta",
     "BookSnapshot",
     "BookState",
     "BorrowTerms",
+    "CalibrationArtifact",
+    "ChargeRecord",
     "ComparisonResult",
     "ConfigChange",
     "ConservativeMbpModel",
     "CostModel",
+    "DuplicateTrial",
     "EngineConfig",
     "EventEnvelope",
     "ExecutionModel",
     "ExecutionReport",
+    "ExposureState",
     "FeeEntry",
     "FeeSchedule",
     "FundingTerms",
     "ImpactConfig",
     "InstrumentChange",
+    "LatencyDistribution",
     "MarginTerms",
     "MarketStatus",
     "MarkState",
@@ -124,8 +142,13 @@ __all__ = [
     "Strategy",
     "StrategyContext",
     "TradePrint",
+    "TrialConflict",
+    "TrialStore",
+    "TrialStoreError",
     "UnmarkedResidual",
+    "calibration_statement",
     "compare_records",
+    "cost_provenance",
     "default_cost_model",
     "default_impact",
     "empty_state",

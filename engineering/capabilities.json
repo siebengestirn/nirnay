@@ -305,6 +305,14 @@
       "scope": "crates/risk-authority/src/authority.rs; crates/risk-authority/src/observation.rs; crates/risk-authority/src/control.rs; crates/risk-authority/tests/authority.rs; apps/paper-runner/src/lib.rs"
     },
     {
+      "id": "CAP-039",
+      "name": "Research simulation completion with declared research-only mechanics",
+      "status": "implemented",
+      "evidence_status": "Seeded distribution latency draws use ReplaySeeds.latency_seed and are emitted as recorded derived events; artifact resolution fails closed unless a digest maps to a dated fixture; borrow, margin and funding are charged from typed terms over logical time; taker fills and new orders are gated by market status and a synthetic uncross uses a declared reference price; effective-dated tick size rounds fill prices; a local sim-replay driver and a hash-named append-only trial store are offline and deterministic; the verifier recomputes ending cash from fills and charges. All distributions and cost terms are assumption-labelled research fixtures. Implemented, not independently verified: no calibrated, FIFO, real-data, venue-truth, profitability, replay-run-gate or live-readiness claim. The ADR-M1-009 replay-run gate remains a PRECONDITION and the provenance anchor remains unowned.",
+      "owner": "research",
+      "scope": "research/python/src/quantlab/sim/; research/python/src/quantlab/cli.py; schemas/research/simulation-event.v1.schema.json; schemas/research/simulation-run-record.v1.schema.json; research/python/tests/test_sim_extensions.py; research/python/tests/test_sim_core.py"
+    },
+    {
       "id": "CAP-038",
       "name": "Pure causal feature computation with bitemporal lineage",
       "status": "implemented",
