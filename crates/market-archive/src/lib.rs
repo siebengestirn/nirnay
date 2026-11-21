@@ -16,14 +16,17 @@ mod manifest;
 
 pub use capability::{
     CapabilityError, //
+    DataOperation,
     DataRights,
     DepthModel,
     EntitlementRef,
     EvidenceSource,
     MarketDataRequirement,
     PermissionState,
+    ProductKey,
     ProtocolRef,
     RecoveryMode,
+    RetentionPeriod,
     RightEvidence,
     RightsReview,
     SourceLimits,

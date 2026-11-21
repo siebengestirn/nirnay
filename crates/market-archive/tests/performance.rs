@@ -13,12 +13,23 @@ use std::{
 use market_archive::{
     DurableIngestor, //
     JournalReplaySource,
+    ProductKey,
     RawFrame,
     Sequence,
     SequencePolicy,
     SourceFrame,
+    SourceProductRegistry,
     UPSTOX_SOURCE_ID,
 };
+
+fn replay_source(path: &std::path::Path) -> JournalReplaySource {
+    let text = include_str!("../../../configs/providers/source-products.v1.json")
+        .replace("\"state\": \"UNKNOWN\"", "\"state\": \"PERMITTED\"")
+        .replace("\"verified\": false", "\"verified\": true");
+    let registry = SourceProductRegistry::from_bytes(text.as_bytes()).expect("test registry");
+    let key = ProductKey::new("upstox", "full", "NSE", "Cash");
+    JournalReplaySource::open(path, UPSTOX_SOURCE_ID, &registry, &key).expect("replay source")
+}
 
 fn path(name: &str) -> PathBuf {
     let root = std::env::temp_dir().join(format!("nirnay-bench-{name}-{}", std::process::id()));
@@ -101,7 +112,7 @@ fn replay_throughput_and_bounded_frames() {
     }
     std::fs::write(&output, lines).expect("generated journal");
     let started = std::time::Instant::now();
-    let mut source = JournalReplaySource::open(&output, UPSTOX_SOURCE_ID).expect("replay source");
+    let mut source = replay_source(&output);
     let mut streamed = 0_u64;
     let mut held = 0_usize;
     while let Some((_, item)) = source.next_indexed_frame().expect("stream") {

@@ -117,6 +117,79 @@ pub enum EvidenceSource {
     None,
 }
 
+/// Exact identity of a declared source product. A partial identity never
+/// authorizes an operation: venue and segment are never inferred.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProductKey {
+    pub provider: String,
+    pub product: String,
+    pub venue: String,
+    pub segment: String,
+}
+
+impl ProductKey {
+    pub fn new(
+        provider: impl Into<String>,
+        product: impl Into<String>,
+        venue: impl Into<String>,
+        segment: impl Into<String>,
+    ) -> Self {
+        Self {
+            provider: provider.into(),
+            product: product.into(),
+            venue: venue.into(),
+            segment: segment.into(),
+        }
+    }
+}
+
+/// A data-use operation. The vocabulary matches the seven written-evidence
+/// classes in the registry rights review.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum DataOperation {
+    Capture,
+    Store,
+    Replay,
+    Backup,
+    InternalAnalytics,
+    ExternalRedistribution,
+    Retention,
+}
+
+impl DataOperation {
+    /// All operations, in the canonical registry order. Use this for exhaustive
+    /// fail-closed checks so a newly added operation cannot be skipped.
+    pub const ALL: [Self; 7] = [
+        Self::Capture,
+        Self::Store,
+        Self::Replay,
+        Self::Backup,
+        Self::InternalAnalytics,
+        Self::ExternalRedistribution,
+        Self::Retention,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Capture => "capture",
+            Self::Store => "store",
+            Self::Replay => "replay",
+            Self::Backup => "backup",
+            Self::InternalAnalytics => "internal_analytics",
+            Self::ExternalRedistribution => "external_redistribution",
+            Self::Retention => "retention",
+        }
+    }
+
+    /// Persistence operations additionally require a verified entitlement.
+    pub fn is_persistence(self) -> bool {
+        matches!(
+            self,
+            Self::Store | Self::Replay | Self::Backup | Self::Retention
+        )
+    }
+}
+
 /// One permission with its evidence provenance and review scope.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -128,13 +201,44 @@ pub struct RightEvidence {
     pub review_date: String,
 }
 
+/// A concrete retention duration with provenance. A missing duration is an
+/// explicit absence of a written retention policy; it never grants retention.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RetentionPeriod {
+    /// Days, when a written policy supplies one. `None` is not "unlimited".
+    pub duration_days: Option<u32>,
+    pub basis: EvidenceSource,
+    pub document_reference: String,
+    pub review_date: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DataRights {
     pub capture: RightEvidence,
     pub store: RightEvidence,
     pub replay: RightEvidence,
-    pub redistribute: RightEvidence,
+    pub backup: RightEvidence,
+    pub internal_analytics: RightEvidence,
+    /// Formerly `redistribute`; renamed to match the written-evidence class.
+    pub external_redistribution: RightEvidence,
+    pub retention: RightEvidence,
+    pub retention_period: RetentionPeriod,
+}
+
+impl DataRights {
+    pub fn right_for(&self, operation: DataOperation) -> &RightEvidence {
+        match operation {
+            DataOperation::Capture => &self.capture,
+            DataOperation::Store => &self.store,
+            DataOperation::Replay => &self.replay,
+            DataOperation::Backup => &self.backup,
+            DataOperation::InternalAnalytics => &self.internal_analytics,
+            DataOperation::ExternalRedistribution => &self.external_redistribution,
+            DataOperation::Retention => &self.retention,
+        }
+    }
 }
 
 /// Written-evidence review status for the whole registry.
@@ -176,6 +280,17 @@ pub struct SourceProduct {
     pub limits: SourceLimits,
 }
 
+impl SourceProduct {
+    pub fn key(&self) -> ProductKey {
+        ProductKey::new(
+            self.provider.clone(),
+            self.product.clone(),
+            self.venue.clone(),
+            self.segment.clone(),
+        )
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SourceProductRegistry {
@@ -197,8 +312,13 @@ pub struct MarketDataRequirement {
     pub requires_trade_prints: bool,
     pub requires_clean_snapshot: bool,
     pub requires_source_continuity: bool,
+    pub requires_capture: bool,
     pub requires_store: bool,
     pub requires_replay: bool,
+    pub requires_backup: bool,
+    pub requires_internal_analytics: bool,
+    pub requires_external_redistribution: bool,
+    pub requires_retention: bool,
 }
 
 impl SourceProductRegistry {
@@ -247,6 +367,48 @@ impl SourceProductRegistry {
             })
     }
 
+    /// The single fail-closed authorization helper. `UNKNOWN`, `PROHIBITED`
+    /// and undeclared products are all denials; no caller may infer a right
+    /// from a successful connection or from a partial product identity.
+    pub fn authorize(
+        &self,
+        product_key: &ProductKey,
+        operation: DataOperation,
+    ) -> Result<(), CapabilityError> {
+        let declared = self.product(
+            &product_key.provider,
+            &product_key.product,
+            &product_key.venue,
+            &product_key.segment,
+        )?;
+        let right = declared.rights.right_for(operation);
+        if !right.state.is_permitted() {
+            return Err(CapabilityError::MissingRight(operation.as_str().to_owned()));
+        }
+        if operation.is_persistence() && !declared.entitlement.verified {
+            return Err(CapabilityError::EntitlementUnverified(
+                declared.entitlement.reference.clone(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Mirror the schema's cross-field coherence rules at runtime. A hand-edited
+    /// registry must not become an internally inconsistent contract.
+    fn check_coherence(&self, declared: &SourceProduct) -> Result<(), CapabilityError> {
+        let incoherent = (declared.incremental_updates == UpdateMode::SnapshotOnly
+            && !declared.snapshot)
+            || (declared.recovery.contains(&RecoveryMode::FreshSnapshot) && !declared.snapshot)
+            || (declared.depth_model == DepthModel::Mbo && !declared.order_level_identity);
+        if incoherent {
+            return Err(CapabilityError::InvalidRegistry(format!(
+                "product `{}/{}` violates the schema coherence rules",
+                declared.provider, declared.product
+            )));
+        }
+        Ok(())
+    }
+
     /// Reject the requirement unless every field is satisfied by the declared
     /// product. A five-level feed never satisfies a twenty-level requirement.
     pub fn evaluate(&self, requirement: &MarketDataRequirement) -> Result<(), CapabilityError> {
@@ -256,6 +418,7 @@ impl SourceProductRegistry {
             &requirement.venue,
             &requirement.segment,
         )?;
+        self.check_coherence(declared)?;
         if declared.depth_model != requirement.depth_model {
             return Err(CapabilityError::DepthModelMismatch {
                 declared: declared.depth_model,
@@ -279,18 +442,26 @@ impl SourceProductRegistry {
         {
             return Err(CapabilityError::NoSourceContinuity);
         }
-        if requirement.requires_store && !declared.rights.store.state.is_permitted() {
-            return Err(CapabilityError::MissingRight("store".to_owned()));
-        }
-        if requirement.requires_replay && !declared.rights.replay.state.is_permitted() {
-            return Err(CapabilityError::MissingRight("replay".to_owned()));
-        }
-        if (requirement.requires_store || requirement.requires_replay)
-            && !declared.entitlement.verified
-        {
-            return Err(CapabilityError::EntitlementUnverified(
-                declared.entitlement.reference.clone(),
-            ));
+        let key = declared.key();
+        let required_operations = [
+            (requirement.requires_capture, DataOperation::Capture),
+            (requirement.requires_store, DataOperation::Store),
+            (requirement.requires_replay, DataOperation::Replay),
+            (requirement.requires_backup, DataOperation::Backup),
+            (
+                requirement.requires_internal_analytics,
+                DataOperation::InternalAnalytics,
+            ),
+            (
+                requirement.requires_external_redistribution,
+                DataOperation::ExternalRedistribution,
+            ),
+            (requirement.requires_retention, DataOperation::Retention),
+        ];
+        for (needed, operation) in required_operations {
+            if needed {
+                self.authorize(&key, operation)?;
+            }
         }
         Ok(())
     }

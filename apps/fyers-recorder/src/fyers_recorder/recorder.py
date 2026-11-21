@@ -14,8 +14,11 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .journal import HashChainJournal, canonical_json, verify
+from .rights import CAPTURE, STORE, ProductKey, authorize
 
 _STOP = object()
+
+FYERS_PRODUCT_KEY = ProductKey("fyers", "data_socket", "NSE", "Cash")
 
 
 def _sha256_file(path: Path) -> str:
@@ -31,12 +34,17 @@ class RecorderConfig:
     symbols: tuple[str, ...]
     entitlement_ref: str
     output_root: Path
+    registry_path: Path
     queue_capacity: int = 16_384
     reconnect_retry: int = 10
     include_depth: bool = True
     max_symbols: int = 100
 
     def validate(self) -> None:
+        # Rights are checked before any run directory, journal or writer thread
+        # exists. A denial must leave no file behind.
+        authorize(self.registry_path, FYERS_PRODUCT_KEY, CAPTURE)
+        authorize(self.registry_path, FYERS_PRODUCT_KEY, STORE)
         if not self.entitlement_ref.strip():
             raise ValueError("an entitlement reference is required")
         if not self.symbols:

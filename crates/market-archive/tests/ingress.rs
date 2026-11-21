@@ -20,13 +20,35 @@ use market_archive::{
     IngressError,
     IngressSource,
     JournalReplaySource,
+    ProductKey,
     Sequence,
     SequencePolicy,
     SourceFrame,
+    SourceProductRegistry,
     UPSTOX_SOURCE_ID,
     UpstoxV3Adapter,
     scan_journal,
 };
+
+/// Test-only registry derived from the checked-in declaration: the fake
+/// evidence is confined to this test and never written to a live config.
+fn test_rights(provider: &str, product: &str) -> (SourceProductRegistry, ProductKey) {
+    let text = include_str!("../../../configs/providers/source-products.v1.json")
+        .replace("\"state\": \"UNKNOWN\"", "\"state\": \"PERMITTED\"")
+        .replace("\"verified\": false", "\"verified\": true");
+    let registry = SourceProductRegistry::from_bytes(text.as_bytes()).expect("test registry");
+    (registry, ProductKey::new(provider, product, "NSE", "Cash"))
+}
+
+fn replay_source(
+    path: &std::path::Path,
+    source_id: &str,
+    provider: &str,
+    product: &str,
+) -> JournalReplaySource {
+    let (registry, key) = test_rights(provider, product);
+    JournalReplaySource::open(path, source_id, &registry, &key).expect("replay source")
+}
 
 fn frame(sequence: u64, payload: &[u8]) -> SourceFrame {
     SourceFrame {
@@ -351,7 +373,7 @@ fn restart_and_replay_commit_nothing_twice() {
                 .expect("ingestor");
         ingestor.run(&mut source, 10).expect("capture");
     }
-    let mut source = JournalReplaySource::open(&path, UPSTOX_SOURCE_ID).expect("replay source");
+    let mut source = replay_source(&path, UPSTOX_SOURCE_ID, "upstox", "full");
     let mut ingestor =
         DurableIngestor::resume(&path, UPSTOX_SOURCE_ID, SequencePolicy::CaptureSession)
             .expect("resume");
@@ -378,7 +400,7 @@ fn replay_reproduces_frames_and_preserves_source_boundary() {
                 .expect("ingestor");
         ingestor.run(&mut source, 10).expect("capture");
     }
-    let mut source = JournalReplaySource::open(&captured, FYERS_SOURCE_ID).expect("replay source");
+    let mut source = replay_source(&captured, FYERS_SOURCE_ID, "fyers", "data_socket");
     assert_eq!(source.source_id(), FYERS_SOURCE_ID, "contract assertion");
     let mut ingestor =
         DurableIngestor::create_new(&replayed, FYERS_SOURCE_ID, SequencePolicy::CaptureSession)
@@ -395,7 +417,7 @@ fn replay_reproduces_frames_and_preserves_source_boundary() {
         SequencePolicy::CaptureSession,
     )
     .expect("upstox ingestor");
-    let mut replay = JournalReplaySource::open(&captured, FYERS_SOURCE_ID).expect("replay source");
+    let mut replay = replay_source(&captured, FYERS_SOURCE_ID, "fyers", "data_socket");
     assert!(
         matches!(
             wrong.replay(&mut replay),
@@ -422,11 +444,12 @@ fn torn_or_corrupt_journal_fails_closed() {
         DurableIngestor::resume(&path, UPSTOX_SOURCE_ID, SequencePolicy::CaptureSession,).is_err(),
         "resume refuses a torn journal"
     );
+    let (registry, key) = test_rights("upstox", "full");
     assert!(
-        JournalReplaySource::open(&path, UPSTOX_SOURCE_ID).is_ok(),
+        JournalReplaySource::open(&path, UPSTOX_SOURCE_ID, &registry, &key).is_ok(),
         "open succeeds; the reader reports the tear on iteration"
     );
-    let mut replay = JournalReplaySource::open(&path, UPSTOX_SOURCE_ID).expect("source");
+    let mut replay = replay_source(&path, UPSTOX_SOURCE_ID, "upstox", "full");
     let mut failed = false;
     for _ in 0..4 {
         if replay.next_indexed_frame().is_err() {
@@ -507,7 +530,7 @@ fn large_journal_replay_uses_bounded_memory() {
         }
         std::fs::write(&path, output).expect("generated journal");
     }
-    let mut source = JournalReplaySource::open(&path, UPSTOX_SOURCE_ID).expect("replay source");
+    let mut source = replay_source(&path, UPSTOX_SOURCE_ID, "upstox", "full");
     let mut seen = 0_u64;
     while let Some((ordinal, _)) = source.next_indexed_frame().expect("stream") {
         assert_eq!(ordinal, seen, "ordinals are assigned in journal order");
@@ -542,7 +565,7 @@ fn replay_benchmark_large_generated_journal() {
         std::fs::write(&path, output).expect("generated benchmark journal");
     }
     let started = std::time::Instant::now();
-    let mut source = JournalReplaySource::open(&path, UPSTOX_SOURCE_ID).expect("replay source");
+    let mut source = replay_source(&path, UPSTOX_SOURCE_ID, "upstox", "full");
     let mut streamed = 0_u64;
     while source.next_indexed_frame().expect("stream").is_some() {
         streamed += 1;
@@ -580,7 +603,7 @@ fn replay_fence_holds_beyond_the_delivery_window() {
         }
         std::fs::write(&path, output).expect("generated journal");
     }
-    let mut source = JournalReplaySource::open(&path, UPSTOX_SOURCE_ID).expect("replay source");
+    let mut source = replay_source(&path, UPSTOX_SOURCE_ID, "upstox", "full");
     let mut ingestor =
         DurableIngestor::resume(&path, UPSTOX_SOURCE_ID, SequencePolicy::CaptureSession)
             .expect("resume");
@@ -598,4 +621,34 @@ fn replay_fence_holds_beyond_the_delivery_window() {
         scan_journal(&path).expect("scan").frames.len(),
         count as usize
     );
+}
+
+#[test]
+fn denied_replay_opens_no_source_and_emits_no_frames() {
+    let root = std::env::temp_dir().join(format!("nirnay-replay-denied-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("temp root");
+    let journal = root.join("journal.jsonl");
+    {
+        let mut ingestor =
+            DurableIngestor::create_new(&journal, UPSTOX_SOURCE_ID, SequencePolicy::CaptureSession)
+                .expect("journal");
+        ingestor.ingest_one(frame(1, b"payload")).expect("frame");
+    }
+    let registry = SourceProductRegistry::from_bytes(
+        include_str!("../../../configs/providers/source-products.v1.json").as_bytes(),
+    )
+    .expect("deny-all registry");
+    let key = ProductKey::new("upstox", "full", "NSE", "Cash");
+    let denied = JournalReplaySource::open(&journal, UPSTOX_SOURCE_ID, &registry, &key);
+    assert!(
+        matches!(denied, Err(IngressError::ReplayDenied(_))),
+        "a deny-all registry opens no replay source, so no frame can be emitted"
+    );
+    let mut allowed = replay_source(&journal, UPSTOX_SOURCE_ID, "upstox", "full");
+    assert!(
+        allowed.next_indexed_frame().expect("frame").is_some(),
+        "control: a test-only permitted registry does replay one frame"
+    );
+    let _ = std::fs::remove_dir_all(&root);
 }

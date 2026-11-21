@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "registry_id": "test-only-fyers-permitted",
+  "products": [
+    {
+      "provider": "fyers",
+      "product": "data_socket",
+      "venue": "NSE",
+      "segment": "Cash",
+      "instrument_scope": "entitlement-approved NSE cash watchlist",
+      "depth_model": "mbp",
+      "depth_levels": 5,
+      "trade_prints": true,
+      "order_level_identity": false,
+      "snapshot": true,
+      "incremental_updates": "delta",
+      "source_sequence": "unavailable",
+      "recovery": [
+        "reconnect",
+        "fresh_snapshot"
+      ],
+      "protocol": {
+        "name": "fyers-python-sdk-callback-json",
+        "schema_digest": null,
+        "schema_reference": "apps/fyers-recorder/src/fyers_recorder/recorder.py"
+      },
+      "entitlement": {
+        "reference": "owner-reported:fyers-data-socket",
+        "verified": true
+      },
+      "rights": {
+        "capture": {
+          "state": "PERMITTED",
+          "source": "provider_agreement",
+          "document_reference": "test-only:fyers-permitted-fixture",
+          "scope": "entitlement-approved NSE cash watchlist",
+          "review_date": "2026-11-20"
+        },
+        "store": {
+          "state": "PERMITTED",
+          "source": "provider_agreement",
+          "document_reference": "test-only:fyers-permitted-fixture",
+          "scope": "entitlement-approved NSE cash watchlist",
+          "review_date": "2026-11-20"
+        },
+        "replay": {
+          "state": "PERMITTED",
+          "source": "provider_agreement",
+          "document_reference": "test-only:fyers-permitted-fixture",
+          "scope": "entitlement-approved NSE cash watchlist",
+          "review_date": "2026-11-20"
+        },
+        "backup": {
+          "state": "PERMITTED",
+          "source": "provider_agreement",
+          "document_reference": "test-only:fyers-permitted-fixture",
+          "scope": "entitlement-approved NSE cash watchlist",
+          "review_date": "2026-11-20"
+        },
+        "internal_analytics": {
+          "state": "PERMITTED",
+          "source": "provider_agreement",
+          "document_reference": "test-only:fyers-permitted-fixture",
+          "scope": "entitlement-approved NSE cash watchlist",
+          "review_date": "2026-11-20"
+        },
+        "external_redistribution": {
+          "state": "PERMITTED",
+          "source": "provider_agreement",
+          "document_reference": "test-only:fyers-permitted-fixture",
+          "scope": "entitlement-approved NSE cash watchlist",
+          "review_date": "2026-11-20"
+        },
+        "retention": {
+          "state": "PERMITTED",
+          "source": "provider_agreement",
+          "document_reference": "test-only:fyers-permitted-fixture",
+          "scope": "entitlement-approved NSE cash watchlist",
+          "review_date": "2026-11-20"
+        },
+        "retention_period": {
+          "duration_days": 30,
+          "basis": "provider_agreement",
+          "document_reference": "test-only:fyers-permitted-fixture",
+          "review_date": "2026-11-20"
+        }
+      },
+      "limits": {
+        "max_symbols": 300,
+        "connections": 1,
+        "requests_per_second": null
+      }
+    }
+  ],
+  "rights_review": {
+    "status": "pending_written_evidence",
+    "review_date": "2026-11-20",
+    "required_evidence": [
+      "personal_capture",
+      "local_retention",
+      "historical_replay",
+      "backup_retention",
+      "internal_analytics",
+      "external_redistribution",
+      "retention_period"
+    ]
+  }
+}
