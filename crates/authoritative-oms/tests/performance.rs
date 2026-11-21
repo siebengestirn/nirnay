@@ -35,6 +35,7 @@ use trading_core::{
     Side,
     StrategyId,
     Venue,
+    permit_digest,
 };
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -65,11 +66,12 @@ fn intent(id: u64, quantity: i64) -> Result<OrderIntent, Box<dyn std::error::Err
     })
 }
 
-fn permit() -> PermitRef {
+fn permit(permit_id: u64, intent: &OrderIntent) -> PermitRef {
     PermitRef {
-        permit_id: 7,
+        permit_id,
         policy_version: "risk-bench-v1".to_owned(),
         snapshot_revision: 3,
+        digest: permit_digest(permit_id, "risk-bench-v1", 3, intent),
     }
 }
 
@@ -126,7 +128,7 @@ fn restart_recovery_after_k_commits_with_injected_fault() -> TestResult {
             store.create(
                 ClientOrderId::new(id)?,
                 &intent(id, 1)?,
-                &permit(),
+                &permit(id, &intent(id, 1)?),
                 id as i64 * 1_000,
             )?;
         }
@@ -135,7 +137,7 @@ fn restart_recovery_after_k_commits_with_injected_fault() -> TestResult {
         let failed = store.create(
             ClientOrderId::new(uncertain)?,
             &intent(uncertain, 1)?,
-            &permit(),
+            &permit(uncertain, &intent(uncertain, 1)?),
             uncertain as i64 * 1_000,
         );
         assert!(failed.is_err(), "the injected sync failure is surfaced");
@@ -171,7 +173,7 @@ fn duplicate_event_handling_rate() -> TestResult {
     let path = directory.path().join("oms.journal");
     let mut store = OmsStore::open(&path)?;
     let client = ClientOrderId::new(1)?;
-    store.create(client, &intent(1, 10)?, &permit(), 1_000)?;
+    store.create(client, &intent(1, 10)?, &permit(7, &intent(1, 10)?), 1_000)?;
     store.accept_risk_approved(client, 1_010)?;
     let claim = store
         .claim("bench-dispatcher", 2_000, 1_000)?
@@ -222,7 +224,7 @@ fn reconciliation_completeness_against_injected_unknown_set() -> TestResult {
     let mut store = OmsStore::open(&path)?;
     for id in 1..=UNKNOWN_ORDERS {
         let client = ClientOrderId::new(id)?;
-        store.create(client, &intent(id, 1)?, &permit(), 1_000)?;
+        store.create(client, &intent(id, 1)?, &permit(id, &intent(id, 1)?), 1_000)?;
         store.accept_risk_approved(client, 1_010)?;
         let claim = store
             .claim("bench-dispatcher", 2_000, 1_000)?

@@ -1312,6 +1312,7 @@ dependencies = [
 name = "paper-runner"
 version = "0.1.0"
 dependencies = [
+ "account-journal",
  "authoritative-oms",
  "broker-adapter",
  "market-event",
@@ -2275,6 +2276,7 @@ dependencies = [
  "market-types",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "thiserror",
 ]
 

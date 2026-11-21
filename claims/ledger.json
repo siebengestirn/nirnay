@@ -417,6 +417,62 @@
         ]
       },
       "falsifier": "A caller can fabricate all six observations without registering owners, forge another owner's token, pass a safe_for_new_risk boolean or string verdict; a persisted engaged switch is cleared by unauthenticated replay or a release without evidenced reason; or a risk-reducing release/apply_fill is denied by a health condition."
+    },
+    {
+      "id": "CLM-045",
+      "statement": "A risk permit is bound to exact order terms by a deterministic SHA-256 digest carried in PermitRef and recomputed in OmsStore::create; a tampered intent, rewritten permit identity or spent permit cannot open an order, while an identical replay is a no-op even after restart.",
+      "status": "implemented",
+      "scope": {
+        "files": [
+          "crates/trading-core/src/risk.rs",
+          "crates/risk-authority/src/authority.rs",
+          "crates/authoritative-oms/src/store.rs",
+          "crates/authoritative-oms/src/error.rs",
+          "crates/authoritative-oms/tests/permit_binding.rs"
+        ]
+      },
+      "falsifier": "A tampered intent or rewritten policy version/snapshot revision passes create; a permit replayed with a new client id opens a second order; an identical replay creates a second economic effect or consumes a second permit; or a consumed permit is forgotten after recovery. The digest is unkeyed integrity, not a signature: signed permits, KMS keys, production identity and deployed independent risk collectors are explicitly out of scope."
+    },
+    {
+      "id": "CLM-046",
+      "statement": "Strategy and synthetic sector exposure are aggregated in exact paise inside the authority mutex, projected once per intent and updated with checked arithmetic across reservation, fill and release; two orders under an order cap but over a strategy cap are denied and a distinct strategy uses its own bucket.",
+      "status": "implemented",
+      "scope": {
+        "files": [
+          "crates/risk-engine/src/lib.rs",
+          "crates/risk-authority/src/authority.rs",
+          "crates/risk-authority/tests/risk_controls.rs"
+        ]
+      },
+      "falsifier": "Two same-strategy intents summing past the strategy cap are both accepted; a distinct strategy is charged to the first bucket; a release or fill underflows a bucket silently; or an unlabelled instrument passes once a sector cap is configured. A real NSE sector master is external reference data and remains BLOCKED."
+    },
+    {
+      "id": "CLM-047",
+      "statement": "Stress, liquidity, Greeks and borrow controls are typed, integer-exact and fail closed on missing synthetic evidence: a configured loss breach, over-participation order, greeks-less derivative and short without borrow or above cost are all denied.",
+      "status": "implemented",
+      "scope": {
+        "files": [
+          "crates/risk-engine/src/lib.rs",
+          "crates/risk-engine/tests/risk.rs",
+          "crates/risk-authority/src/observation.rs",
+          "crates/risk-authority/src/authority.rs",
+          "crates/risk-authority/tests/risk_controls.rs"
+        ]
+      },
+      "falsifier": "A configured parallel shift produces a projected loss past the cap yet is accepted; an order consumes more than the configured fraction of depth or passes with no depth; over-limit or missing derivative greeks pass; or a short with no borrow or above-cost financing passes. Real stress calibration, ADV/depth history, vol/strike surfaces, borrow/funding rates and derivatives expansion remain BLOCKED."
+    },
+    {
+      "id": "CLM-048",
+      "statement": "The deterministic recovery drill observes committed prefixes, poisoned writers, a persisted kill switch, a latched reconciliation block and a verified ledger replay at every OMS and account-journal append boundary.",
+      "status": "implemented",
+      "scope": {
+        "files": [
+          "apps/paper-runner/tests/recovery_drill.rs",
+          "crates/authoritative-oms/src/store.rs",
+          "crates/risk-authority/src/control.rs"
+        ]
+      },
+      "falsifier": "A torn OMS or account-journal tail is accepted on recovery, a poisoned writer mutates state, an engaged switch clears across restart, a later Matched reconciliation clears a digest-mismatch latch without authenticated resolution, or the ledger replay fails on the committed prefix. This in-process drill is not independent certification, HA failover, multi-region recovery or certified broker delivery, all of which remain BLOCKED."
     }
   ]
 }

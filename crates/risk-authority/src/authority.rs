@@ -51,6 +51,7 @@ use trading_core::{
     StrategyId,
     TradeDate,
     Venue,
+    permit_digest,
 };
 
 use crate::{
@@ -146,6 +147,19 @@ impl Reservation {
         }
         Ok(())
     }
+
+    /// Deterministic, unkeyed digest binding this permit to the exact order
+    /// terms it authorized. The OMS recomputes the same value from its stored
+    /// intent and `PermitRef` before accepting an order.
+    #[must_use]
+    pub fn digest(&self, intent: &OrderIntent) -> String {
+        permit_digest(
+            self.permit_id,
+            &self.assessment.policy_version,
+            self.snapshot_revision,
+            intent,
+        )
+    }
 }
 
 /// Read-only view of authority state for operating evidence and tests.
@@ -155,6 +169,8 @@ pub struct AuthoritySnapshot {
     pub now: LogicalNanos,
     pub gross_exposure_paise: Paise,
     pub pending_gross_exposure_paise: Paise,
+    pub strategy_exposure: BTreeMap<StrategyId, Paise>,
+    pub sector_exposure: BTreeMap<String, Paise>,
     pub open_orders: u32,
     pub orders_last_second: u32,
     pub positions: BTreeMap<InstrumentId, i64>,
@@ -179,6 +195,8 @@ struct AuthorityState {
     pending_sell: BTreeMap<InstrumentId, i64>,
     gross_exposure_paise: Paise,
     pending_gross_exposure_paise: Paise,
+    strategy_exposure: BTreeMap<StrategyId, Paise>,
+    sector_exposure: BTreeMap<String, Paise>,
     open_orders: u32,
     order_times: VecDeque<LogicalNanos>,
     reservations: BTreeMap<IntentId, Reservation>,
@@ -207,6 +225,8 @@ impl Default for AuthorityState {
             pending_sell: BTreeMap::new(),
             gross_exposure_paise: Paise(0),
             pending_gross_exposure_paise: Paise(0),
+            strategy_exposure: BTreeMap::new(),
+            sector_exposure: BTreeMap::new(),
             open_orders: 0,
             order_times: VecDeque::new(),
             reservations: BTreeMap::new(),
@@ -252,6 +272,9 @@ pub struct RiskAuthority {
     account_id: AccountId,
     policy: ValidatedRiskPolicy,
     instruments: BTreeMap<InstrumentId, Instrument>,
+    /// Synthetic instrument-to-sector mapping. Absent labels deny new risk
+    /// once a sector cap is configured in the policy.
+    sectors: BTreeMap<InstrumentId, String>,
     trade_date: TradeDate,
     observation_policy: ObservationPolicy,
     control: Box<dyn ControlStore + Send + Sync>,
@@ -298,6 +321,7 @@ impl RiskAuthority {
                 .into_iter()
                 .map(|instrument| (instrument.instrument_id.clone(), instrument))
                 .collect(),
+            sectors: BTreeMap::new(),
             trade_date,
             observation_policy: ObservationPolicy::default(),
             control,
@@ -305,11 +329,31 @@ impl RiskAuthority {
         }
     }
 
+    /// Install a synthetic instrument-to-sector map. This is a fixture-only
+    /// placeholder: no real NSE sector master is imported or claimed.
+    #[must_use]
+    pub fn with_sectors(mut self, sectors: BTreeMap<InstrumentId, String>) -> Self {
+        self.sectors = sectors;
+        self
+    }
+
     /// Override authority-owned observation limits. Immutable after build.
     #[must_use]
     pub fn with_observation_policy(mut self, policy: ObservationPolicy) -> Self {
         self.observation_policy = policy;
         self
+    }
+
+    /// Expose the deterministic permit-to-intent digest for a committed
+    /// reservation. Deserialized or fabricated reservations are rejected by
+    /// the same invariant check used before a permit is issued.
+    pub fn permit_digest(
+        &self,
+        reservation: &Reservation,
+        intent: &OrderIntent,
+    ) -> Result<String, AuthorityError> {
+        reservation.validate_invariants()?;
+        Ok(reservation.digest(intent))
     }
 
     /// Whether the kill switch is currently engaged (including persisted
@@ -809,6 +853,24 @@ impl RiskAuthority {
             AuthorityState::pending_quantity(&state.pending_buy, &intent.instrument_id)?;
         let pending_sell_quantity =
             AuthorityState::pending_quantity(&state.pending_sell, &intent.instrument_id)?;
+        // The context carries the *current* grouped exposures; `evaluate_risk`
+        // adds the order notional once to project them.
+        let strategy_exposure = state
+            .strategy_exposure
+            .get(&intent.strategy_id)
+            .copied()
+            .unwrap_or(Paise(0));
+        let sector_label = self.sectors.get(&intent.instrument_id).cloned();
+        let sector_exposure = sector_label
+            .as_ref()
+            .and_then(|label| state.sector_exposure.get(label))
+            .copied()
+            .unwrap_or(Paise(0));
+        let is_derivative = instrument.as_ref().is_some_and(|value| {
+            value.expiry_date.is_some()
+                || value.strike_price_paise.is_some()
+                || value.option_kind.is_some()
+        });
 
         Ok(RiskContext {
             account_id: self.account_id,
@@ -824,6 +886,15 @@ impl RiskAuthority {
             pending_sell_quantity,
             gross_exposure_paise: state.gross_exposure_paise,
             pending_gross_exposure_paise: state.pending_gross_exposure_paise,
+            strategy_exposure_paise: strategy_exposure,
+            sector_label,
+            sector_exposure_paise: sector_exposure,
+            positions: state.positions.clone(),
+            marks_paise: market.payload.marks_paise.clone(),
+            depth: market.payload.depth,
+            greeks: market.payload.greeks,
+            is_derivative,
+            borrow: market.payload.borrow,
             daily_pnl: state.daily_pnl,
             open_orders: state.open_orders,
             orders_last_second: state.orders_last_second(),
@@ -848,6 +919,22 @@ impl RiskAuthority {
             .pending_gross_exposure_paise
             .checked_add(notional_paise)
             .map_err(|_| AuthorityError::NotionalOverflow)?;
+        let strategy_entry = state
+            .strategy_exposure
+            .entry(intent.strategy_id)
+            .or_insert(Paise(0));
+        *strategy_entry = strategy_entry
+            .checked_add(notional_paise)
+            .map_err(|_| AuthorityError::NotionalOverflow)?;
+        if let Some(label) = self.sectors.get(&intent.instrument_id) {
+            let sector_entry = state
+                .sector_exposure
+                .entry(label.clone())
+                .or_insert(Paise(0));
+            *sector_entry = sector_entry
+                .checked_add(notional_paise)
+                .map_err(|_| AuthorityError::NotionalOverflow)?;
+        }
         let pending = match intent.side {
             Side::Buy => &mut state.pending_buy,
             Side::Sell => &mut state.pending_sell,
@@ -919,6 +1006,7 @@ impl RiskAuthority {
                 ))?,
         );
         self.remove_pending(&mut state, &reservation)?;
+        self.release_grouped_exposure(&mut state, &reservation)?;
         state.open_orders = state
             .open_orders
             .checked_sub(1)
@@ -956,6 +1044,31 @@ impl RiskAuthority {
                 ))?,
         );
         self.remove_pending(&mut state, &reservation)?;
+        // The strategy/sector buckets already include this reservation from
+        // commit time; a fill only moves pending exposure into a position.
+        // Verify the checked cover before treating the fill as accounted.
+        let strategy_cover = state
+            .strategy_exposure
+            .get(&reservation.strategy_id)
+            .copied()
+            .unwrap_or(Paise(0));
+        if strategy_cover.0 < reservation.reserved_notional_paise.0 {
+            return Err(AuthorityError::AccountingOverflow(
+                "strategy exposure".to_owned(),
+            ));
+        }
+        if let Some(label) = self.sectors.get(&reservation.instrument_id) {
+            let sector_cover = state
+                .sector_exposure
+                .get(label)
+                .copied()
+                .unwrap_or(Paise(0));
+            if sector_cover.0 < reservation.reserved_notional_paise.0 {
+                return Err(AuthorityError::AccountingOverflow(
+                    "sector exposure".to_owned(),
+                ));
+            }
+        }
         let signed = match reservation.side {
             Side::Buy => reservation.quantity.get(),
             Side::Sell => -reservation.quantity.get(),
@@ -974,6 +1087,29 @@ impl RiskAuthority {
         state.consumed.insert(intent_id);
         state.revision = state.revision.saturating_add(1);
         Ok(reservation)
+    }
+
+    /// Subtract a released reservation from its strategy and (when mapped)
+    /// sector buckets. A missing or insufficient bucket is a hard accounting
+    /// failure, never a silent clamp.
+    fn release_grouped_exposure(
+        &self,
+        state: &mut AuthorityState,
+        reservation: &Reservation,
+    ) -> Result<(), AuthorityError> {
+        decrement_exposure(
+            &mut state.strategy_exposure,
+            &reservation.strategy_id,
+            reservation.reserved_notional_paise,
+        )?;
+        if let Some(label) = self.sectors.get(&reservation.instrument_id) {
+            decrement_exposure(
+                &mut state.sector_exposure,
+                label,
+                reservation.reserved_notional_paise,
+            )?;
+        }
+        Ok(())
     }
 
     fn remove_pending(
@@ -1007,6 +1143,8 @@ impl RiskAuthority {
             now: state.now,
             gross_exposure_paise: state.gross_exposure_paise,
             pending_gross_exposure_paise: state.pending_gross_exposure_paise,
+            strategy_exposure: state.strategy_exposure.clone(),
+            sector_exposure: state.sector_exposure.clone(),
             open_orders: state.open_orders,
             orders_last_second: state.orders_last_second(),
             positions: state.positions.clone(),
@@ -1019,5 +1157,28 @@ impl RiskAuthority {
 
     pub fn policy_version(&self) -> &str {
         &self.policy.version
+    }
+}
+
+fn decrement_exposure<K: Ord + Clone>(
+    bucket: &mut BTreeMap<K, Paise>,
+    key: &K,
+    amount: Paise,
+) -> Result<(), AuthorityError> {
+    match bucket.entry(key.clone()) {
+        std::collections::btree_map::Entry::Vacant(_) => Err(AuthorityError::AccountingOverflow(
+            "grouped exposure".to_owned(),
+        )),
+        std::collections::btree_map::Entry::Occupied(mut entry) => {
+            let remaining = Paise(entry.get().0.checked_sub(amount.0).ok_or_else(|| {
+                AuthorityError::AccountingOverflow("grouped exposure".to_owned())
+            })?);
+            if remaining.0 == 0 {
+                entry.remove();
+            } else {
+                *entry.get_mut() = remaining;
+            }
+            Ok(())
+        }
     }
 }

@@ -329,6 +329,14 @@ fn engine_config(spec: &RunSpec, instrument: Instrument) -> anyhow::Result<Engin
         max_price_deviation_ppm: spec.risk.max_price_deviation_ppm,
         max_quote_age_ns: spec.max_quote_age_ns,
         allow_short: spec.risk.allow_short,
+        max_strategy_exposure_paise: Paise(spec.risk.max_gross_exposure_paise),
+        max_sector_exposure_paise: None,
+        stress_scenario: None,
+        max_stress_loss_paise: None,
+        max_participation_ppm: None,
+        greek_limits: None,
+        max_borrow_quantity: None,
+        max_financing_cost_paise: None,
     };
     let rates = [Product::Delivery, Product::Intraday]
         .into_iter()
