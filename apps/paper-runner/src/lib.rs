@@ -7,13 +7,21 @@
 
 pub mod report;
 
-use std::path::Path;
+use std::{
+    collections::BTreeMap, //
+    path::Path,
+};
 
 use authoritative_oms::{
     BrokerOrderId, //
     ClientOrderId,
+    FillEvent,
     OmsStore,
     PermitRef,
+    Projector,
+    ReconciliationInput,
+    ReconciliationOutcome,
+    reconcile,
 };
 use broker_adapter::{
     BrokerAdapter, //
@@ -48,7 +56,18 @@ use report::{
     PaperReport,
 };
 use risk_authority::{
-    FeedObservation, //
+    AccountJournalObservation, //
+    FeedObservation,
+    FileControlStore,
+    MarketObservation,
+    Observation,
+    ObservationSource,
+    Observations,
+    OmsObservation,
+    OperatorObservation,
+    OpsObservation,
+    OwnerTokens,
+    ReconciliationObservation,
     RiskAuthority,
     SequenceGap,
 };
@@ -86,12 +105,14 @@ use trading_core::{
     ListingStatus,
     ListingTerms,
     LogicalNanos,
+    OpeningBalanceEvidence,
     OrderIntent,
     Paise,
     PricePaise,
     Product,
     Quantity,
     QuoteSnapshot,
+    ReconciliationReport,
     Segment,
     SettlementRegime,
     Side,
@@ -129,6 +150,8 @@ pub struct PaperInput {
 pub struct PaperRun {
     pub report: PaperReport,
     pub oms: OmsStore,
+    pub ledger: Projector,
+    pub reconciliation: ReconciliationOutcome,
 }
 
 fn instrument(input: &PaperInput) -> Result<Instrument, String> {
@@ -304,6 +327,167 @@ fn thresholds() -> RuntimeThresholds {
     }
 }
 
+fn observation_policy() -> risk_authority::ObservationPolicy {
+    let limits = thresholds();
+    risk_authority::ObservationPolicy {
+        max_market_age_ns: limits.max_feed_age_ns,
+        max_oms_age_ns: limits.max_feed_age_ns,
+        max_account_journal_age_ns: limits.max_feed_age_ns,
+        max_reconciliation_age_ns: limits.max_feed_age_ns,
+        max_ops_age_ns: limits.max_feed_age_ns,
+        max_operator_age_ns: limits.max_feed_age_ns,
+        max_sequence_gaps: limits.max_sequence_gaps,
+        max_journal_append_latency_ns: limits.max_journal_append_latency_ns,
+        max_journal_queue_depth: limits.max_journal_queue_depth,
+        min_disk_available_bytes: limits.min_disk_available_bytes,
+        max_unknown_orders: limits.max_unknown_orders,
+        max_reconciliation_differences: limits.max_reconciliation_differences,
+    }
+}
+
+fn paper_fill_event(
+    client: ClientOrderId,
+    execution_id: &str,
+    broker_event_id: &str,
+    quantity: i64,
+    price_paise: i64,
+    now_ns: i64,
+) -> FillEvent {
+    FillEvent {
+        schema_version: 1,
+        execution_id: execution_id.to_owned(),
+        broker_event_id: broker_event_id.to_owned(),
+        client_order_id: client,
+        oms_order_id: client.to_string(),
+        side: Side::Buy,
+        quantity,
+        price_paise,
+        currency: "INR".to_owned(),
+        broker_timestamp_ns: now_ns,
+        received_at_ns: now_ns,
+        source: "paper-simulated-broker".to_owned(),
+        account_scope: "paper".to_owned(),
+        charges_paise: 0,
+        charge_status: authoritative_oms::ChargeStatus::Estimated,
+        provenance: "paper-runner synthetic fill".to_owned(),
+    }
+}
+
+fn fills_digest(store: &OmsStore) -> String {
+    let encoded = serde_json::to_vec(&store.fills()).unwrap_or_default();
+    Sha256::digest(&encoded)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// Build all six owner observations from the synthetic paper sources. Every
+/// market and operator field is explicitly labelled synthetic; no verdict is
+/// supplied by the caller.
+#[allow(clippy::too_many_arguments)] // six owners plus synthetic fixture inputs
+fn build_observations(
+    feed: FeedObservation,
+    store: &OmsStore,
+    projector: &Projector,
+    health: &HealthSnapshot,
+    report: ReconciliationReport,
+    replay_matched: bool,
+    kill_switch_engaged: bool,
+    source_sequence: Option<u64>,
+    tokens: OwnerTokens,
+) -> Observations {
+    // Observation envelopes use the origin of the logical clock; the authority
+    // clock is advanced by the measured feed age, so freshness is a real check.
+    let at = LogicalNanos::ZERO;
+    let verification = projector.verification_report();
+    Observations {
+        market: Some(Observation::new(
+            tokens.market,
+            ObservationSource::MarketDataKernel,
+            at,
+            at,
+            1,
+            MarketObservation {
+                feed,
+                session_open: true,
+                kernel_schema_version: market_kernel::KERNEL_SESSION_SCHEMA_VERSION,
+                source_sequence,
+                connection_epoch: Some(1),
+                synthetic: true,
+            },
+        )),
+        oms: Some(Observation::new(
+            tokens.oms,
+            ObservationSource::Oms,
+            at,
+            at,
+            1,
+            OmsObservation {
+                fills_digest: fills_digest(store),
+                unresolved_count: u32::try_from(
+                    store.unresolved().map_or(0, |orders| orders.len()),
+                )
+                .unwrap_or(u32::MAX),
+                last_journal_digest: store.state_digest().to_owned(),
+                is_poisoned: store.is_poisoned(),
+            },
+        )),
+        account_journal: Some(Observation::new(
+            tokens.account_journal,
+            ObservationSource::AccountJournal,
+            at,
+            at,
+            1,
+            AccountJournalObservation {
+                head_hash_hex: verification.head_hash_hex,
+                record_count: verification.record_count,
+                ledger_state_digest: projector.state().state_digest(),
+                opening_balance_evidence_ref: Some("paper-synthetic-statement".to_owned()),
+            },
+        )),
+        reconciliation: Some(Observation::new(
+            tokens.reconciliation,
+            ObservationSource::Reconciliation,
+            at,
+            at,
+            1,
+            ReconciliationObservation {
+                report,
+                replay_digest_matched: replay_matched,
+            },
+        )),
+        ops: Some(Observation::new(
+            tokens.ops,
+            ObservationSource::Ops,
+            at,
+            at,
+            1,
+            OpsObservation {
+                feed_age_ns: health.feed_age_ns,
+                sequence_gaps: health.sequence_gaps,
+                journal_append_latency_ns: health.journal_append_latency_ns,
+                journal_queue_depth: health.journal_queue_depth,
+                disk_available_bytes: health.disk_available_bytes,
+                unknown_orders: health.unknown_orders,
+                reconciliation_differences: health.reconciliation_differences,
+            },
+        )),
+        operator: Some(Observation::new(
+            tokens.operator,
+            ObservationSource::OperatorControl,
+            at,
+            at,
+            1,
+            OperatorObservation {
+                kill_switch_engaged,
+                actor_id: "paper-synthetic-operator".to_owned(),
+                reason: "synthetic bounded paper run fixture".to_owned(),
+                release_evidence_ref: Some("paper-synthetic-release".to_owned()),
+            },
+        )),
+    }
+}
+
 /// Derive the top of book from the kernel's typed payload. No parallel quote
 /// collection is used by the strategy or the risk authority.
 fn kernel_top_of_book(event: &KernelEvent) -> Result<(i64, i64), String> {
@@ -327,37 +511,75 @@ fn kernel_quote(bid: i64, ask: i64, instrument_id: &str) -> Result<QuoteSnapshot
     })
 }
 
-/// Execute one bounded paper pass over a synthetic session.
+/// Execute one bounded paper pass over a synthetic session. All health facts
+/// are synthetic and labelled as such; the authority alone decides new risk.
 pub fn run_paper(input: &PaperInput, oms_path: &Path) -> Result<PaperRun, String> {
     let session = synthetic_session(input)?;
     let events = project_session(&session).map_err(|e| e.to_string())?;
     let instrument = instrument(input)?;
+    let instrument_id =
+        InstrumentId::new(input.instrument_id.clone()).map_err(|e| e.to_string())?;
+    let account_id = AccountId::new(input.account_id).map_err(|e| e.to_string())?;
     let policy = ValidatedRiskPolicy::from_policy(&input.policy).map_err(|e| e.to_string())?;
-    let authority = RiskAuthority::new(
-        AccountId::new(input.account_id).map_err(|e| e.to_string())?,
+
+    // Owner-local control file: no service, no database. A first synthetic run
+    // releases the fail-closed switch with an explicitly labelled fixture.
+    let control_path = oms_path.with_extension("control.jsonl");
+    let first_run = !control_path.exists();
+    let authority = RiskAuthority::new_with_control_store(
+        account_id,
         policy,
         vec![instrument],
         input.trade_date,
-    );
+        Box::new(FileControlStore::new(&control_path)),
+    )
+    .with_observation_policy(observation_policy());
     authority
         .set_now(LogicalNanos::new(input.feed_age_ns))
         .map_err(|e| e.to_string())?;
-    // M3.6.0: readiness is now fail-closed. These are synthetic run inputs,
-    // not measured operational evidence; M3.6.1 replaces them with typed,
-    // owned health observations enforced inside the authority.
+    let tokens = authority.register_all_owners().map_err(|e| e.to_string())?;
+    if first_run {
+        authority
+            .set_kill_switch(
+                tokens.operator,
+                false,
+                "paper-synthetic-operator".to_owned(),
+                "synthetic bounded paper run fixture".to_owned(),
+                Some("paper-synthetic-release".to_owned()),
+            )
+            .map_err(|e| e.to_string())?;
+    }
+    // Synthetic operator resolution at run start. There is no real operator
+    // in this harness; the reconciliation latch is otherwise sticky.
     authority
-        .set_session_open(true)
+        .set_reconciliation_blocked(
+            tokens.reconciliation,
+            false,
+            "synthetic reconciliation resolution".to_owned(),
+            Some("paper-synthetic-resolution".to_owned()),
+        )
         .map_err(|e| e.to_string())?;
-    authority
-        .set_snapshot_available(true)
-        .map_err(|e| e.to_string())?;
-    authority
-        .set_kill_switch(false)
-        .map_err(|e| e.to_string())?;
-    authority
-        .set_reconciliation_blocked(false)
-        .map_err(|e| e.to_string())?;
+
     let mut store = OmsStore::open(oms_path).map_err(|e| e.to_string())?;
+    let mut projector = Projector::open(oms_path.with_extension("ledger"), account_id)
+        .map_err(|e| e.to_string())?;
+    projector
+        .open_account(
+            "paper",
+            Paise(1_000_000),
+            input.trade_date,
+            OpeningBalanceEvidence {
+                statement_ref: "paper-synthetic-statement".to_owned(),
+                journal_ref: JournalRef {
+                    sequence: 1,
+                    hash_hex: store.state_digest().to_owned(),
+                },
+                observed_at_ns: i64::try_from(input.feed_age_ns).unwrap_or(i64::MAX),
+            },
+        )
+        .map_err(|e| e.to_string())?;
+    let mut instruments = BTreeMap::new();
+
     let mut strategy = RationalEmaCross::from_artifact(
         &frozen_artifact(input),
         input.fast,
@@ -394,11 +616,12 @@ pub fn run_paper(input: &PaperInput, oms_path: &Path) -> Result<PaperRun, String
         open_orders: 0,
         unknown_orders: 0,
         reconciliation_differences: 0,
-        kill_switch_engaged: false,
+        kill_switch_engaged: authority.kill_switch_engaged().map_err(|e| e.to_string())?,
         account_snapshot_available: true,
     };
 
     let mut decisions = Vec::new();
+    let mut deliveries: Vec<FillEvent> = Vec::new();
     let mut intents_emitted = 0_usize;
     let mut reservations = 0_usize;
     let mut ordinal = 0_u64;
@@ -437,7 +660,6 @@ pub fn run_paper(input: &PaperInput, oms_path: &Path) -> Result<PaperRun, String
             rejection_reason: None,
         };
 
-        // Refresh operational health from live OMS state before each gate.
         let mut open_orders = 0_u32;
         for id in 1..=ordinal {
             if let Some(order) = store
@@ -451,15 +673,6 @@ pub fn run_paper(input: &PaperInput, oms_path: &Path) -> Result<PaperRun, String
         health.open_orders = open_orders;
         health.unknown_orders =
             u32::try_from(store.unresolved().map_err(|e| e.to_string())?.len()).unwrap_or(u32::MAX);
-        let verdict = health.evaluate(&thresholds());
-        if !verdict.safe_for_new_risk {
-            record.rejection_reason = Some(format!(
-                "health gate blocked new risk: {}",
-                verdict.reasons.join(", ")
-            ));
-            decisions.push(record);
-            continue;
-        }
 
         let gap = if matches!(
             event.quality,
@@ -474,19 +687,49 @@ pub fn run_paper(input: &PaperInput, oms_path: &Path) -> Result<PaperRun, String
         };
         let feed_observation = FeedObservation {
             quote: Some(kernel_quote(bid, ask, input.instrument_id.as_str())?),
-            received_at: LogicalNanos::new(input.feed_age_ns),
+            received_at: LogicalNanos::ZERO,
             gap,
             book_complete: true,
         };
-        let reservation =
-            match authority.evaluate_and_reserve(order.clone(), feed_observation, None) {
-                Ok(value) => value,
-                Err(error) => {
-                    record.rejection_reason = Some(error.to_string());
-                    decisions.push(record);
-                    continue;
-                }
-            };
+        let reconciliation = reconcile(
+            &store,
+            &projector,
+            &ReconciliationInput {
+                deliveries: deliveries.clone(),
+                instruments: instruments.clone(),
+            },
+        )
+        .map_err(|e| e.to_string())?;
+        health.reconciliation_differences = u32::try_from(
+            reconciliation
+                .differences
+                .iter()
+                .filter(|difference| difference.is_blocking())
+                .count(),
+        )
+        .unwrap_or(u32::MAX);
+        let observations = build_observations(
+            feed_observation,
+            &store,
+            &projector,
+            &health,
+            reconciliation.report.clone(),
+            projector
+                .verify_replay()
+                .map_err(|e| e.to_string())?
+                .matched,
+            authority.kill_switch_engaged().map_err(|e| e.to_string())?,
+            event.sequence,
+            tokens,
+        );
+        let reservation = match authority.evaluate_and_reserve(order.clone(), observations, None) {
+            Ok(value) => value,
+            Err(error) => {
+                record.rejection_reason = Some(error.to_string());
+                decisions.push(record);
+                continue;
+            }
+        };
         record.risk_accepted = true;
         record.permit_id = Some(reservation.permit_id);
         reservations += 1;
@@ -525,27 +768,54 @@ pub fn run_paper(input: &PaperInput, oms_path: &Path) -> Result<PaperRun, String
                     )
                     .map_err(|e| e.to_string())?;
                 record.broker_order_id = Some(ack.broker_order_id);
-                for event in broker.poll_events().map_err(|e| e.to_string())? {
+                for broker_event in broker.poll_events().map_err(|e| e.to_string())? {
                     if let BrokerEvent::Filled {
                         execution_id,
                         broker_event_id,
                         quantity,
                         price_paise,
                         ..
-                    } = event
+                    } = broker_event
                     {
+                        let fill = paper_fill_event(
+                            client,
+                            &execution_id,
+                            &broker_event_id,
+                            quantity,
+                            price_paise,
+                            ordinal as i64 + 5,
+                        );
                         let applied = store
-                            .apply_fill(
-                                client,
-                                &execution_id,
-                                &broker_event_id,
-                                quantity,
-                                price_paise,
-                                ordinal as i64 + 5,
-                            )
+                            .apply_typed_fill(fill.clone())
                             .map_err(|e| e.to_string())?;
+                        deliveries.push(fill);
+                        instruments.insert(execution_id.clone(), instrument_id.clone());
                         if applied {
                             position = position.saturating_add(quantity);
+                            projector
+                                .project_fill(
+                                    store.fill(&execution_id).ok_or("missing persisted fill")?,
+                                    &instrument_id,
+                                )
+                                .map_err(|e| e.to_string())?;
+                            // Paper-only mark from the same synthetic kernel
+                            // quote the strategy consumed; explicit rounding
+                            // of the exact doubled-paise midpoint.
+                            let midpoint = PricePaise::new(Paise(bid))
+                                .and_then(|bid| {
+                                    PricePaise::new(Paise(ask)).map(|ask| bid.midpoint_doubled(ask))
+                                })
+                                .and_then(|doubled| doubled.rounded_paise())
+                                .map_err(|e| e.to_string())?;
+                            let mark = PricePaise::new(midpoint).map_err(|e| e.to_string())?;
+                            let mut marks = BTreeMap::new();
+                            marks.insert(
+                                "paper".to_owned(),
+                                BTreeMap::from([(instrument_id.clone(), mark)]),
+                            );
+                            projector
+                                .mark_to_market(&marks)
+                                .map_err(|e| e.to_string())?;
                             authority
                                 .apply_fill(order.intent_id)
                                 .map_err(|e| e.to_string())?;
@@ -584,11 +854,50 @@ pub fn run_paper(input: &PaperInput, oms_path: &Path) -> Result<PaperRun, String
         decisions.push(record);
     }
 
-    // Final verdict reflects state after the last decision, including any
-    // UNKNOWN orders left by a dispatch timeout.
     health.unknown_orders =
         u32::try_from(store.unresolved().map_err(|e| e.to_string())?.len()).unwrap_or(u32::MAX);
-    let final_verdict = health.evaluate(&thresholds());
+    let reconciliation = reconcile(
+        &store,
+        &projector,
+        &ReconciliationInput {
+            deliveries: deliveries.clone(),
+            instruments: instruments.clone(),
+        },
+    )
+    .map_err(|e| e.to_string())?;
+    health.reconciliation_differences = u32::try_from(
+        reconciliation
+            .differences
+            .iter()
+            .filter(|difference| difference.is_blocking())
+            .count(),
+    )
+    .unwrap_or(u32::MAX);
+    let final_observations = build_observations(
+        FeedObservation {
+            quote: None,
+            received_at: LogicalNanos::ZERO,
+            gap: None,
+            book_complete: true,
+        },
+        &store,
+        &projector,
+        &health,
+        reconciliation.report.clone(),
+        projector
+            .verify_replay()
+            .map_err(|e| e.to_string())?
+            .matched,
+        authority.kill_switch_engaged().map_err(|e| e.to_string())?,
+        None,
+        tokens,
+    );
+    let final_verdict = authority.check_observations(&final_observations);
+    let final_safe = final_verdict.is_ok();
+    let final_reasons = final_verdict
+        .err()
+        .map(|error| vec![error.to_string()])
+        .unwrap_or_default();
     let input_bytes = serde_json::to_vec(input).map_err(|e| e.to_string())?;
     let input_digest = Sha256::digest(&input_bytes)
         .iter()
@@ -598,12 +907,17 @@ pub fn run_paper(input: &PaperInput, oms_path: &Path) -> Result<PaperRun, String
         events.len(),
         intents_emitted,
         reservations,
-        final_verdict.safe_for_new_risk,
-        final_verdict.reasons,
+        final_safe,
+        final_reasons,
         decisions,
         input_digest,
     );
-    Ok(PaperRun { report, oms: store })
+    Ok(PaperRun {
+        report,
+        oms: store,
+        ledger: projector,
+        reconciliation,
+    })
 }
 
 #[cfg(test)]

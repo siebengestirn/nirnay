@@ -585,6 +585,16 @@ impl Projection {
                     self.reconciliation_blocked = true;
                 }
             }
+            // The M3.5.2 ledger payloads belong to the account-ledger stream,
+            // not to the paper-engine stream. Refuse them rather than silently
+            // projecting economic facts into the wrong state machine.
+            EventPayload::AccountOpenedEvidenced { .. }
+            | EventPayload::ExecutionProjected { .. } => {
+                return Err(inconsistent(
+                    sequence,
+                    "ledger projection payload is not valid in the paper engine stream",
+                ));
+            }
         }
         self.last_sequence = sequence;
         self.last_available_time = Some(envelope.times.available_time);

@@ -3,8 +3,9 @@
 //! The authority owns every fact that `evaluate_risk` consumes: account-global
 //! exposure, positions, pending orders, rate state, daily P&L, the logical
 //! clock, snapshot availability, kill switch and reconciliation state. A caller
-//! supplies only an [`OrderIntent`] and a raw [`FeedObservation`]; it cannot
-//! assert a `Healthy` flag, an exposure figure or an account snapshot.
+//! supplies only an [`OrderIntent`] and raw observations from registered owner
+//! adapters; it cannot assert a `Healthy` flag, an exposure figure, an account
+//! snapshot, or forge another owner's facts.
 //!
 //! Evaluation and reservation happen under a single mutex lock, so two
 //! concurrent callers can never both evaluate against the same stale state.
@@ -17,7 +18,12 @@ use std::{
         BTreeSet,
         VecDeque,
     },
-    sync::Mutex,
+    hash::{BuildHasher, RandomState},
+    sync::{
+        Mutex, //
+        atomic::{AtomicU64, Ordering},
+    },
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use risk_engine::{
@@ -48,11 +54,48 @@ use trading_core::{
 };
 
 use crate::{
-    error::AuthorityError, //
-    observation::FeedObservation,
+    control::{
+        ControlError, //
+        ControlStore,
+        KillSwitchState,
+        NoopControlStore,
+    },
+    error::{
+        AuthorityError, //
+        OpsThresholdKind,
+    },
+    observation::{
+        OBSERVATION_SCHEMA_VERSION, //
+        Observation,
+        ObservationPolicy,
+        ObservationSource,
+        Observations,
+        OmsObservation,
+        OpsObservation,
+        OwnerToken,
+        OwnerTokens,
+    },
 };
 
 const NANOS_PER_SECOND: u64 = 1_000_000_000;
+
+static NEXT_OWNER_NONCE: AtomicU64 = AtomicU64::new(1);
+
+/// Issue a process-local, unguessable token. The `RandomState` keys are seeded
+/// by the OS per instance, so an in-process caller cannot predict a token it
+/// did not receive from `register_owner`.
+fn issue_owner_token() -> OwnerToken {
+    let hasher = RandomState::new();
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_nanos());
+    let value = hasher.hash_one((
+        std::process::id(),
+        NEXT_OWNER_NONCE.fetch_add(1, Ordering::Relaxed),
+        nanos,
+    ));
+    OwnerToken::from_value(value)
+}
 
 /// A committed reservation: the only output that may proceed toward an OMS.
 /// It is a permit, not an order submission.
@@ -142,6 +185,9 @@ struct AuthorityState {
     decided: BTreeMap<IntentId, OrderIntent>,
     consumed: BTreeSet<IntentId>,
     next_permit: u64,
+    /// Only tokens issued by this authority are accepted for observations and
+    /// authenticated control actions.
+    owner_tokens: BTreeMap<ObservationSource, OwnerToken>,
 }
 
 impl Default for AuthorityState {
@@ -167,6 +213,7 @@ impl Default for AuthorityState {
             decided: BTreeMap::new(),
             consumed: BTreeSet::new(),
             next_permit: 1,
+            owner_tokens: BTreeMap::new(),
         }
     }
 }
@@ -206,18 +253,44 @@ pub struct RiskAuthority {
     policy: ValidatedRiskPolicy,
     instruments: BTreeMap<InstrumentId, Instrument>,
     trade_date: TradeDate,
+    observation_policy: ObservationPolicy,
+    control: Box<dyn ControlStore + Send + Sync>,
     state: Mutex<AuthorityState>,
 }
 
 impl RiskAuthority {
     /// Build an authority with validated policy and owned effective-dated
-    /// reference data. No order, OMS, broker or live dependency.
+    /// reference data. No order, OMS, broker or live dependency. Without a
+    /// control store the kill switch stays in memory and defaults engaged.
     pub fn new(
         account_id: AccountId,
         policy: ValidatedRiskPolicy,
         instruments: Vec<Instrument>,
         trade_date: TradeDate,
     ) -> Self {
+        Self::new_with_control_store(
+            account_id,
+            policy,
+            instruments,
+            trade_date,
+            Box::new(NoopControlStore),
+        )
+    }
+
+    /// Build an authority that loads and persists kill-switch state through
+    /// `control`. An absent or unreadable control record fails closed engaged.
+    pub fn new_with_control_store(
+        account_id: AccountId,
+        policy: ValidatedRiskPolicy,
+        instruments: Vec<Instrument>,
+        trade_date: TradeDate,
+        control: Box<dyn ControlStore + Send + Sync>,
+    ) -> Self {
+        let persisted = control.load_kill_switch().ok().flatten();
+        let mut state = AuthorityState::default();
+        if let Some(record) = persisted {
+            state.kill_switch_engaged = record.enabled;
+        }
         Self {
             account_id,
             policy,
@@ -226,8 +299,66 @@ impl RiskAuthority {
                 .map(|instrument| (instrument.instrument_id.clone(), instrument))
                 .collect(),
             trade_date,
-            state: Mutex::new(AuthorityState::default()),
+            observation_policy: ObservationPolicy::default(),
+            control,
+            state: Mutex::new(state),
         }
+    }
+
+    /// Override authority-owned observation limits. Immutable after build.
+    #[must_use]
+    pub fn with_observation_policy(mut self, policy: ObservationPolicy) -> Self {
+        self.observation_policy = policy;
+        self
+    }
+
+    /// Whether the kill switch is currently engaged (including persisted
+    /// state loaded at construction).
+    pub fn kill_switch_engaged(&self) -> Result<bool, AuthorityError> {
+        Ok(self.lock()?.kill_switch_engaged)
+    }
+
+    /// Register one producer and return its unguessable process-local token.
+    /// Re-registering the same source returns the same token.
+    pub fn register_owner(&self, source: ObservationSource) -> Result<OwnerToken, AuthorityError> {
+        let mut state = self.lock()?;
+        Ok(*state
+            .owner_tokens
+            .entry(source)
+            .or_insert_with(issue_owner_token))
+    }
+
+    /// Register all six owners in one call for in-process wiring.
+    pub fn register_all_owners(&self) -> Result<OwnerTokens, AuthorityError> {
+        Ok(OwnerTokens {
+            market: self.register_owner(ObservationSource::MarketDataKernel)?,
+            oms: self.register_owner(ObservationSource::Oms)?,
+            account_journal: self.register_owner(ObservationSource::AccountJournal)?,
+            reconciliation: self.register_owner(ObservationSource::Reconciliation)?,
+            ops: self.register_owner(ObservationSource::Ops)?,
+            operator: self.register_owner(ObservationSource::OperatorControl)?,
+        })
+    }
+
+    /// Authenticate a control action or observation against the registered
+    /// owner of `expected`.
+    fn check_owner_binding(
+        &self,
+        state: &AuthorityState,
+        evidence_token: OwnerToken,
+        expected: ObservationSource,
+    ) -> Result<(), AuthorityError> {
+        let registered = state.owner_tokens.get(&expected).copied().ok_or(
+            AuthorityError::UnregisteredProducer {
+                observation_source: expected,
+            },
+        )?;
+        if evidence_token != registered {
+            return Err(AuthorityError::ProducerTokenMismatch {
+                observation_source: expected,
+            });
+        }
+        Ok(())
     }
 
     fn lock(&self) -> Result<std::sync::MutexGuard<'_, AuthorityState>, AuthorityError> {
@@ -258,13 +389,65 @@ impl RiskAuthority {
         Ok(())
     }
 
-    pub fn set_kill_switch(&self, engaged: bool) -> Result<(), AuthorityError> {
-        self.lock()?.kill_switch_engaged = engaged;
+    /// Authored kill-switch decision from the registered operator owner. The
+    /// control store is fsynced before the in-memory flag changes, so a crash
+    /// between the two resolves to engaged on replay. Releasing an engaged
+    /// switch additionally requires a non-empty `release_evidence_ref`.
+    pub fn set_kill_switch(
+        &self,
+        token: OwnerToken,
+        engaged: bool,
+        actor_id: String,
+        reason: String,
+        release_evidence_ref: Option<String>,
+    ) -> Result<(), AuthorityError> {
+        let mut state = self.lock()?;
+        self.check_owner_binding(&state, token, ObservationSource::OperatorControl)?;
+        if !engaged
+            && release_evidence_ref
+                .as_ref()
+                .is_none_or(|reference| reference.trim().is_empty())
+        {
+            return Err(AuthorityError::MissingEvidence {
+                action: "kill_switch_release".to_owned(),
+            });
+        }
+        let revision = state.revision.saturating_add(1);
+        let record = KillSwitchState {
+            enabled: engaged,
+            actor_id,
+            reason,
+            revision,
+            at_ns: i64::try_from(state.now.get()).unwrap_or(i64::MAX),
+        };
+        self.control
+            .append_kill_switch(&record)
+            .map_err(|error: ControlError| AuthorityError::ControlFailure(error.to_string()))?;
+        state.kill_switch_engaged = engaged;
         Ok(())
     }
 
-    pub fn set_reconciliation_blocked(&self, blocked: bool) -> Result<(), AuthorityError> {
-        self.lock()?.reconciliation_blocked = blocked;
+    /// Clear the sticky reconciliation latch. Only the registered
+    /// reconciliation owner may do so, with a documented reason and evidence.
+    pub fn set_reconciliation_blocked(
+        &self,
+        token: OwnerToken,
+        blocked: bool,
+        _reason: String,
+        evidence_ref: Option<String>,
+    ) -> Result<(), AuthorityError> {
+        let mut state = self.lock()?;
+        self.check_owner_binding(&state, token, ObservationSource::Reconciliation)?;
+        if !blocked
+            && evidence_ref
+                .as_ref()
+                .is_none_or(|reference| reference.trim().is_empty())
+        {
+            return Err(AuthorityError::MissingEvidence {
+                action: "reconciliation_resolution".to_owned(),
+            });
+        }
+        state.reconciliation_blocked = blocked;
         Ok(())
     }
 
@@ -275,12 +458,266 @@ impl RiskAuthority {
         Ok(())
     }
 
-    /// The single atomic gate: evaluate the intent against authority-owned
-    /// facts, then reserve exposure only on full acceptance.
+    /// Validate one observation's identity, schema and freshness against the
+    /// authority's own clock. Ownership and all parsing live inside the lock.
+    fn validate_observation<T>(
+        &self,
+        state: &AuthorityState,
+        observation: &Observation<T>,
+        expected: ObservationSource,
+        now: LogicalNanos,
+        max_age_ns: u64,
+    ) -> Result<(), AuthorityError> {
+        self.check_owner_binding(state, observation.producer_token, expected)?;
+        if observation.source != expected {
+            return Err(AuthorityError::ObservationSourceMismatch {
+                observation_source: expected,
+            });
+        }
+        if observation.schema_version != OBSERVATION_SCHEMA_VERSION {
+            return Err(AuthorityError::UnsupportedObservationVersion {
+                observation_source: expected,
+                version: observation.schema_version,
+            });
+        }
+        if observation.observed_at > observation.received_at {
+            return Err(AuthorityError::InvalidObservationTime {
+                observation_source: expected,
+                detail: "observed time is after receipt time".to_owned(),
+            });
+        }
+        if observation.received_at > now {
+            return Err(AuthorityError::FutureObservation);
+        }
+        let age_ns = now.get().saturating_sub(observation.observed_at.get());
+        if age_ns > max_age_ns {
+            return Err(AuthorityError::StaleObservation {
+                observation_source: expected,
+                age_ns,
+                max_age_ns,
+            });
+        }
+        Ok(())
+    }
+
+    /// Public health check for evidence only. It runs exactly the same
+    /// in-lock aggregation as a reservation, but never reserves exposure.
+    pub fn check_observations(&self, observations: &Observations) -> Result<(), AuthorityError> {
+        let mut state = self.lock()?;
+        self.check_observations_locked(&mut state, observations)
+    }
+
+    /// Validate and aggregate all six owner observations while holding the
+    /// authority lock. A missing, stale, wrong-version or mismatched report
+    /// denies new risk before any policy evaluation.
+    fn check_observations_locked(
+        &self,
+        state: &mut AuthorityState,
+        observations: &Observations,
+    ) -> Result<(), AuthorityError> {
+        let policy = self.observation_policy;
+        let now = state.now;
+
+        let market = observations
+            .market
+            .as_ref()
+            .ok_or(AuthorityError::MissingObservation {
+                observation_source: ObservationSource::MarketDataKernel,
+            })?;
+        self.validate_observation(
+            state,
+            market,
+            ObservationSource::MarketDataKernel,
+            now,
+            policy.max_market_age_ns,
+        )?;
+        let oms = observations
+            .oms
+            .as_ref()
+            .ok_or(AuthorityError::MissingObservation {
+                observation_source: ObservationSource::Oms,
+            })?;
+        self.validate_observation(
+            state,
+            oms,
+            ObservationSource::Oms,
+            now,
+            policy.max_oms_age_ns,
+        )?;
+        let journal =
+            observations
+                .account_journal
+                .as_ref()
+                .ok_or(AuthorityError::MissingObservation {
+                    observation_source: ObservationSource::AccountJournal,
+                })?;
+        self.validate_observation(
+            state,
+            journal,
+            ObservationSource::AccountJournal,
+            now,
+            policy.max_account_journal_age_ns,
+        )?;
+        let reconciliation =
+            observations
+                .reconciliation
+                .as_ref()
+                .ok_or(AuthorityError::MissingObservation {
+                    observation_source: ObservationSource::Reconciliation,
+                })?;
+        self.validate_observation(
+            state,
+            reconciliation,
+            ObservationSource::Reconciliation,
+            now,
+            policy.max_reconciliation_age_ns,
+        )?;
+        let ops = observations
+            .ops
+            .as_ref()
+            .ok_or(AuthorityError::MissingObservation {
+                observation_source: ObservationSource::Ops,
+            })?;
+        self.validate_observation(
+            state,
+            ops,
+            ObservationSource::Ops,
+            now,
+            policy.max_ops_age_ns,
+        )?;
+        let operator =
+            observations
+                .operator
+                .as_ref()
+                .ok_or(AuthorityError::MissingObservation {
+                    observation_source: ObservationSource::OperatorControl,
+                })?;
+        self.validate_observation(
+            state,
+            operator,
+            ObservationSource::OperatorControl,
+            now,
+            policy.max_operator_age_ns,
+        )?;
+
+        // Aggregate owner facts into authority-owned state, all under the same
+        // mutex as the reservation that follows.
+        state.session_open = market.payload.session_open;
+        // An observation can only engage. Releasing an engaged switch is a
+        // separate, authenticated operator action (`set_kill_switch`) so
+        // a snapshot replay cannot silently clear persisted control state.
+        if operator.payload.kill_switch_engaged {
+            state.kill_switch_engaged = true;
+        }
+        state.account_snapshot_available = journal.payload.record_count > 0
+            && journal.payload.opening_balance_evidence_ref.is_some();
+        if journal.payload.head_hash_hex.len() != 64 {
+            return Err(AuthorityError::ObservationDigestMismatch {
+                observation_source: ObservationSource::AccountJournal,
+            });
+        }
+        Self::check_oms_observation(oms)?;
+        if journal.payload.ledger_state_digest.len() != 64 {
+            return Err(AuthorityError::ObservationDigestMismatch {
+                observation_source: ObservationSource::AccountJournal,
+            });
+        }
+        if !reconciliation.payload.replay_digest_matched {
+            return Err(AuthorityError::ObservationDigestMismatch {
+                observation_source: ObservationSource::Reconciliation,
+            });
+        }
+        let recon_status = reconciliation.payload.report.status;
+        // A mismatch or unavailable view latches the block. A later Matched
+        // observation never clears it: only an explicit, evidenced operator
+        // authenticated reconciliation-owner resolution (`set_reconciliation_blocked`) can do that.
+        if recon_status != trading_core::ReconciliationStatus::Matched {
+            state.reconciliation_blocked = true;
+            return Err(AuthorityError::ReconciliationMismatch {
+                report_id: reconciliation.payload.report.reconciliation_id.clone(),
+                differences: reconciliation.payload.report.differences.clone(),
+            });
+        }
+        if state.kill_switch_engaged {
+            return Err(AuthorityError::KillSwitchEngaged {
+                reason: operator.payload.reason.clone(),
+                actor_id: operator.payload.actor_id.clone(),
+            });
+        }
+        Self::check_ops_observation(ops, &policy)?;
+        Ok(())
+    }
+
+    fn check_oms_observation(oms: &Observation<OmsObservation>) -> Result<(), AuthorityError> {
+        if oms.payload.is_poisoned
+            || oms.payload.fills_digest.is_empty()
+            || oms.payload.last_journal_digest.len() != 64
+        {
+            return Err(AuthorityError::ObservationDigestMismatch {
+                observation_source: ObservationSource::Oms,
+            });
+        }
+        Ok(())
+    }
+
+    fn check_ops_observation(
+        ops: &Observation<OpsObservation>,
+        policy: &ObservationPolicy,
+    ) -> Result<(), AuthorityError> {
+        let checks = [
+            (
+                OpsThresholdKind::SequenceGaps,
+                u64::from(ops.payload.sequence_gaps),
+                u64::from(policy.max_sequence_gaps),
+            ),
+            (
+                OpsThresholdKind::JournalAppendLatency,
+                ops.payload.journal_append_latency_ns,
+                policy.max_journal_append_latency_ns,
+            ),
+            (
+                OpsThresholdKind::JournalQueueDepth,
+                ops.payload.journal_queue_depth,
+                policy.max_journal_queue_depth,
+            ),
+            (
+                OpsThresholdKind::DiskCapacity,
+                ops.payload.disk_available_bytes,
+                policy.min_disk_available_bytes,
+            ),
+            (
+                OpsThresholdKind::UnknownOrders,
+                u64::from(ops.payload.unknown_orders),
+                u64::from(policy.max_unknown_orders),
+            ),
+            (
+                OpsThresholdKind::ReconciliationDifferences,
+                u64::from(ops.payload.reconciliation_differences),
+                u64::from(policy.max_reconciliation_differences),
+            ),
+        ];
+        for (kind, observed, limit) in checks {
+            let exceeded = match kind {
+                OpsThresholdKind::DiskCapacity => observed < limit,
+                _ => observed > limit,
+            };
+            if exceeded {
+                return Err(AuthorityError::OpsThresholdExceeded {
+                    kind,
+                    observed,
+                    limit,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// The single atomic gate: validate typed owner observations, evaluate the
+    /// intent, then reserve exposure only on full acceptance.
     pub fn evaluate_and_reserve(
         &self,
         intent: OrderIntent,
-        observation: FeedObservation,
+        observations: Observations,
         expected_revision: Option<u64>,
     ) -> Result<Reservation, AuthorityError> {
         let mut state = self.lock()?;
@@ -327,11 +764,11 @@ impl RiskAuthority {
             });
         }
 
-        if observation.received_at > state.now {
-            return Err(AuthorityError::FutureObservation);
-        }
+        // Health decision, freshness and aggregation all happen inside this
+        // same lock. No caller-owned boolean or string reason is accepted.
+        self.check_observations_locked(&mut state, &observations)?;
 
-        let context = self.build_context(&state, &intent, &observation)?;
+        let context = self.build_context(&state, &intent, &observations)?;
         let assessment = evaluate_risk(&intent, &self.policy, &context);
         if !assessment.accepted {
             state.decided.insert(intent.intent_id, intent);
@@ -345,14 +782,21 @@ impl RiskAuthority {
         &self,
         state: &AuthorityState,
         intent: &OrderIntent,
-        observation: &FeedObservation,
+        observations: &Observations,
     ) -> Result<RiskContext, AuthorityError> {
+        let market = observations
+            .market
+            .as_ref()
+            .ok_or(AuthorityError::MissingObservation {
+                observation_source: ObservationSource::MarketDataKernel,
+            })?;
+        let feed = &market.payload.feed;
         let instrument = self.instruments.get(&intent.instrument_id).cloned();
-        let quote = observation.quote.clone().filter(|value| {
+        let quote = feed.quote.clone().filter(|value| {
             value.instrument_id == intent.instrument_id && value.venue == intent.venue
         });
         let feed_health = if quote.is_some() {
-            observation.health(state.now, self.policy.max_quote_age_ns)
+            feed.health(state.now, self.policy.max_quote_age_ns)
         } else {
             FeedHealth::NoQuote
         };
@@ -456,7 +900,9 @@ impl RiskAuthority {
         Ok(reservation)
     }
 
-    /// Release a reservation (e.g. an order that never reached the market).
+    /// Risk-reducing path. It is deliberately observation-free so positions
+    /// can be flattened when health is degraded; accounting invariants remain
+    /// fail-closed. See invariant L5.
     pub fn release(&self, intent_id: IntentId) -> Result<Reservation, AuthorityError> {
         let mut state = self.lock()?;
         let reservation = state
@@ -482,7 +928,9 @@ impl RiskAuthority {
         Ok(reservation)
     }
 
-    /// Convert a reservation into a filled position.
+    /// Risk-reducing path: convert a reservation into a filled position.
+    /// Observation-free by design so fills can always be accounted for, even
+    /// when the feed is stale or the kill switch is engaged (L5).
     pub fn apply_fill(&self, intent_id: IntentId) -> Result<Reservation, AuthorityError> {
         let mut state = self.lock()?;
         let reservation = state

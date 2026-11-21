@@ -5,7 +5,10 @@
 //! not a certificate of deployed risk-service performance.
 
 use std::{
-    collections::BTreeSet, //
+    collections::{
+        BTreeMap, //
+        BTreeSet,
+    }, //
     sync::{
         Arc, //
         Barrier,
@@ -15,7 +18,16 @@ use std::{
 };
 
 use risk_authority::{
-    FeedObservation, //
+    AccountJournalObservation, //
+    FeedObservation,
+    MarketObservation,
+    Observation,
+    ObservationSource,
+    Observations,
+    OmsObservation,
+    OperatorObservation,
+    OpsObservation,
+    ReconciliationObservation,
     RiskAuthority,
 };
 use risk_engine::{
@@ -41,6 +53,8 @@ use trading_core::{
     Product,
     Quantity,
     QuoteSnapshot,
+    ReconciliationReport,
+    ReconciliationStatus,
     Side,
     StrategyId,
     TickAssignment,
@@ -140,8 +154,20 @@ fn authority() -> Result<RiskAuthority, Box<dyn std::error::Error>> {
     );
     authority.set_session_open(true)?;
     authority.set_snapshot_available(true)?;
-    authority.set_kill_switch(false)?;
-    authority.set_reconciliation_blocked(false)?;
+    let tokens = authority.register_all_owners()?;
+    authority.set_kill_switch(
+        tokens.operator,
+        false,
+        "bench-operator".to_owned(),
+        "bench fixture".to_owned(),
+        Some("bench-release-evidence".to_owned()),
+    )?;
+    authority.set_reconciliation_blocked(
+        tokens.reconciliation,
+        false,
+        "bench resolution".to_owned(),
+        Some("bench-resolution-evidence".to_owned()),
+    )?;
     Ok(authority)
 }
 
@@ -184,6 +210,102 @@ fn observation() -> Result<FeedObservation, Box<dyn std::error::Error>> {
     })
 }
 
+fn observations(authority: &RiskAuthority, feed: FeedObservation) -> Observations {
+    let tokens = authority.register_all_owners().expect("registered owners");
+    let at = LogicalNanos::ZERO;
+    Observations {
+        market: Some(Observation::new(
+            tokens.market,
+            ObservationSource::MarketDataKernel,
+            at,
+            at,
+            1,
+            MarketObservation {
+                feed,
+                session_open: true,
+                kernel_schema_version: 3,
+                source_sequence: Some(1),
+                connection_epoch: Some(1),
+                synthetic: true,
+            },
+        )),
+        oms: Some(Observation::new(
+            tokens.oms,
+            ObservationSource::Oms,
+            at,
+            at,
+            1,
+            OmsObservation {
+                fills_digest: "a".repeat(64),
+                unresolved_count: 0,
+                last_journal_digest: "b".repeat(64),
+                is_poisoned: false,
+            },
+        )),
+        account_journal: Some(Observation::new(
+            tokens.account_journal,
+            ObservationSource::AccountJournal,
+            at,
+            at,
+            1,
+            AccountJournalObservation {
+                head_hash_hex: "c".repeat(64),
+                record_count: 1,
+                ledger_state_digest: "d".repeat(64),
+                opening_balance_evidence_ref: Some("bench-statement".to_owned()),
+            },
+        )),
+        reconciliation: Some(Observation::new(
+            tokens.reconciliation,
+            ObservationSource::Reconciliation,
+            at,
+            at,
+            1,
+            ReconciliationObservation {
+                report: ReconciliationReport {
+                    reconciliation_id: "bench-recon".to_owned(),
+                    status: ReconciliationStatus::Matched,
+                    expected_positions: BTreeMap::new(),
+                    observed_positions: Some(BTreeMap::new()),
+                    expected_active_orders: BTreeSet::new(),
+                    observed_active_orders: Some(BTreeSet::new()),
+                    differences: Vec::new(),
+                },
+                replay_digest_matched: true,
+            },
+        )),
+        ops: Some(Observation::new(
+            tokens.ops,
+            ObservationSource::Ops,
+            at,
+            at,
+            1,
+            OpsObservation {
+                feed_age_ns: 0,
+                sequence_gaps: 0,
+                journal_append_latency_ns: 1_000,
+                journal_queue_depth: 0,
+                disk_available_bytes: 10_000_000,
+                unknown_orders: 0,
+                reconciliation_differences: 0,
+            },
+        )),
+        operator: Some(Observation::new(
+            tokens.operator,
+            ObservationSource::OperatorControl,
+            at,
+            at,
+            1,
+            OperatorObservation {
+                kill_switch_engaged: false,
+                actor_id: "bench-operator".to_owned(),
+                reason: "bench fixture".to_owned(),
+                release_evidence_ref: Some("bench-release-evidence".to_owned()),
+            },
+        )),
+    }
+}
+
 fn next_random(state: &mut u64) -> u64 {
     *state = state
         .wrapping_mul(6_364_136_223_846_793_005)
@@ -224,7 +346,7 @@ fn seeded_concurrent_authorization_throughput() -> TestResult {
         let barrier = Arc::clone(&barrier);
         let ids: Vec<u64> = (worker * chunk + 1..=(worker + 1) * chunk).collect();
         handles.push(thread::spawn(move || {
-            let observation = observation().expect("observation");
+            let observations = observations(&authority, observation().expect("observation"));
             let mut state = SEED.wrapping_add(worker);
             let mut latencies = Vec::with_capacity(ids.len());
             let mut accepted = 0_u64;
@@ -234,7 +356,7 @@ fn seeded_concurrent_authorization_throughput() -> TestResult {
                 let quantity = 1 + (next_random(&mut state) % 5) as i64;
                 let target = intent(id, quantity).expect("intent");
                 let started = Instant::now();
-                let result = authority.evaluate_and_reserve(target, observation.clone(), None);
+                let result = authority.evaluate_and_reserve(target, observations.clone(), None);
                 latencies.push(started.elapsed().as_nanos());
                 if result.is_ok() {
                     accepted += 1;

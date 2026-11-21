@@ -294,8 +294,8 @@ fn fills_are_deduplicated_and_overfill_is_refused() -> TestResult {
         "a partial fill leaves the order partially filled"
     );
     assert!(
-        !store.apply_fill(client, "exec-1", "evt-fill-2", 4, 1_000, 2_400)?,
-        "a repeated execution id is ignored"
+        !store.apply_fill(client, "exec-1", "evt-fill-1", 4, 1_000, 2_300)?,
+        "an identical repeated execution id is ignored"
     );
     assert!(
         store.apply_fill(client, "exec-2", "evt-fill-3", 6, 1_000, 2_500)?,

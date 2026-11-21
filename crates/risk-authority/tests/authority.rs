@@ -3,7 +3,10 @@
 //! broker interaction exists in this crate.
 
 use std::{
-    collections::BTreeSet,
+    collections::{
+        BTreeMap, //
+        BTreeSet,
+    },
     sync::{
         Arc, //
         Barrier,
@@ -12,8 +15,20 @@ use std::{
 };
 
 use risk_authority::{
-    AuthorityError, //
+    AccountJournalObservation, //
+    AuthorityError,
     FeedObservation,
+    FileControlStore,
+    MarketObservation,
+    Observation,
+    ObservationPolicy,
+    ObservationSource,
+    Observations,
+    OmsObservation,
+    OperatorObservation,
+    OpsObservation,
+    OwnerTokens,
+    ReconciliationObservation,
     RiskAuthority,
     SequenceGap,
 };
@@ -41,6 +56,8 @@ use trading_core::{
     Product,
     Quantity,
     QuoteSnapshot,
+    ReconciliationReport,
+    ReconciliationStatus,
     RiskCheck,
     Segment,
     SettlementRegime,
@@ -145,13 +162,40 @@ fn authority() -> Result<RiskAuthority, Box<dyn std::error::Error>> {
     // Readiness must be supplied explicitly; the default is unready.
     authority.set_session_open(true)?;
     authority.set_snapshot_available(true)?;
-    authority.set_kill_switch(false)?;
-    authority.set_reconciliation_blocked(false)?;
+    release_switch(&authority)?;
+    clear_reconciliation(&authority)?;
     Ok(authority)
 }
 
+fn super_authority() -> Result<RiskAuthority, Box<dyn std::error::Error>> {
+    authority()
+}
+
+fn release_switch(authority: &RiskAuthority) -> Result<(), Box<dyn std::error::Error>> {
+    let tokens = authority.register_all_owners()?;
+    authority.set_kill_switch(
+        tokens.operator,
+        false,
+        "test-operator".to_owned(),
+        "fixture bootstrap".to_owned(),
+        Some("bootstrap-evidence".to_owned()),
+    )?;
+    Ok(())
+}
+
+fn clear_reconciliation(authority: &RiskAuthority) -> Result<(), Box<dyn std::error::Error>> {
+    let tokens = authority.register_all_owners()?;
+    authority.set_reconciliation_blocked(
+        tokens.reconciliation,
+        false,
+        "fixture resolution".to_owned(),
+        Some("resolution-evidence".to_owned()),
+    )?;
+    Ok(())
+}
+
 /// A newly constructed authority has no evidence of session, account or
-/// operational readiness. It must deny new risk without any setter calls.
+/// operational readiness. It must deny new risk without any observation.
 #[test]
 fn fresh_authority_denies_new_risk() -> TestResult {
     let authority = RiskAuthority::new(
@@ -160,20 +204,71 @@ fn fresh_authority_denies_new_risk() -> TestResult {
         vec![instrument()?],
         date()?,
     );
+    release_switch(&authority)?;
+    clear_reconciliation(&authority)?;
+    let missing = authority
+        .evaluate_and_reserve(
+            intent(1, 2, PRICE, Side::Buy)?,
+            Observations::default(),
+            None,
+        )
+        .expect_err("an authority without owner observations must reject");
+    assert!(
+        matches!(missing, AuthorityError::MissingObservation { .. }),
+        "no owner observation is a typed denial"
+    );
+
+    let mut closed = observation(&authority)?;
+    closed.market.as_mut().expect("market").payload.session_open = false;
     let rejected = authority
-        .evaluate_and_reserve(intent(1, 2, PRICE, Side::Buy)?, observation()?, None)
-        .expect_err("an unready authority must reject");
-    for required in [
-        RiskCheck::SessionOpen,
-        RiskCheck::AccountSnapshotAvailable,
-        RiskCheck::KillSwitch,
-        RiskCheck::Reconciliation,
-    ] {
-        assert!(
-            rejected_check(&rejected, required),
-            "fresh authority must fail {required:?}"
-        );
-    }
+        .evaluate_and_reserve(intent(2, 2, PRICE, Side::Buy)?, closed, None)
+        .expect_err("a closed session must reject");
+    assert!(
+        rejected_check(&rejected, RiskCheck::SessionOpen),
+        "fresh authority fails the session check"
+    );
+
+    let mut unevidenced = observation(&authority)?;
+    unevidenced
+        .account_journal
+        .as_mut()
+        .expect("journal")
+        .payload
+        .opening_balance_evidence_ref = None;
+    let rejected = authority
+        .evaluate_and_reserve(intent(3, 2, PRICE, Side::Buy)?, unevidenced, None)
+        .expect_err("no opening evidence must reject");
+    assert!(
+        rejected_check(&rejected, RiskCheck::AccountSnapshotAvailable),
+        "fresh authority fails the account snapshot check"
+    );
+
+    let mut killed = observation(&authority)?;
+    killed
+        .operator
+        .as_mut()
+        .expect("operator")
+        .payload
+        .kill_switch_engaged = true;
+    let result = authority.evaluate_and_reserve(intent(4, 2, PRICE, Side::Buy)?, killed, None);
+    assert!(
+        matches!(result, Err(AuthorityError::KillSwitchEngaged { .. })),
+        "an engaged kill switch is a typed denial"
+    );
+
+    let mut blocked = observation(&authority)?;
+    blocked
+        .reconciliation
+        .as_mut()
+        .expect("reconciliation")
+        .payload
+        .report
+        .status = ReconciliationStatus::Unavailable;
+    let result = authority.evaluate_and_reserve(intent(5, 2, PRICE, Side::Buy)?, blocked, None);
+    assert!(
+        matches!(result, Err(AuthorityError::ReconciliationMismatch { .. })),
+        "an unavailable reconciliation is a typed denial"
+    );
     Ok(())
 }
 
@@ -216,13 +311,114 @@ fn quote() -> Result<QuoteSnapshot, Box<dyn std::error::Error>> {
     })
 }
 
-fn observation() -> Result<FeedObservation, Box<dyn std::error::Error>> {
+fn feed() -> Result<FeedObservation, Box<dyn std::error::Error>> {
     Ok(FeedObservation {
         quote: Some(quote()?),
         received_at: LogicalNanos::ZERO,
         gap: None,
         book_complete: true,
     })
+}
+
+/// Synthetic ready observations for all six owners. The market payload is
+/// explicitly labelled synthetic; this is a fixture, not operational evidence.
+fn observation(authority: &RiskAuthority) -> Result<Observations, Box<dyn std::error::Error>> {
+    Ok(observations_with(feed()?, authority.register_all_owners()?))
+}
+
+fn observations_with(feed: FeedObservation, tokens: OwnerTokens) -> Observations {
+    let at = feed.received_at;
+    Observations {
+        market: Some(Observation::new(
+            tokens.market,
+            ObservationSource::MarketDataKernel,
+            at,
+            at,
+            1,
+            MarketObservation {
+                feed,
+                session_open: true,
+                kernel_schema_version: 3,
+                source_sequence: Some(1),
+                connection_epoch: Some(1),
+                synthetic: true,
+            },
+        )),
+        oms: Some(Observation::new(
+            tokens.oms,
+            ObservationSource::Oms,
+            at,
+            at,
+            1,
+            OmsObservation {
+                fills_digest: "a".repeat(64),
+                unresolved_count: 0,
+                last_journal_digest: "b".repeat(64),
+                is_poisoned: false,
+            },
+        )),
+        account_journal: Some(Observation::new(
+            tokens.account_journal,
+            ObservationSource::AccountJournal,
+            at,
+            at,
+            1,
+            AccountJournalObservation {
+                head_hash_hex: "c".repeat(64),
+                record_count: 1,
+                ledger_state_digest: "d".repeat(64),
+                opening_balance_evidence_ref: Some("statement-fixture".to_owned()),
+            },
+        )),
+        reconciliation: Some(Observation::new(
+            tokens.reconciliation,
+            ObservationSource::Reconciliation,
+            at,
+            at,
+            1,
+            ReconciliationObservation {
+                report: ReconciliationReport {
+                    reconciliation_id: "recon-fixture".to_owned(),
+                    status: ReconciliationStatus::Matched,
+                    expected_positions: BTreeMap::new(),
+                    observed_positions: Some(BTreeMap::new()),
+                    expected_active_orders: BTreeSet::new(),
+                    observed_active_orders: Some(BTreeSet::new()),
+                    differences: Vec::new(),
+                },
+                replay_digest_matched: true,
+            },
+        )),
+        ops: Some(Observation::new(
+            tokens.ops,
+            ObservationSource::Ops,
+            at,
+            at,
+            1,
+            OpsObservation {
+                feed_age_ns: at.get(),
+                sequence_gaps: 0,
+                journal_append_latency_ns: 1_000,
+                journal_queue_depth: 0,
+                disk_available_bytes: 10_000_000,
+                unknown_orders: 0,
+                reconciliation_differences: 0,
+            },
+        )),
+        operator: Some(Observation::new(
+            tokens.operator,
+            ObservationSource::OperatorControl,
+            at,
+            at,
+            1,
+            OperatorObservation {
+                kill_switch_engaged: false,
+                actor_id: "test-operator".to_owned(),
+                reason: "fixture".to_owned(),
+                release_evidence_ref: Some("release-fixture".to_owned()),
+            },
+        )),
+    }
 }
 
 fn rejected_check(error: &AuthorityError, check: RiskCheck) -> bool {
@@ -238,8 +434,11 @@ fn rejected_check(error: &AuthorityError, check: RiskCheck) -> bool {
 #[test]
 fn baseline_reservation_is_accepted() -> TestResult {
     let authority = authority()?;
-    let reservation =
-        authority.evaluate_and_reserve(intent(1, 6, PRICE, Side::Buy)?, observation()?, None)?;
+    let reservation = authority.evaluate_and_reserve(
+        intent(1, 6, PRICE, Side::Buy)?,
+        observation(&authority)?,
+        None,
+    )?;
     assert!(
         reservation.assessment.accepted,
         "baseline intent is accepted"
@@ -274,7 +473,7 @@ fn concurrent_reservations_cannot_exceed_aggregate_limit() -> TestResult {
         let barrier = Arc::clone(&barrier);
         let target = intent(id, 6, PRICE, Side::Buy)?;
         handles.push(thread::spawn(move || {
-            let observation = observation().expect("observation");
+            let observation = observation(&authority).expect("observation");
             barrier.wait();
             authority.evaluate_and_reserve(target, observation, None)
         }));
@@ -312,10 +511,14 @@ fn concurrent_reservations_cannot_exceed_aggregate_limit() -> TestResult {
 fn stale_snapshot_revision_is_rejected() -> TestResult {
     let authority = authority()?;
     let observed_revision = authority.revision()?;
-    authority.evaluate_and_reserve(intent(1, 2, PRICE, Side::Buy)?, observation()?, None)?;
+    authority.evaluate_and_reserve(
+        intent(1, 2, PRICE, Side::Buy)?,
+        observation(&authority)?,
+        None,
+    )?;
     let stale = authority.evaluate_and_reserve(
         intent(2, 2, PRICE, Side::Buy)?,
-        observation()?,
+        observation(&authority)?,
         Some(observed_revision),
     );
     assert!(
@@ -330,8 +533,8 @@ fn stale_snapshot_revision_is_rejected() -> TestResult {
 /// though the caller supplies no health verdict at all.
 #[test]
 fn caller_cannot_supply_feed_health() -> TestResult {
-    let observation = observation()?;
-    let wire = serde_json::to_value(&observation)?;
+    let base = feed()?;
+    let wire = serde_json::to_value(&base)?;
     let fields = wire.as_object().expect("object");
     let mut names: Vec<&str> = fields.keys().map(String::as_str).collect();
     names.sort_unstable();
@@ -342,12 +545,16 @@ fn caller_cannot_supply_feed_health() -> TestResult {
     );
 
     let authority = authority()?;
-    let mut gapped = observation.clone();
+    let mut gapped = base.clone();
     gapped.gap = Some(SequenceGap {
         expected: Some(4),
         observed: 9,
     });
-    let result = authority.evaluate_and_reserve(intent(1, 2, PRICE, Side::Buy)?, gapped, None);
+    let result = authority.evaluate_and_reserve(
+        intent(1, 2, PRICE, Side::Buy)?,
+        observations_with(gapped, authority.register_all_owners()?),
+        None,
+    );
     assert!(
         rejected_check(
             &result.expect_err("gapped is refused"),
@@ -357,7 +564,11 @@ fn caller_cannot_supply_feed_health() -> TestResult {
     );
 
     authority.set_now(LogicalNanos::new(5_000))?;
-    let result = authority.evaluate_and_reserve(intent(2, 2, PRICE, Side::Buy)?, observation, None);
+    let result = authority.evaluate_and_reserve(
+        intent(2, 2, PRICE, Side::Buy)?,
+        observation(&authority)?,
+        None,
+    );
     assert!(
         rejected_check(
             &result.expect_err("stale is refused"),
@@ -373,10 +584,16 @@ fn caller_cannot_supply_feed_health() -> TestResult {
 #[test]
 fn duplicate_intent_is_idempotent_and_conflicts_are_denied() -> TestResult {
     let authority = authority()?;
-    let original =
-        authority.evaluate_and_reserve(intent(1, 2, PRICE, Side::Buy)?, observation()?, None)?;
-    let replay =
-        authority.evaluate_and_reserve(intent(1, 2, PRICE, Side::Buy)?, observation()?, None)?;
+    let original = authority.evaluate_and_reserve(
+        intent(1, 2, PRICE, Side::Buy)?,
+        observation(&authority)?,
+        None,
+    )?;
+    let replay = authority.evaluate_and_reserve(
+        intent(1, 2, PRICE, Side::Buy)?,
+        observation(&authority)?,
+        None,
+    )?;
     assert_eq!(
         replay, original,
         "the same permit is returned for the same intent"
@@ -392,8 +609,11 @@ fn duplicate_intent_is_idempotent_and_conflicts_are_denied() -> TestResult {
         "exposure was not doubled"
     );
 
-    let conflicting =
-        authority.evaluate_and_reserve(intent(1, 3, PRICE, Side::Buy)?, observation()?, None);
+    let conflicting = authority.evaluate_and_reserve(
+        intent(1, 3, PRICE, Side::Buy)?,
+        observation(&authority)?,
+        None,
+    );
     assert!(
         matches!(conflicting, Err(AuthorityError::ConflictingIntent(_))),
         "the same id with different terms is denied"
@@ -407,36 +627,65 @@ fn duplicate_intent_is_idempotent_and_conflicts_are_denied() -> TestResult {
 #[test]
 fn control_state_blocks_new_exposure() -> TestResult {
     let authority = authority()?;
-    authority.set_kill_switch(true)?;
-    let killed =
-        authority.evaluate_and_reserve(intent(1, 2, PRICE, Side::Buy)?, observation()?, None);
+    let mut killed = observation(&authority)?;
+    killed
+        .operator
+        .as_mut()
+        .expect("operator")
+        .payload
+        .kill_switch_engaged = true;
+    let result = authority.evaluate_and_reserve(intent(1, 2, PRICE, Side::Buy)?, killed, None);
     assert!(
-        rejected_check(&killed.expect_err("kill switch"), RiskCheck::KillSwitch),
-        "kill switch blocks"
+        matches!(result, Err(AuthorityError::KillSwitchEngaged { .. })),
+        "kill switch yields a typed denial"
     );
-    authority.set_kill_switch(false)?;
+    release_switch(&authority)?;
 
-    authority.set_reconciliation_blocked(true)?;
-    let blocked =
-        authority.evaluate_and_reserve(intent(2, 2, PRICE, Side::Buy)?, observation()?, None);
+    let mut blocked = observation(&authority)?;
+    let report = &mut blocked
+        .reconciliation
+        .as_mut()
+        .expect("reconciliation")
+        .payload
+        .report;
+    report.status = ReconciliationStatus::Mismatch;
+    report.differences.push("position differs".to_owned());
+    let result = authority.evaluate_and_reserve(intent(2, 2, PRICE, Side::Buy)?, blocked, None);
     assert!(
-        rejected_check(
-            &blocked.expect_err("reconciliation"),
-            RiskCheck::Reconciliation
-        ),
-        "reconciliation mismatch blocks"
+        matches!(result, Err(AuthorityError::ReconciliationMismatch { .. })),
+        "a mismatch yields a typed denial"
     );
-    authority.set_reconciliation_blocked(false)?;
-
-    authority.set_snapshot_available(false)?;
-    let missing =
-        authority.evaluate_and_reserve(intent(3, 2, PRICE, Side::Buy)?, observation()?, None);
     assert!(
-        rejected_check(
-            &missing.expect_err("snapshot"),
-            RiskCheck::AccountSnapshotAvailable
-        ),
-        "missing snapshot blocks"
+        authority.snapshot()?.reconciliation_blocked,
+        "the mismatch sets reconciliation_blocked via authority state"
+    ); // L3: the block is authority state, not a caller-owned bool
+    let still_blocked = authority.evaluate_and_reserve(
+        intent(9, 2, PRICE, Side::Buy)?,
+        observation(&authority)?,
+        None,
+    );
+    let latched = still_blocked
+        .as_ref()
+        .err()
+        .is_some_and(|error| rejected_check(error, RiskCheck::Reconciliation));
+    assert!(
+        latched,
+        "a later matched observation does not auto-clear the latch"
+    ); // L3: sticky until an explicit operator resolution
+    clear_reconciliation(&authority)?;
+
+    let mut missing = observation(&authority)?;
+    missing
+        .account_journal
+        .as_mut()
+        .expect("journal")
+        .payload
+        .opening_balance_evidence_ref = None;
+    let result = authority.evaluate_and_reserve(intent(3, 2, PRICE, Side::Buy)?, missing, None);
+    let error = result.expect_err("snapshot");
+    assert!(
+        rejected_check(&error, RiskCheck::AccountSnapshotAvailable),
+        "missing snapshot blocks, got {error:?}"
     );
     Ok(())
 }
@@ -448,7 +697,7 @@ fn caller_cannot_claim_another_account() -> TestResult {
     let authority = authority()?;
     let mut forged = intent(1, 2, PRICE, Side::Buy)?;
     forged.account_id = AccountId::new(999)?;
-    let result = authority.evaluate_and_reserve(forged, observation()?, None);
+    let result = authority.evaluate_and_reserve(forged, observation(&authority)?, None);
     assert!(
         rejected_check(
             &result.expect_err("wrong account"),
@@ -464,8 +713,11 @@ fn caller_cannot_claim_another_account() -> TestResult {
 #[test]
 fn filled_exposure_is_owned_and_accumulates() -> TestResult {
     let authority = authority()?;
-    let first =
-        authority.evaluate_and_reserve(intent(1, 6, PRICE, Side::Buy)?, observation()?, None)?;
+    let first = authority.evaluate_and_reserve(
+        intent(1, 6, PRICE, Side::Buy)?,
+        observation(&authority)?,
+        None,
+    )?;
     authority.apply_fill(first.intent_id)?;
     let snapshot = authority.snapshot()?;
     assert_eq!(
@@ -479,8 +731,11 @@ fn filled_exposure_is_owned_and_accumulates() -> TestResult {
         "pending exposure is cleared"
     );
 
-    let second =
-        authority.evaluate_and_reserve(intent(2, 6, PRICE, Side::Buy)?, observation()?, None);
+    let second = authority.evaluate_and_reserve(
+        intent(2, 6, PRICE, Side::Buy)?,
+        observation(&authority)?,
+        None,
+    );
     assert!(
         rejected_check(&second.expect_err("aggregate"), RiskCheck::GrossExposure),
         "a later intent sees the accumulated exposure"
@@ -492,8 +747,11 @@ fn filled_exposure_is_owned_and_accumulates() -> TestResult {
 #[test]
 fn releasing_a_reservation_restores_capacity() -> TestResult {
     let authority = authority()?;
-    let reservation =
-        authority.evaluate_and_reserve(intent(1, 6, PRICE, Side::Buy)?, observation()?, None)?;
+    let reservation = authority.evaluate_and_reserve(
+        intent(1, 6, PRICE, Side::Buy)?,
+        observation(&authority)?,
+        None,
+    )?;
     assert_eq!(
         authority.snapshot()?.open_orders,
         1,
@@ -509,7 +767,11 @@ fn releasing_a_reservation_restores_capacity() -> TestResult {
     );
     assert!(
         authority
-            .evaluate_and_reserve(intent(2, 6, PRICE, Side::Buy)?, observation()?, None)
+            .evaluate_and_reserve(
+                intent(2, 6, PRICE, Side::Buy)?,
+                observation(&authority)?,
+                None
+            )
             .is_ok(),
         "capacity is available again"
     );
@@ -539,7 +801,7 @@ fn no_oms_broker_or_live_coupling() -> TestResult {
 
 #[test]
 fn feed_health_derivation_is_from_observations() -> TestResult {
-    let base = observation()?;
+    let base = feed()?;
     assert_eq!(
         base.health(LogicalNanos::ZERO, 1_000),
         FeedHealth::Healthy { age_ns: 0 },
@@ -579,9 +841,10 @@ fn feed_health_derivation_is_from_observations() -> TestResult {
 #[test]
 fn future_observation_receipt_is_rejected() -> TestResult {
     let authority = authority()?;
-    let mut observation = observation()?;
-    observation.received_at = LogicalNanos::new(1);
-    let result = authority.evaluate_and_reserve(intent(1, 2, PRICE, Side::Buy)?, observation, None);
+    let mut observations = observation(&authority)?;
+    observations.market.as_mut().expect("market").received_at = LogicalNanos::new(1);
+    let result =
+        authority.evaluate_and_reserve(intent(1, 2, PRICE, Side::Buy)?, observations, None);
     assert!(
         matches!(result, Err(AuthorityError::FutureObservation)),
         "a receipt time ahead of the authority clock is refused"
@@ -594,8 +857,11 @@ fn future_observation_receipt_is_rejected() -> TestResult {
 #[test]
 fn permit_account_is_authority_owned() -> TestResult {
     let authority = authority()?;
-    let reservation =
-        authority.evaluate_and_reserve(intent(1, 2, PRICE, Side::Buy)?, observation()?, None)?;
+    let reservation = authority.evaluate_and_reserve(
+        intent(1, 2, PRICE, Side::Buy)?,
+        observation(&authority)?,
+        None,
+    )?;
     assert_eq!(
         reservation.account_id,
         AccountId::new(ACCOUNT)?,
@@ -609,11 +875,17 @@ fn permit_account_is_authority_owned() -> TestResult {
 #[test]
 fn consumed_intent_replay_is_distinguished() -> TestResult {
     let authority = authority()?;
-    let reservation =
-        authority.evaluate_and_reserve(intent(1, 2, PRICE, Side::Buy)?, observation()?, None)?;
+    let reservation = authority.evaluate_and_reserve(
+        intent(1, 2, PRICE, Side::Buy)?,
+        observation(&authority)?,
+        None,
+    )?;
     authority.apply_fill(reservation.intent_id)?;
-    let replay =
-        authority.evaluate_and_reserve(intent(1, 2, PRICE, Side::Buy)?, observation()?, None);
+    let replay = authority.evaluate_and_reserve(
+        intent(1, 2, PRICE, Side::Buy)?,
+        observation(&authority)?,
+        None,
+    );
     assert!(
         matches!(replay, Err(AuthorityError::AlreadyConsumed(_))),
         "a filled intent is reported as consumed, not merely rejected"
@@ -631,8 +903,11 @@ fn consumed_intent_replay_is_distinguished() -> TestResult {
 #[test]
 fn forged_permit_fails_validation() -> TestResult {
     let authority = authority()?;
-    let valid =
-        authority.evaluate_and_reserve(intent(1, 2, PRICE, Side::Buy)?, observation()?, None)?;
+    let valid = authority.evaluate_and_reserve(
+        intent(1, 2, PRICE, Side::Buy)?,
+        observation(&authority)?,
+        None,
+    )?;
     assert!(
         valid.validate_invariants().is_ok(),
         "an authority permit validates"
@@ -656,6 +931,528 @@ fn forged_permit_fails_validation() -> TestResult {
             Err(AuthorityError::InvalidReservation(_))
         ),
         "a permit whose intent id does not match is invalid"
+    );
+    Ok(())
+}
+
+fn clear_source(observations: &mut Observations, source: ObservationSource) {
+    match source {
+        ObservationSource::MarketDataKernel => observations.market = None,
+        ObservationSource::Oms => observations.oms = None,
+        ObservationSource::AccountJournal => observations.account_journal = None,
+        ObservationSource::Reconciliation => observations.reconciliation = None,
+        ObservationSource::Ops => observations.ops = None,
+        ObservationSource::OperatorControl => observations.operator = None,
+    }
+}
+
+fn stale_source(observations: &mut Observations, source: ObservationSource) {
+    let stale = LogicalNanos::ZERO;
+    match source {
+        ObservationSource::MarketDataKernel => {
+            observations.market.as_mut().expect("market").observed_at = stale;
+        }
+        ObservationSource::Oms => {
+            observations.oms.as_mut().expect("oms").observed_at = stale;
+        }
+        ObservationSource::AccountJournal => {
+            observations
+                .account_journal
+                .as_mut()
+                .expect("journal")
+                .observed_at = stale;
+        }
+        ObservationSource::Reconciliation => {
+            observations
+                .reconciliation
+                .as_mut()
+                .expect("reconciliation")
+                .observed_at = stale;
+        }
+        ObservationSource::Ops => {
+            observations.ops.as_mut().expect("ops").observed_at = stale;
+        }
+        ObservationSource::OperatorControl => {
+            observations
+                .operator
+                .as_mut()
+                .expect("operator")
+                .observed_at = stale;
+        }
+    }
+}
+
+/// A direct caller that omits any one owner cannot obtain a reservation.
+#[test]
+fn missing_observation_from_each_source_denies() -> TestResult {
+    let authority = authority()?;
+    for (index, source) in ObservationSource::ALL.iter().enumerate() {
+        let mut observations = observation(&authority)?;
+        clear_source(&mut observations, *source);
+        let result = authority.evaluate_and_reserve(
+            intent((index as u64) + 100, 2, PRICE, Side::Buy)?,
+            observations,
+            None,
+        );
+        assert!(
+            matches!(
+                result,
+                Err(AuthorityError::MissingObservation { observation_source }) if observation_source == *source
+            ),
+            "missing {source} observation denies new risk"
+        );
+    }
+    Ok(())
+}
+
+/// Every owner has an independent freshness limit enforced by the authority.
+#[test]
+fn stale_observation_from_each_source_denies() -> TestResult {
+    let authority = authority()?;
+    authority.set_now(LogicalNanos::new(2_000_000_000))?;
+    let mut fresh = feed()?;
+    fresh.received_at = LogicalNanos::new(2_000_000_000);
+    for (index, source) in ObservationSource::ALL.iter().enumerate() {
+        let mut observations = observations_with(fresh.clone(), authority.register_all_owners()?);
+        stale_source(&mut observations, *source);
+        let result = authority.evaluate_and_reserve(
+            intent((index as u64) + 200, 2, PRICE, Side::Buy)?,
+            observations,
+            None,
+        );
+        assert!(
+            matches!(
+                result,
+                Err(AuthorityError::StaleObservation { observation_source, .. }) if observation_source == *source
+            ),
+            "stale {source} observation denies new risk"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn wrong_schema_version_denies() -> TestResult {
+    let authority = authority()?;
+    let mut observations = observation(&authority)?;
+    observations.market.as_mut().expect("market").schema_version = 999;
+    let result =
+        authority.evaluate_and_reserve(intent(1, 2, PRICE, Side::Buy)?, observations, None);
+    assert!(
+        matches!(
+            result,
+            Err(AuthorityError::UnsupportedObservationVersion {
+                observation_source: ObservationSource::MarketDataKernel,
+                version: 999
+            })
+        ),
+        "an unknown observation schema is a typed denial"
+    );
+    Ok(())
+}
+
+#[test]
+fn journal_failure_and_unavailable_reconciliation_block() -> TestResult {
+    let authority = authority()?;
+    let mut poisoned = observation(&authority)?;
+    poisoned.oms.as_mut().expect("oms").payload.is_poisoned = true;
+    let result = authority.evaluate_and_reserve(intent(1, 2, PRICE, Side::Buy)?, poisoned, None);
+    assert!(
+        matches!(
+            result,
+            Err(AuthorityError::ObservationDigestMismatch {
+                observation_source: ObservationSource::Oms
+            })
+        ),
+        "a poisoned OMS journal blocks new risk"
+    );
+
+    let mut bad_digest = observation(&authority)?;
+    bad_digest
+        .account_journal
+        .as_mut()
+        .expect("journal")
+        .payload
+        .head_hash_hex = "short".to_owned();
+    let result = authority.evaluate_and_reserve(intent(2, 2, PRICE, Side::Buy)?, bad_digest, None);
+    assert!(
+        matches!(
+            result,
+            Err(AuthorityError::ObservationDigestMismatch {
+                observation_source: ObservationSource::AccountJournal
+            })
+        ),
+        "a failed ledger replay digest blocks new risk"
+    );
+
+    let mut unavailable = observation(&authority)?;
+    unavailable
+        .reconciliation
+        .as_mut()
+        .expect("reconciliation")
+        .payload
+        .report
+        .status = ReconciliationStatus::Unavailable;
+    let result = authority.evaluate_and_reserve(intent(3, 2, PRICE, Side::Buy)?, unavailable, None);
+    assert!(
+        matches!(result, Err(AuthorityError::ReconciliationMismatch { .. })),
+        "unavailable reconciliation blocks exactly like a mismatch"
+    );
+    assert!(
+        authority.snapshot()?.reconciliation_blocked,
+        "the authority records the reconciliation block"
+    );
+    Ok(())
+}
+
+#[test]
+fn kill_switch_persists_across_restart() -> TestResult {
+    let path = std::env::temp_dir().join(format!(
+        "nirnay-kill-switch-{}-{}.jsonl",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_nanos()
+    ));
+    let _ = std::fs::remove_file(&path);
+    let build = || {
+        RiskAuthority::new_with_control_store(
+            AccountId::new(ACCOUNT).expect("account"),
+            policy().expect("policy"),
+            vec![instrument().expect("instrument")],
+            date().expect("date"),
+            Box::new(FileControlStore::new(&path)),
+        )
+    };
+
+    let first = build();
+    assert!(
+        first.kill_switch_engaged()?,
+        "no control record fails closed engaged"
+    );
+    let first_tokens = first.register_all_owners()?;
+    first.set_kill_switch(
+        first_tokens.operator,
+        false,
+        "operator-1".to_owned(),
+        "documented paper release".to_owned(),
+        Some("release-evidence-1".to_owned()),
+    )?;
+    assert!(
+        !first.kill_switch_engaged()?,
+        "an evidenced release is applied"
+    );
+    drop(first);
+
+    let second = build();
+    assert!(
+        !second.kill_switch_engaged()?,
+        "the release survives a process restart"
+    );
+    let second_tokens = second.register_all_owners()?;
+    second.set_kill_switch(
+        second_tokens.operator,
+        true,
+        "operator-2".to_owned(),
+        "safety stop".to_owned(),
+        None,
+    )?;
+    drop(second);
+
+    let third = build();
+    assert!(
+        third.kill_switch_engaged()?,
+        "an engaged switch survives a process restart"
+    );
+    let result =
+        third.evaluate_and_reserve(intent(1, 2, PRICE, Side::Buy)?, observation(&third)?, None);
+    assert!(
+        matches!(result, Err(AuthorityError::KillSwitchEngaged { .. })),
+        "a restarted authority with a persisted engaged switch denies new risk"
+    );
+    let _ = std::fs::remove_file(&path);
+    Ok(())
+}
+
+/// Risk-reducing calls stay available when health is degraded; only new risk
+/// is gated (invariant L5).
+#[test]
+fn risk_reducing_paths_survive_degraded_health() -> TestResult {
+    let authority = authority()?;
+    let to_release = authority.evaluate_and_reserve(
+        intent(1, 2, PRICE, Side::Buy)?,
+        observation(&authority)?,
+        None,
+    )?;
+    let to_fill = authority.evaluate_and_reserve(
+        intent(2, 2, PRICE, Side::Buy)?,
+        observation(&authority)?,
+        None,
+    )?;
+    authority.set_now(LogicalNanos::new(2_000_000_000))?;
+
+    let rejected = authority.evaluate_and_reserve(
+        intent(3, 2, PRICE, Side::Buy)?,
+        observation(&authority)?,
+        None,
+    );
+    assert!(
+        matches!(rejected, Err(AuthorityError::StaleObservation { .. })),
+        "new risk is denied with a stale feed"
+    );
+    assert!(
+        authority.release(to_release.intent_id).is_ok(),
+        "release remains available with degraded health"
+    );
+    assert!(
+        authority.apply_fill(to_fill.intent_id).is_ok(),
+        "apply_fill remains available with degraded health"
+    );
+    assert!(
+        authority
+            .set_kill_switch(
+                authority.register_all_owners()?.operator,
+                true,
+                "operator".to_owned(),
+                "flatten".to_owned(),
+                None,
+            )
+            .is_ok(),
+        "engaging the kill switch remains available with degraded health"
+    );
+    Ok(())
+}
+
+/// Two concurrent callers cannot observe different health states: freshness
+/// and aggregation happen under the same mutex as the reservation.
+#[test]
+fn health_decision_is_inside_one_lock() -> TestResult {
+    let authority = Arc::new(
+        RiskAuthority::new(
+            AccountId::new(ACCOUNT)?,
+            policy()?,
+            vec![instrument()?],
+            date()?,
+        )
+        .with_observation_policy(ObservationPolicy {
+            max_market_age_ns: 100,
+            ..ObservationPolicy::default()
+        }),
+    );
+    release_switch(&authority)?;
+    clear_reconciliation(&authority)?;
+    authority.set_now(LogicalNanos::new(2_000))?;
+    let barrier = Arc::new(Barrier::new(2));
+    let mut fresh = feed()?;
+    fresh.received_at = LogicalNanos::new(2_000);
+    let mut handles = Vec::new();
+    for (id, stale) in [(1_u64, false), (2_u64, true)] {
+        let authority = Arc::clone(&authority);
+        let barrier = Arc::clone(&barrier);
+        let mut observations = observations_with(fresh.clone(), authority.register_all_owners()?);
+        if stale {
+            stale_source(&mut observations, ObservationSource::MarketDataKernel);
+        }
+        handles.push(thread::spawn(move || {
+            let target = intent(id, 2, PRICE, Side::Buy).expect("intent");
+            barrier.wait();
+            authority.evaluate_and_reserve(target, observations, None)
+        }));
+    }
+    let results: Vec<Result<_, _>> = handles
+        .into_iter()
+        .map(|handle| handle.join().expect("thread"))
+        .collect();
+    let accepted = results.iter().filter(|result| result.is_ok()).count();
+    let denied = results
+        .iter()
+        .filter(|result| matches!(result, Err(AuthorityError::StaleObservation { .. })))
+        .count();
+    assert_eq!(accepted, 1, "the fresh caller reserves once");
+    assert_eq!(denied, 1, "the stale caller is denied by the locked clock");
+    Ok(())
+}
+
+/// No `safe_for_new_risk` decision or string verdict crosses the authority
+/// boundary; failures are typed `AuthorityError` values.
+#[test]
+fn no_caller_bool_or_string_reason() -> TestResult {
+    let source = include_str!("../src/authority.rs");
+    assert!(
+        !source.contains("safe_for_new_risk"),
+        "the authority API has no caller-owned health boolean"
+    );
+    let authority = authority()?;
+    let result = authority.evaluate_and_reserve(
+        intent(1, 2, PRICE, Side::Buy)?,
+        observation(&authority)?,
+        None,
+    );
+    assert!(result.is_ok(), "the typed observation bundle is sufficient");
+    Ok(())
+}
+
+/// An explicit policy can shorten each freshness window.
+#[test]
+fn observation_policy_is_authority_owned() -> TestResult {
+    let authority = RiskAuthority::new(
+        AccountId::new(ACCOUNT)?,
+        policy()?,
+        vec![instrument()?],
+        date()?,
+    )
+    .with_observation_policy(ObservationPolicy {
+        max_market_age_ns: 10,
+        ..ObservationPolicy::default()
+    });
+    release_switch(&authority)?;
+    clear_reconciliation(&authority)?;
+    authority.set_now(LogicalNanos::new(100))?;
+    let result = authority.evaluate_and_reserve(
+        intent(1, 2, PRICE, Side::Buy)?,
+        observation(&authority)?,
+        None,
+    );
+    assert!(
+        matches!(result, Err(AuthorityError::StaleObservation { .. })),
+        "an authority-owned policy shortens the market freshness window"
+    );
+    Ok(())
+}
+
+/// A direct caller cannot fabricate all six observations: an observation from
+/// a different process-local authority carries a token this authority never
+/// issued and is denied before any policy evaluation.
+#[test]
+fn forged_observations_without_registered_token_are_denied() -> TestResult {
+    let authority = authority()?;
+    let other = super_authority()?;
+    let foreign = observation(&other)?;
+    let result = authority.evaluate_and_reserve(intent(1, 2, PRICE, Side::Buy)?, foreign, None);
+    assert!(
+        matches!(
+            result,
+            Err(AuthorityError::ProducerTokenMismatch {
+                observation_source: ObservationSource::MarketDataKernel
+            })
+        ),
+        "an unregistered producer token is a typed denial"
+    );
+
+    let unregistered = RiskAuthority::new(
+        AccountId::new(ACCOUNT)?,
+        policy()?,
+        vec![instrument()?],
+        date()?,
+    );
+    let result = unregistered.evaluate_and_reserve(
+        intent(2, 2, PRICE, Side::Buy)?,
+        observation(&authority)?,
+        None,
+    );
+    assert!(
+        matches!(
+            result,
+            Err(AuthorityError::UnregisteredProducer {
+                observation_source: ObservationSource::MarketDataKernel
+            })
+        ),
+        "an authority with no registered owners denies new risk"
+    );
+    Ok(())
+}
+
+/// Borrowing another owner's registered token does not authenticate an
+/// observation: the token is bound to its own source.
+#[test]
+fn forging_another_owners_token_is_denied() -> TestResult {
+    let authority = authority()?;
+    let tokens = authority.register_all_owners()?;
+    let mut observations = observation(&authority)?;
+    observations.market.as_mut().expect("market").producer_token = tokens.ops;
+    let result =
+        authority.evaluate_and_reserve(intent(1, 2, PRICE, Side::Buy)?, observations, None);
+    assert!(
+        matches!(
+            result,
+            Err(AuthorityError::ProducerTokenMismatch {
+                observation_source: ObservationSource::MarketDataKernel
+            })
+        ),
+        "an ops token cannot authenticate the market owner"
+    );
+    Ok(())
+}
+
+/// Kill-switch release and reconciliation-latch clearing are authenticated
+/// owner actions with non-empty evidence, not caller-supplied strings.
+#[test]
+fn protected_control_actions_require_token_and_evidence() -> TestResult {
+    let authority = authority()?;
+    let tokens = authority.register_all_owners()?;
+    let other = authority.register_owner(ObservationSource::Ops)?;
+
+    assert!(
+        matches!(
+            authority.set_kill_switch(
+                other,
+                false,
+                "forged".to_owned(),
+                "forged".to_owned(),
+                Some("fake".to_owned()),
+            ),
+            Err(AuthorityError::ProducerTokenMismatch { .. })
+        ),
+        "an ops token cannot release the kill switch"
+    );
+    assert!(
+        matches!(
+            authority.set_kill_switch(
+                tokens.operator,
+                false,
+                "operator".to_owned(),
+                "no evidence".to_owned(),
+                None,
+            ),
+            Err(AuthorityError::MissingEvidence { .. })
+        ),
+        "a release without evidence is refused"
+    );
+    assert!(
+        matches!(
+            authority.set_reconciliation_blocked(
+                other,
+                false,
+                "forged".to_owned(),
+                Some("fake".to_owned()),
+            ),
+            Err(AuthorityError::ProducerTokenMismatch { .. })
+        ),
+        "an ops token cannot clear the reconciliation latch"
+    );
+    assert!(
+        matches!(
+            authority.set_reconciliation_blocked(
+                tokens.reconciliation,
+                false,
+                "no evidence".to_owned(),
+                None,
+            ),
+            Err(AuthorityError::MissingEvidence { .. })
+        ),
+        "a latch clear without evidence is refused"
+    );
+    assert!(
+        authority
+            .set_kill_switch(
+                tokens.operator,
+                false,
+                "operator".to_owned(),
+                "documented".to_owned(),
+                Some("evidence-ref".to_owned()),
+            )
+            .is_ok(),
+        "an evidenced operator release is accepted"
     );
     Ok(())
 }

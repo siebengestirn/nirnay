@@ -243,6 +243,37 @@ fn digest_of(seq: u64, op: &str, state: &OmsState, prev_digest: &str) -> String 
     raw.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
+/// Semantic identity of a fill event, independent of journal order and of the
+/// OMS chain digest. Every economic field is included: ids, side, quantity,
+/// price, currency, charges, charge status, source, scope and provenance.
+///
+/// The two local-clock fields (`broker_timestamp_ns`, `received_at_ns`) are
+/// deliberately excluded. They are observation times assigned by the receiver,
+/// so a redelivery of the same broker event carries different local times;
+/// including them would turn an idempotent duplicate into a false conflict.
+#[must_use]
+pub fn fill_content_digest(event: &FillEvent) -> String {
+    let preimage = serde_json::json!({
+        "schema_version": event.schema_version,
+        "execution_id": &event.execution_id,
+        "broker_event_id": &event.broker_event_id,
+        "client_order_id": event.client_order_id.get(),
+        "oms_order_id": &event.oms_order_id,
+        "side": event.side,
+        "quantity": event.quantity,
+        "price_paise": event.price_paise,
+        "currency": &event.currency,
+        "source": &event.source,
+        "account_scope": &event.account_scope,
+        "charges_paise": event.charges_paise,
+        "charge_status": event.charge_status,
+        "provenance": &event.provenance,
+    })
+    .to_string();
+    let raw = Sha256::digest(format!("nirnay.fill.event.v1\0{preimage}").as_bytes());
+    raw.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
 /// The authoritative store. A single instance owns the journal handle and the
 /// replayed state; every transition is one fsynced append.
 pub struct OmsStore {
@@ -702,6 +733,16 @@ impl OmsStore {
         }
         let execution_key = format!("execution:{execution_id}");
         if event_seen(&self.state, &broker_event_id) || event_seen(&self.state, &execution_key) {
+            // A repeated delivery is an idempotent no-op only when the content
+            // is identical. Reusing an execution id for different economics is
+            // a hard conflict and must surface as a reconciliation mismatch.
+            if let Some(stored) = self.state.fills.get(&execution_id)
+                && fill_content_digest(stored) != fill_content_digest(&event)
+            {
+                return Err(OmsError::FillContentConflict {
+                    execution_id: execution_id.clone(),
+                });
+            }
             return Ok(false);
         }
         if quantity <= 0 || price_paise <= 0 {
@@ -810,6 +851,26 @@ impl OmsStore {
     /// All persisted execution events in execution-id order.
     pub fn fills(&self) -> Vec<FillEvent> {
         self.state.fills.values().cloned().collect()
+    }
+
+    /// Digest of the last committed OMS journal record, for replay equality
+    /// checks against an independently reopened store.
+    #[must_use]
+    pub fn state_digest(&self) -> &str {
+        &self.last_digest
+    }
+
+    /// Read-only view of every order, for independent OMS-vs-ledger
+    /// reconciliation. Reconciliation recomputes from rows, never from a
+    /// caller-supplied summary.
+    pub fn orders(&self) -> Result<Vec<OrderView>, OmsError> {
+        let mut views = Vec::new();
+        for record in self.state.orders.values() {
+            if let Some(view) = self.order(record.client_order_id)? {
+                views.push(view);
+            }
+        }
+        Ok(views)
     }
 
     pub fn request_cancel(

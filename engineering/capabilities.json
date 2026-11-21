@@ -279,6 +279,30 @@
       "evidence_status": "Four opt-in targets emit BENCH-* lines from ingestor checkpoints, synthetic PIT dataset build/write/verify and backtest timing, seeded concurrent authorization timing, and OMS recovery, duplicate-event and reconciliation timing. Latency and throughput are recorded but never asserted as gates; benchmarks remain outside make check and CI. A field template for future dated records is at evidence/PERFORMANCE-TEMPLATE.md. No dated result file is published and no latency or throughput claim is granted.",
       "owner": "performance",
       "scope": "Makefile; crates/market-archive/tests/performance.rs; research/python/src/quantlab/bench.py; research/python/tests/test_bench.py; crates/risk-authority/tests/performance.rs; crates/authoritative-oms/tests/performance.rs; evidence/PERFORMANCE-TEMPLATE.md"
+    },
+    {
+      "id": "CAP-035",
+      "name": "Content-addressed account ledger projected from durable OMS fills",
+      "status": "implemented",
+      "evidence_status": "trading-core carries typed evidenced opening balances and ExecutionProjected payloads; authoritative-oms owns a downward-only projector that derives a stable 48-hex EventId from (account_scope, execution_id) plus a separate 64-hex SHA-256 content digest over the economic fields of each FillEvent. It folds exact INR paise into cash, signed lots, weighted-average cost, realised/unrealised P&L, charge buckets and exposure, records busts and charge confirmations as reversing events, and resolves the active posting before reversing so combined bust/confirm flows stay exact. The replay cursor is derived from the journal and tests cover duplicates, content conflicts, partial fills, reversals, crash boundaries, confluence and scope/currency fail-closed. Implemented only; not independently verified.",
+      "owner": "ledger",
+      "scope": "crates/trading-core/src/model.rs; crates/authoritative-oms/src/account_projection.rs; crates/authoritative-oms/tests/account_ledger.rs"
+    },
+    {
+      "id": "CAP-036",
+      "name": "Independent OMS-vs-ledger reconciliation with typed blocking reports",
+      "status": "implemented",
+      "evidence_status": "A comparator recomputes positions and order aggregates from OmsStore and the projected ledger, emitting ReconciliationReport plus typed anomalies for duplicate delivery, same-id content conflicts, partial-fill aggregates, late fills after cancel, out-of-order delivery, unknown deliveries, replay digest failures and unavailable views. Blocking anomalies consistently drive a Mismatch or Unavailable status; OMS raises FillContentConflict instead of silently dropping a reused execution id. Mismatch and Unavailable drive a sticky reconciliation_blocked inside the authority through RiskCheck::Reconciliation, cleared only by an authenticated operator resolution. Implemented only; not independently verified.",
+      "owner": "reconciliation",
+      "scope": "crates/authoritative-oms/src/reconciliation.rs; crates/authoritative-oms/src/error.rs; crates/risk-authority/src/authority.rs"
+    },
+    {
+      "id": "CAP-037",
+      "name": "Authority-owned typed health-to-risk decision with registered producers and persisted kill switch",
+      "status": "implemented",
+      "evidence_status": "evaluate_and_reserve takes one typed Observations bundle from six owners and performs source, version, clock, freshness and registered-producer token validation plus health aggregation inside the same mutex as reservation; no caller-owned safe_for_new_risk boolean or string verdict remains. Each owner token is an unguessable process-local value issued by RiskAuthority::register_owner and bound to its source; observations, kill-switch release and reconciliation-latch clearing require the registered token plus an evidenced reason. Typed AuthorityError variants cover missing/stale/unsupported/forged observations, digest failures, reconciliation mismatch, kill switch and ops thresholds. Kill-switch state is persisted in an owner-local fsynced file through a ControlStore trait and fails closed on absent or corrupt state. release/apply_fill remain observation-free risk-reducing paths. Paper-runner supplies synthetic labelled observations from registered adapters and derives its final report verdict from authority results. Implemented only; not independently verified.",
+      "owner": "risk-authority",
+      "scope": "crates/risk-authority/src/authority.rs; crates/risk-authority/src/observation.rs; crates/risk-authority/src/control.rs; crates/risk-authority/tests/authority.rs; apps/paper-runner/src/lib.rs"
     }
   ]
 }

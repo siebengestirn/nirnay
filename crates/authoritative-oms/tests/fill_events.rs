@@ -139,13 +139,27 @@ fn duplicate_execution_is_idempotent_and_different_content_conflicts() -> TestRe
         "first fill is accepted"
     );
     assert!(
-        !store.apply_typed_fill(event("exec-1", "evt-fill-2", 4))?,
-        "the same execution id is idempotent"
+        !store.apply_typed_fill(event("exec-1", "evt-fill-1", 4))?,
+        "an identical duplicate is idempotent"
     );
     assert_eq!(
         store.fills().len(),
         1,
         "no second economic event is recorded"
+    );
+    let mut conflicting = event("exec-1", "evt-fill-1", 4);
+    conflicting.price_paise = 1_001;
+    assert!(
+        matches!(
+            store.apply_typed_fill(conflicting),
+            Err(OmsError::FillContentConflict { .. })
+        ),
+        "a reused execution id with different content is a hard conflict"
+    );
+    assert_eq!(
+        store.fills().len(),
+        1,
+        "the conflicting event did not replace the original"
     );
     Ok(())
 }

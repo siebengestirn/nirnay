@@ -180,6 +180,51 @@ impl JournalRef {
     }
 }
 
+/// Durable evidence for an opening cash balance.
+///
+/// A ledger opening is never an invented number: it must name the broker or
+/// operator statement and the journal record that carries that statement. The
+/// reference is validated before the account-opening record is appended.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OpeningBalanceEvidence {
+    pub statement_ref: String,
+    pub journal_ref: JournalRef,
+    pub observed_at_ns: i64,
+}
+
+impl OpeningBalanceEvidence {
+    pub fn validate(&self) -> Result<(), DomainError> {
+        if self.statement_ref.trim().is_empty() {
+            return Err(DomainError::InvalidInstrument(
+                "opening balance requires a statement reference".to_owned(),
+            ));
+        }
+        if self.observed_at_ns <= 0 {
+            return Err(DomainError::InvalidEventTime(
+                "opening balance requires a positive observation time".to_owned(),
+            ));
+        }
+        self.journal_ref.validate()
+    }
+}
+
+/// Whether a ledger posting opens an economic effect or reverses a prior one.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LedgerPostingKind {
+    Posting,
+    Reversal,
+}
+
+/// Domain-owned charge provenance. The OMS type is engine-local and cannot be
+/// referenced from the domain layer, so the ledger carries its own typed value.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LedgerChargeStatus {
+    Estimated,
+    BrokerConfirmed,
+}
+
 /// Brokerage product. `Delivery` is held to settlement; `Intraday` is
 /// squared off within the session.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -401,19 +446,26 @@ pub struct Fill {
 }
 
 impl Fill {
-    /// Recompute the cash movement implied by this fill and compare it with
-    /// the recorded value. Buys are a cash outflow (including charges); sells
-    /// are an inflow net of charges.
-    pub fn validate_accounting(&self) -> Result<(), DomainError> {
+    /// Exact cash movement implied by this fill, before any reversal sign is
+    /// applied. Buys are an outflow (including charges); sells are an inflow
+    /// net of charges.
+    pub fn expected_cash_delta(&self) -> Result<Paise, DomainError> {
         if self.quantity.is_zero() {
             return Err(DomainError::ZeroQuantity);
         }
         let total_charges = self.charges.total()?;
         let turnover = self.price.notional(self.quantity)?;
-        let expected_cash = match self.side {
-            Side::Buy => turnover.checked_add(total_charges)?.checked_neg()?,
-            Side::Sell => turnover.checked_sub(total_charges)?,
-        };
+        match self.side {
+            Side::Buy => turnover.checked_add(total_charges)?.checked_neg(),
+            Side::Sell => turnover.checked_sub(total_charges),
+        }
+    }
+
+    /// Recompute the cash movement implied by this fill and compare it with
+    /// the recorded value. Buys are a cash outflow (including charges); sells
+    /// are an inflow net of charges.
+    pub fn validate_accounting(&self) -> Result<(), DomainError> {
+        let expected_cash = self.expected_cash_delta()?;
         if expected_cash != self.cash_delta {
             return Err(DomainError::InvalidInstrument(
                 "fill cash delta differs from its accounting inputs".to_owned(),
@@ -540,6 +592,32 @@ pub enum EventPayload {
         starting_cash: Paise,
         trade_date: TradeDate,
     },
+    /// Account opening with explicit, durable evidence. Distinct from the
+    /// legacy `AccountOpened` so that evidence can never be omitted silently.
+    AccountOpenedEvidenced {
+        account_id: AccountId,
+        account_scope: String,
+        starting_cash: Paise,
+        trade_date: TradeDate,
+        evidence: OpeningBalanceEvidence,
+    },
+    /// One OMS execution projected onto the account ledger. `content_digest`
+    /// is the semantic identity of the source `FillEvent`, independent of the
+    /// journal's ordinal hash chain.
+    ExecutionProjected {
+        kind: LedgerPostingKind,
+        execution_id: String,
+        content_digest: String,
+        broker_event_id: String,
+        client_order_id: u64,
+        oms_order_id: String,
+        charge_status: LedgerChargeStatus,
+        account_scope: String,
+        instrument_id: InstrumentId,
+        provenance: String,
+        fill: Fill,
+        cash_delta: Paise,
+    },
     SessionStateObserved {
         trade_date: TradeDate,
         phase: SessionPhase,
@@ -630,6 +708,8 @@ impl EventPayload {
     pub const fn kind(&self) -> &'static str {
         match self {
             Self::AccountOpened { .. } => "account_opened",
+            Self::AccountOpenedEvidenced { .. } => "account_opened_evidenced",
+            Self::ExecutionProjected { .. } => "execution_projected",
             Self::SessionStateObserved { .. } => "session_state_observed",
             Self::QuoteReceived { .. } => "quote_received",
             Self::LateQuoteObserved { .. } => "late_quote_observed",
@@ -735,7 +815,10 @@ impl StoredBody {
         if self.envelope.schema_version == 2
             && !matches!(
                 self.payload,
-                EventPayload::FillBooked { .. } | EventPayload::AccountOpened { .. }
+                EventPayload::FillBooked { .. }
+                    | EventPayload::AccountOpened { .. }
+                    | EventPayload::AccountOpenedEvidenced { .. }
+                    | EventPayload::ExecutionProjected { .. }
             )
         {
             return Err(DomainError::InvalidEventTime(
@@ -752,7 +835,10 @@ impl StoredBody {
         // A v2 genesis record is self-causative: it names the run root,
         // which is its own event identity.
         if self.envelope.schema_version == 2
-            && matches!(self.payload, EventPayload::AccountOpened { .. })
+            && matches!(
+                self.payload,
+                EventPayload::AccountOpened { .. } | EventPayload::AccountOpenedEvidenced { .. }
+            )
             && self.envelope.causation_id.as_ref() != Some(&self.envelope.event_id)
         {
             return Err(DomainError::InvalidEventTime(
@@ -784,6 +870,63 @@ impl StoredBody {
                 return Err(DomainError::InvalidInstrument(
                     "starting cash must be positive".to_owned(),
                 ));
+            }
+            EventPayload::AccountOpenedEvidenced {
+                starting_cash,
+                account_scope,
+                evidence,
+                ..
+            } => {
+                if starting_cash.0 <= 0 {
+                    return Err(DomainError::InvalidInstrument(
+                        "evidenced starting cash must be positive".to_owned(),
+                    ));
+                }
+                if account_scope.trim().is_empty() {
+                    return Err(DomainError::InvalidInstrument(
+                        "account scope is required".to_owned(),
+                    ));
+                }
+                evidence.validate()?;
+            }
+            EventPayload::ExecutionProjected {
+                kind,
+                execution_id,
+                content_digest,
+                broker_event_id,
+                account_scope,
+                provenance,
+                fill,
+                cash_delta,
+                ..
+            } => {
+                if execution_id.trim().is_empty()
+                    || broker_event_id.trim().is_empty()
+                    || provenance.trim().is_empty()
+                    || account_scope.trim().is_empty()
+                {
+                    return Err(DomainError::InvalidInstrument(
+                        "projected execution requires execution, broker, scope and provenance identity".to_owned(),
+                    ));
+                }
+                if content_digest.len() != 64
+                    || !content_digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+                {
+                    return Err(DomainError::InvalidInstrument(
+                        "projected execution content digest must be 256-bit hexadecimal".to_owned(),
+                    ));
+                }
+                let expected = fill.expected_cash_delta()?;
+                let recorded = match kind {
+                    LedgerPostingKind::Posting => expected,
+                    LedgerPostingKind::Reversal => expected.checked_neg()?,
+                };
+                if recorded != *cash_delta {
+                    return Err(DomainError::InvalidInstrument(
+                        "projected execution cash delta differs from its accounting inputs"
+                            .to_owned(),
+                    ));
+                }
             }
             EventPayload::DecisionMade { decision } => {
                 for hash in [
