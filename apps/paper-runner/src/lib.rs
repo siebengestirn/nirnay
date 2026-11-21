@@ -101,6 +101,7 @@ use trading_core::{
     InstrumentType,
     IntentId,
     JournalRef,
+    LiquidityDepth,
     Listing,
     ListingStatus,
     ListingTerms,
@@ -400,6 +401,10 @@ fn build_observations(
     // clock is advanced by the measured feed age, so freshness is a real check.
     let at = LogicalNanos::ZERO;
     let verification = projector.verification_report();
+    let synthetic_depth = feed.quote.as_ref().map(|quote| LiquidityDepth {
+        displayed_quantity: quote.ask_quantity,
+        adv_quantity: quote.ask_quantity,
+    });
     Observations {
         market: Some(Observation::new(
             tokens.market,
@@ -413,6 +418,12 @@ fn build_observations(
                 kernel_schema_version: market_kernel::KERNEL_SESSION_SCHEMA_VERSION,
                 source_sequence,
                 connection_epoch: Some(1),
+                // Synthetic placeholders only: no real depth, marks, greeks or
+                // borrow master is available in the paper harness.
+                depth: synthetic_depth,
+                marks_paise: BTreeMap::new(),
+                greeks: None,
+                borrow: None,
                 synthetic: true,
             },
         )),
@@ -739,6 +750,9 @@ pub fn run_paper(input: &PaperInput, oms_path: &Path) -> Result<PaperRun, String
             permit_id: reservation.permit_id,
             policy_version: reservation.assessment.policy_version.clone(),
             snapshot_revision: reservation.snapshot_revision,
+            digest: authority
+                .permit_digest(&reservation, &order)
+                .map_err(|e| e.to_string())?,
         };
         store
             .create(client, &order, &permit, ordinal as i64)

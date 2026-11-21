@@ -5,12 +5,20 @@
 //! revision. The authority alone checks freshness and derives health; no
 //! caller-supplied verdict or boolean crosses this boundary.
 
-use std::fmt;
+use std::{
+    collections::BTreeMap, //
+    fmt,
+};
 
 use serde::Serialize;
 use trading_core::{
-    FeedHealth, //
+    BorrowAvailability, //
+    FeedHealth,
+    Greeks,
+    InstrumentId,
+    LiquidityDepth,
     LogicalNanos,
+    Paise,
     QuoteSnapshot,
     ReconciliationReport,
 };
@@ -193,6 +201,18 @@ pub struct MarketObservation {
     pub kernel_schema_version: u32,
     pub source_sequence: Option<u64>,
     pub connection_epoch: Option<u64>,
+    /// Synthetic displayed depth and ADV. `None` fails the liquidity check
+    /// closed once a participation cap is configured.
+    pub depth: Option<LiquidityDepth>,
+    /// Quote-derived exact marks for stress projection. Missing marks fail
+    /// the stress check closed.
+    pub marks_paise: BTreeMap<InstrumentId, Paise>,
+    /// Synthetic per-instrument Greeks. Missing greeks fail closed for a
+    /// derivative-flagged instrument.
+    pub greeks: Option<Greeks>,
+    /// Synthetic short-borrow evidence. Missing borrow fails a short closed
+    /// once a borrow cap is configured.
+    pub borrow: Option<BorrowAvailability>,
     /// True only for paper/synthetic wiring. Never a health verdict.
     pub synthetic: bool,
 }

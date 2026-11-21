@@ -25,6 +25,7 @@ use trading_core::{
     Side,
     StrategyId,
     Venue,
+    permit_digest,
 };
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -51,11 +52,12 @@ fn intent(id: u64, quantity: i64) -> Result<OrderIntent, Box<dyn std::error::Err
     })
 }
 
-fn permit() -> PermitRef {
+fn permit(permit_id: u64, intent: &OrderIntent) -> PermitRef {
     PermitRef {
-        permit_id: 7,
+        permit_id,
         policy_version: "risk-v1".to_owned(),
         snapshot_revision: 3,
+        digest: permit_digest(permit_id, "risk-v1", 3, intent),
     }
 }
 
@@ -78,7 +80,12 @@ fn writer_lock_is_released_when_the_store_is_dropped() -> TestResult {
     let path = directory.path().join("oms.journal");
     {
         let mut first = OmsStore::open(&path)?;
-        first.create(ClientOrderId::new(1)?, &intent(1, 10)?, &permit(), 1_000)?;
+        first.create(
+            ClientOrderId::new(1)?,
+            &intent(1, 10)?,
+            &permit(7, &intent(1, 10)?),
+            1_000,
+        )?;
     }
     let reopened = OmsStore::open(&path)?;
     assert!(
@@ -94,11 +101,21 @@ fn partial_write_poisons_the_writer_and_recovery_fails_closed() -> TestResult {
     let path = directory.path().join("oms.journal");
     let mut store = OmsStore::open(&path)?;
     store.force_commit_fault(authoritative_oms::CommitFault::PartialWrite);
-    let failed = store.create(ClientOrderId::new(1)?, &intent(1, 10)?, &permit(), 1_000);
+    let failed = store.create(
+        ClientOrderId::new(1)?,
+        &intent(1, 10)?,
+        &permit(7, &intent(1, 10)?),
+        1_000,
+    );
     assert!(failed.is_err(), "an incomplete append must fail");
     assert!(store.is_poisoned(), "the writer must be poisoned");
 
-    let after = store.create(ClientOrderId::new(2)?, &intent(1, 11)?, &permit(), 1_100);
+    let after = store.create(
+        ClientOrderId::new(2)?,
+        &intent(1, 11)?,
+        &permit(8, &intent(1, 11)?),
+        1_100,
+    );
     assert!(
         matches!(after, Err(OmsError::WriterPoisoned)),
         "a poisoned writer must refuse further mutations"
@@ -115,14 +132,29 @@ fn sync_failure_poisons_the_writer_and_recovery_replays_the_durable_prefix() -> 
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("oms.journal");
     let mut store = OmsStore::open(&path)?;
-    store.create(ClientOrderId::new(1)?, &intent(1, 10)?, &permit(), 1_000)?;
+    store.create(
+        ClientOrderId::new(1)?,
+        &intent(1, 10)?,
+        &permit(7, &intent(1, 10)?),
+        1_000,
+    )?;
     store.force_commit_fault(authoritative_oms::CommitFault::SyncFailure);
-    let failed = store.create(ClientOrderId::new(2)?, &intent(1, 11)?, &permit(), 1_100);
+    let failed = store.create(
+        ClientOrderId::new(2)?,
+        &intent(1, 11)?,
+        &permit(8, &intent(1, 11)?),
+        1_100,
+    );
     assert!(failed.is_err(), "an uncertain durability result must fail");
     assert!(store.is_poisoned(), "the writer must stay poisoned");
     assert!(
         matches!(
-            store.create(ClientOrderId::new(3)?, &intent(1, 12)?, &permit(), 1_200),
+            store.create(
+                ClientOrderId::new(3)?,
+                &intent(1, 12)?,
+                &permit(9, &intent(1, 12)?),
+                1_200
+            ),
             Err(OmsError::WriterPoisoned)
         ),
         "the poisoned instance stays unusable"
@@ -145,7 +177,12 @@ fn restart_preserves_event_order() -> TestResult {
     let path = directory.path().join("oms.journal");
     {
         let mut store = OmsStore::open(&path)?;
-        store.create(ClientOrderId::new(1)?, &intent(1, 10)?, &permit(), 1_000)?;
+        store.create(
+            ClientOrderId::new(1)?,
+            &intent(1, 10)?,
+            &permit(7, &intent(1, 10)?),
+            1_000,
+        )?;
         store.accept_risk_approved(ClientOrderId::new(1)?, 1_010)?;
     }
     let mut store = OmsStore::open(&path)?;
@@ -157,7 +194,12 @@ fn restart_preserves_event_order() -> TestResult {
         authoritative_oms::OmsOrderState::PendingSubmission,
         "the last committed state survives restart"
     );
-    store.create(ClientOrderId::new(2)?, &intent(1, 20)?, &permit(), 2_000)?;
+    store.create(
+        ClientOrderId::new(2)?,
+        &intent(1, 20)?,
+        &permit(10, &intent(1, 20)?),
+        2_000,
+    )?;
     let lines = fs::read_to_string(&path)?;
     let sequences: Vec<u64> = lines
         .lines()

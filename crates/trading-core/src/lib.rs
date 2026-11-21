@@ -25,6 +25,7 @@ mod ids;
 mod instrument;
 mod model;
 mod money;
+mod risk;
 mod time;
 
 pub use error::DomainError;
@@ -42,6 +43,7 @@ pub use model::{
     SessionPhase, StoredBody,
 };
 pub use money::{CheckedPaise, DoubledPaise, Lots, Paise, PricePaise, Quantity};
+pub use risk::{BorrowAvailability, Greeks, LiquidityDepth, permit_digest};
 pub use time::{LogicalNanos, TradeDate, UtcNanos};
 
 pub use market_types::Side;

@@ -968,6 +968,19 @@ impl Engine {
             pending_sell_quantity,
             gross_exposure_paise,
             pending_gross_exposure_paise,
+            // The paper engine has one synthetic strategy and no sector,
+            // stress, depth, Greeks or borrow master; these controls stay
+            // inert here and are exercised with typed fixtures in the
+            // risk-engine and risk-authority tests.
+            strategy_exposure_paise: Paise(0),
+            sector_label: None,
+            sector_exposure_paise: Paise(0),
+            positions: Default::default(),
+            marks_paise: Default::default(),
+            depth: None,
+            greeks: None,
+            is_derivative: false,
+            borrow: None,
             daily_pnl: self.projection.daily_pnl,
             open_orders: self.projection.open_order_count(),
             orders_last_second: self.projection.orders_last_second(now),

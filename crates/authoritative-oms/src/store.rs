@@ -34,7 +34,10 @@ use sha2::{
     Digest, //
     Sha256,
 };
-use trading_core::OrderIntent;
+use trading_core::{
+    OrderIntent, //
+    permit_digest,
+};
 
 use crate::{
     error::OmsError, //
@@ -87,11 +90,14 @@ impl BrokerOrderId {
 
 /// Opaque reference to the risk permit that authorized this order. The OMS
 /// stores it as evidence; it does not depend on the risk-authority crate.
+/// `digest` is the deterministic, unkeyed SHA-256 binding to the exact
+/// `OrderIntent`; the OMS recomputes it on `create` and denies a mismatch.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PermitRef {
     pub permit_id: u64,
     pub policy_version: String,
     pub snapshot_revision: u64,
+    pub digest: String,
 }
 
 /// A claim returned to a dispatcher. It carries the complete typed order
@@ -213,6 +219,10 @@ struct OmsState {
     events: std::collections::BTreeSet<String>,
     #[serde(default)]
     fills: std::collections::BTreeMap<String, FillEvent>,
+    /// Permit ids that have already opened an order. Replayed from the journal
+    /// on every recovery, so a permit cannot be spent twice after restart.
+    #[serde(default)]
+    consumed_permits: std::collections::BTreeSet<u64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -449,6 +459,12 @@ impl OmsStore {
             .validate()
             .map_err(|error| OmsError::InvalidIdentifier(error.to_string()))?;
         let key = client_order_id.to_string();
+        let expected_digest = permit_digest(
+            permit.permit_id,
+            &permit.policy_version,
+            permit.snapshot_revision,
+            intent,
+        );
         self.apply("create", |state| {
             if let Some(existing) = state.orders.get(&key) {
                 if existing.intent == *intent && existing.permit == *permit {
@@ -456,7 +472,21 @@ impl OmsStore {
                 }
                 return Err(OmsError::ConflictingClientOrder(key.clone()));
             }
+            // A permit is single-use across the durable journal: an identical
+            // replay with the same client id was handled above; any other
+            // client id must be denied even after an authority restart.
+            if state.consumed_permits.contains(&permit.permit_id) {
+                return Err(OmsError::PermitAlreadyConsumed {
+                    permit_id: permit.permit_id,
+                });
+            }
+            if expected_digest != permit.digest {
+                return Err(OmsError::PermitDigestMismatch {
+                    permit_id: permit.permit_id,
+                });
+            }
             let mut next = state.clone();
+            next.consumed_permits.insert(permit.permit_id);
             next.orders.insert(
                 key.clone(),
                 OrderRecord {

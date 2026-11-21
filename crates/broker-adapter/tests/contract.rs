@@ -35,6 +35,7 @@ use trading_core::{
     Side,
     StrategyId,
     Venue,
+    permit_digest,
 };
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -62,10 +63,12 @@ fn intent(id: u64, quantity: i64) -> Result<OrderIntent, Box<dyn std::error::Err
 }
 
 fn permit() -> PermitRef {
+    let canonical = intent(1, 10).expect("canonical fixture intent");
     PermitRef {
         permit_id: 9,
         policy_version: "risk-v1".to_owned(),
         snapshot_revision: 2,
+        digest: permit_digest(9, "risk-v1", 2, &canonical),
     }
 }
 
