@@ -14,6 +14,9 @@ from ..alpha_search import AlphaCosts
 from ..backtest import BacktestConfig, EventDrivenBacktester
 from ..market import canonical_bytes
 from ..portfolio_backtest import MultiInstrumentPortfolioBacktester, PortfolioBacktestConfig
+from .event_replay import (ComparisonResult, RunRecord, build_record, compare_records,
+                           read_record, write_record)
+from .execution import BaselineParams, ConservativeMbpModel, CostModel, default_cost_model
 
 
 def cost_assumptions_digest(costs: Any) -> str:
@@ -30,8 +33,18 @@ def cost_assumptions_digest(costs: Any) -> str:
 __all__ = [
     "AlphaCosts",
     "BacktestConfig",
+    "BaselineParams",
+    "ComparisonResult",
+    "ConservativeMbpModel",
+    "CostModel",
     "EventDrivenBacktester",
+    "RunRecord",
+    "build_record",
+    "compare_records",
+    "default_cost_model",
     "MultiInstrumentPortfolioBacktester",
     "PortfolioBacktestConfig",
     "cost_assumptions_digest",
+    "read_record",
+    "write_record",
 ]

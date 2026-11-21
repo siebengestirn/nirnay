@@ -188,3 +188,35 @@ def test_upstox_normalize_rolls_back_output_if_report_link_fails(tmp_path, monke
     assert len(calls) == 2, "the injected report-link failure actually fired"
     assert not output.exists()
     assert not sidecar.exists()
+
+
+def test_list_experiments_cli_shows_rejected_runs_and_attempt_counts(tmp_path, capsys):
+    from quantlab.experiments import ExperimentRegistry, content_hash, make_attempt
+    from test_parameter_search import _configs, _registered
+
+    path = tmp_path / "registry.sqlite3"
+    registry = ExperimentRegistry(path)
+    registered = _registered()
+    registry.register(registered)
+    attempts = [make_attempt(config, {"validation_net_mean": 0.0})
+                for config in _configs()]
+    report = {"candidate_family_size": len(attempts), "status": "rejected_or_unproven"}
+    report["report_sha256"] = content_hash(report)
+    terminal = {
+        **registered,
+        "status": "rejected",
+        "attempted_configs": attempts,
+        "result": {"status": report["status"], "report_sha256": report["report_sha256"]},
+        "validation": {"dataset_point_in_time": True, "holdout_used_for_selection": False},
+        "results": report,
+        "diagnostics": {},
+    }
+    registry.append_result(terminal)
+    assert main(["list-experiments", "--registry", str(path)]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "listed"
+    assert payload["count"] == 2
+    rejected = [item for item in payload["experiments"] if item["status"] == "rejected"]
+    assert len(rejected) == 1
+    assert rejected[0]["experiment_id"] == "GRID-0001"
+    assert rejected[0]["attempted_configs"] == 4

@@ -7,7 +7,10 @@ from __future__ import annotations
 
 from ..market import canonical_bytes
 from ..metrics import summarize_returns
+from .attribution import assert_reconciliation, attribute
 from .comparison import ComparisonError, compare_experiments, freeze_for_comparison
+from .performance import drawdown_duration, performance_report
+from .risk import exposure_concentration, max_drawdown, risk_report, worst_period
 
 
 def research_report_bytes(value: object) -> bytes:
@@ -17,8 +20,16 @@ def research_report_bytes(value: object) -> bytes:
 
 __all__ = [
     "ComparisonError",
+    "assert_reconciliation",
+    "attribute",
     "compare_experiments",
+    "drawdown_duration",
+    "exposure_concentration",
     "freeze_for_comparison",
+    "max_drawdown",
+    "performance_report",
     "research_report_bytes",
+    "risk_report",
     "summarize_returns",
+    "worst_period",
 ]
