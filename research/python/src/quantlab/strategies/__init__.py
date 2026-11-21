@@ -1,10 +1,14 @@
-"""Deterministic reference strategies for simulator tests."""
+"""Deterministic reference strategies for simulator tests.
+
+The former flat ``quantlab.strategies`` module is re-exported here unchanged;
+no new strategy family is claimed by the package move.
+"""
 from __future__ import annotations
 
 from decimal import Decimal
 
-from .backtest import OrderIntent, StrategyContext
-from .market import MarketEvent
+from ..backtest import OrderIntent, StrategyContext
+from ..market import MarketEvent
 
 
 class DeterministicEmaCross:
@@ -22,7 +26,9 @@ class DeterministicEmaCross:
                  aggressive_limit_bps: Decimal = Decimal("10")):
         if not instrument_id or fast < 2 or slow <= fast or quantity <= 0:
             raise ValueError("invalid EMA crossover configuration")
-        if min_observations is not None and (type(min_observations) is not int or min_observations < slow):
+        if min_observations is not None and (
+            type(min_observations) is not int or min_observations < slow
+        ):
             raise ValueError("min_observations must be an integer at least as large as slow")
         if not aggressive_limit_bps.is_finite() or aggressive_limit_bps < 0:
             raise ValueError("aggressive_limit_bps must be finite and non-negative")
@@ -69,13 +75,20 @@ class DeterministicEmaCross:
 
         if crossed_up and context.position_quantity == 0 and event.best_ask:
             side, quantity = "buy", self.quantity
-            limit = event.best_ask.price * (Decimal(1) + self.aggressive_limit_bps / Decimal(10_000))
+            limit = event.best_ask.price * (
+                Decimal(1) + self.aggressive_limit_bps / Decimal(10_000)
+            )
         elif crossed_down and context.position_quantity > 0 and event.best_bid:
             side, quantity = "sell", context.position_quantity
-            limit = event.best_bid.price * (Decimal(1) - self.aggressive_limit_bps / Decimal(10_000))
+            limit = event.best_bid.price * (
+                Decimal(1) - self.aggressive_limit_bps / Decimal(10_000)
+            )
         else:
             return None
 
         self._intent_sequence += 1
         return OrderIntent(f"{self.strategy_id}:{self._intent_sequence:06d}",
                            self.instrument_id, side, quantity, limit)
+
+
+__all__ = ["DeterministicEmaCross"]

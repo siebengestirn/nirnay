@@ -27,7 +27,7 @@
       "statement": "Python experiment records are content-addressable and reject missing pre-registration fields or naive timestamps.",
       "status": "implemented",
       "scope": {
-        "package": "research/python/src/quantlab/experiments.py"
+        "package": "research/python/src/quantlab/experiments/schema.py"
       },
       "falsifier": "the same canonical record receives different hashes, or an invalid record is accepted."
     },
@@ -46,7 +46,7 @@
       "status": "implemented",
       "scope": {
         "packages": [
-          "research/python/src/quantlab/strategies.py",
+          "research/python/src/quantlab/strategies/ (package)",
           "research/python/src/quantlab/backtest.py",
           "research/python/src/quantlab/alpha_search.py",
           "research/python/src/quantlab/point_in_time.py"
@@ -318,6 +318,35 @@
         ]
       },
       "falsifier": "A fill exists only as cumulative quantity, a duplicate execution id replaces the persisted event or creates a second economic effect, charge status cannot distinguish estimate from confirmation, or an unsupported schema version is accepted."
+    },
+    {
+      "id": "CLM-028",
+      "statement": "Every alpha-search result is appended only after a prior registered experiment record claims its holdout; the insert-only registry rejects a second selection claim, tampering, reordering, incomplete trial accounting and holdout leakage, and comparison of two frozen experiments is byte-stable.",
+      "status": "implemented",
+      "scope": {
+        "packages": [
+          "research/python/src/quantlab/experiments/",
+          "research/python/src/quantlab/validation/leakage_detection.py",
+          "research/python/src/quantlab/reporting/comparison.py",
+          "research/python/src/quantlab/cli.py",
+          "research/python/tests/test_experiment_registry.py",
+          "research/python/tests/test_experiment_comparison.py"
+        ]
+      },
+      "falsifier": "A search report exists without a registered receipt, two selection claims share one holdout key, a row is updated or deleted successfully, a tampered or non-terminal or leaky record is compared, attempted configs omit losers, or two identical comparisons produce different bytes."
+    },
+    {
+      "id": "CLM-029",
+      "statement": "Dataset manifests and rows carry a declarative feature lineage whose as-of time precedes the consuming event and whose knowledge time precedes the as-of time, with a digest that detects edits to the declaration.",
+      "status": "implemented",
+      "scope": {
+        "packages": [
+          "research/python/src/quantlab/features/lineage.py",
+          "research/python/src/quantlab/point_in_time.py",
+          "research/python/tests/test_feature_lineage.py"
+        ]
+      },
+      "falsifier": "A future feature definition is accepted for an earlier event, a knowledge time after as-of verifies, an edited feature lineage digest still verifies, or publication succeeds without the lineage block when one was declared."
     }
   ]
 }
