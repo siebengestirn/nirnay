@@ -7,8 +7,8 @@
 <!-- CURRENT-STATE
 code_commit: fa82dc85e3324a23f54d195d30add242af7d9222
 verified_on: 2026-11-20
-ci_run: 44805774697
-scope: make check + CI 44805774697 on 2432515 (12/12)
+ci_run: 44847864294
+scope: make check + CI 44847864294 on 721350e (12/12)
 -->
 
 ## Implemented scope
