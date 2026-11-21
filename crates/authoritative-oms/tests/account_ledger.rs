@@ -467,12 +467,14 @@ fn order_intent(id: u64, quantity: i64) -> OrderIntent {
 
 fn setup_order(store: &mut OmsStore, id: u64, quantity: i64) -> Result<(), OmsError> {
     let client = ClientOrderId::new(id)?;
+    let order = order_intent(id, quantity);
     let permit = PermitRef {
         permit_id: 1,
         policy_version: "test".to_owned(),
         snapshot_revision: 1,
+        digest: trading_core::permit_digest(1, "test", 1, &order),
     };
-    store.create(client, &order_intent(id, quantity), &permit, 1)?;
+    store.create(client, &order, &permit, 1)?;
     store.accept_risk_approved(client, 2)?;
     let claim = store
         .claim("test-dispatcher", 3, 100)?
@@ -616,12 +618,14 @@ fn resolution_filled_without_event_is_a_mismatch() -> TestResult {
     let ledger_dir = tempfile::tempdir()?;
     let mut store = OmsStore::open(oms_dir.path().join("oms.journal"))?;
     let client = ClientOrderId::new(1).expect("client");
+    let order = order_intent(1, 4);
     let permit = PermitRef {
         permit_id: 1,
         policy_version: "test".to_owned(),
         snapshot_revision: 1,
+        digest: trading_core::permit_digest(1, "test", 1, &order),
     };
-    store.create(client, &order_intent(1, 4), &permit, 1)?;
+    store.create(client, &order, &permit, 1)?;
     store.accept_risk_approved(client, 2)?;
     let claim = store.claim("test", 3, 100)?.expect("claim");
     store.mark_dispatching(claim.attempt_id, 4)?;

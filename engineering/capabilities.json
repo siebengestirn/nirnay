@@ -329,6 +329,38 @@
       "scope": "evidence/PERFORMANCE-2026-11-21.md; evidence/performance-2026-11-21-*.log; Makefile; research/python/src/quantlab/bench.py; research/python/tests/test_bench.py; crates/market-archive/tests/performance.rs; crates/authoritative-oms/tests/performance.rs; README.md"
     },
     {
+      "id": "CAP-050",
+      "name": "Deterministic permit-to-intent digest binding with durable single-use permits",
+      "status": "implemented",
+      "evidence_status": "IMPLEMENTED, NOT VERIFIED; no commit SHA, CI run or independent verification is claimed here. trading-core carries `permit_digest`, a domain-separated SHA-256 over a canonical JSON preimage naming the reservation identity fields carried by PermitRef plus the complete OrderIntent. RiskAuthority::permit_digest exposes it for a committed Reservation; OmsStore::create recomputes it from its stored intent and rejects a mismatch with typed OmsError::PermitDigestMismatch. A journal-backed consumed-permit BTreeSet is replayed on recovery: identical replay with the same client order id is an idempotent no-op, a spent permit with a new client id is denied with OmsError::PermitAlreadyConsumed, and a tampered intent or rewritten permit identity is denied. Dedicated falsifier tests cover each case and restart replay. This is an unkeyed integrity binding only: real signed permits, KMS/IAM keys, production identity and a deployed independent risk service remain BLOCKED pending owner authorization; no authenticity, cryptographic signature or live-readiness claim is granted.",
+      "owner": "risk-authority",
+      "scope": "crates/trading-core/src/risk.rs; crates/trading-core/src/model.rs; crates/risk-authority/src/authority.rs; crates/authoritative-oms/src/store.rs; crates/authoritative-oms/src/error.rs; crates/authoritative-oms/tests/permit_binding.rs; crates/risk-authority/tests/risk_controls.rs; apps/paper-runner/src/lib.rs"
+    },
+    {
+      "id": "CAP-051",
+      "name": "Per-strategy and synthetic sector exposure controls in the atomic authority gate",
+      "status": "implemented",
+      "evidence_status": "IMPLEMENTED, NOT VERIFIED; no commit SHA, CI run or independent verification is claimed here. AuthorityState aggregates exact paise by StrategyId and by synthetic sector label; RiskPolicy carries max_strategy_exposure_paise and an optional max_sector_exposure_paise with validate() coverage; RiskCheck::StrategyExposure and RiskCheck::SectorExposure are projected inside evaluate_risk and updated with checked arithmetic in commit_reservation, apply_fill and release. An authority fixture installs a synthetic instrument-to-sector map; once a sector cap is configured an unlabelled instrument fails closed. Falsifier tests place two intents each under the order cap but over the strategy cap, use a distinct strategy bucket, breach a shared synthetic sector and present an unlabelled instrument. A real NSE sector taxonomy/master is external reference data and remains BLOCKED pending an accepted contract or ADR; no real sector data rights are claimed.",
+      "owner": "risk-authority",
+      "scope": "crates/risk-engine/src/lib.rs; crates/risk-authority/src/authority.rs; crates/risk-authority/tests/risk_controls.rs; crates/trading-core/src/model.rs"
+    },
+    {
+      "id": "CAP-052",
+      "name": "Synthetic stress, liquidity, Greeks and borrow controls with fail-closed observations",
+      "status": "implemented",
+      "evidence_status": "IMPLEMENTED, NOT VERIFIED; no commit SHA, CI run or independent verification is claimed here. RiskPolicy carries an optional integer-ppm StressScenario plus max_stress_loss_paise (both required together), max_participation_ppm, optional GreekLimits, max_borrow_quantity and max_financing_cost_paise. MarketObservation carries synthetic displayed depth/ADV, quote-derived marks, per-instrument greeks and short-borrow evidence. evaluate_risk adds RiskCheck::StressLoss with a deterministic integer-ppm parallel-shift, haircut and correlation projection over marked positions and the order notional, RiskCheck::LiquidityParticipation against the smaller of displayed depth and ADV, RiskCheck::Greeks (fail closed for a metadata-flagged derivative without greeks) and RiskCheck::BorrowFinancing (fail closed for a short without borrow). Typed falsifier tests cover every breach and every missing-evidence path. These are uncalibrated placeholders: real stress calibration, ADV/volume/depth history, vol/strike/greeks surfaces, borrow/margin/funding rates and derivatives product expansion remain BLOCKED pending owner data rights and authorization. No new Product variant, pricing library or derivatives product was added.",
+      "owner": "risk-authority",
+      "scope": "crates/trading-core/src/risk.rs; crates/risk-engine/src/lib.rs; crates/risk-engine/tests/risk.rs; crates/risk-authority/src/observation.rs; crates/risk-authority/src/authority.rs; crates/risk-authority/tests/risk_controls.rs"
+    },
+    {
+      "id": "CAP-053",
+      "name": "Deterministic in-process cross-component recovery drill",
+      "status": "implemented",
+      "evidence_status": "IMPLEMENTED, NOT VERIFIED; no commit SHA or independent verification is claimed here. A deterministic drill uses existing OMS and account-journal CommitFault injection at every append boundary and asserts, inside that boundary loop, that only the committed prefix replays, that a poisoned writer refuses mutation, that an engaged persisted kill switch survives a fresh RiskAuthority and admits no new risk, that a replay digest mismatch latches reconciliation and blocks later Matched views, and that Projector::verify_replay succeeds on the committed ledger prefix. PartialWrite and MidBody tails are refused or repaired, After* faults replay one additional fully written record, and independently reopened OMS stores report identical digests. The dated record under evidence/ records the command and counts. This is an in-process local drill: independent certification, HA/distributed failover, multi-region recovery and certified broker-delivery semantics remain BLOCKED and need a separately authorized programme and a real broker endpoint.",
+      "owner": "risk-authority",
+      "scope": "apps/paper-runner/tests/recovery_drill.rs; crates/authoritative-oms/src/store.rs; crates/risk-authority/src/control.rs"
+    },
+    {
       "id": "CAP-039",
       "name": "Research simulation completion with declared research-only mechanics",
       "status": "implemented",

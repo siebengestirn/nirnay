@@ -525,6 +525,21 @@ pub enum RiskCheck {
     PriceCollar,
     PositionLimit,
     GrossExposure,
+    /// Projected notional for the intent's strategy, including pending and
+    /// filled exposure, must fit the strategy cap.
+    StrategyExposure,
+    /// Synthetic sector concentration. An unlabelled instrument fails closed
+    /// once a sector cap is configured.
+    SectorExposure,
+    /// Deterministic projected loss under the configured synthetic scenario.
+    StressLoss,
+    /// Order notional against synthetic displayed depth / ADV participation.
+    LiquidityParticipation,
+    /// Synthetic Greeks of a derivative-flagged instrument. Missing greeks on
+    /// such an instrument fails closed.
+    Greeks,
+    /// Synthetic short-borrow availability and financing cost.
+    BorrowFinancing,
     DailyLossLimit,
     OpenOrderLimit,
     OrderRateLimit,

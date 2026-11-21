@@ -2,12 +2,15 @@
 
 use std::collections::BTreeSet;
 
-use risk_engine::{RiskContext, RiskPolicy, ValidatedRiskPolicy, evaluate_risk};
+use risk_engine::{
+    GreekLimits, RiskContext, RiskPolicy, StressScenario, ValidatedRiskPolicy, evaluate_risk,
+};
 use trading_core::{
-    AccountId, AlgoId, Continuity, DomainError, FeedHealth, Instrument, InstrumentId,
-    InstrumentType, IntentId, JournalRef, Listing, ListingStatus, ListingTerms, LogicalNanos,
-    OrderIntent, Paise, PricePaise, Product, Quantity, QuoteSnapshot, RiskAssessment, RiskCheck,
-    Segment, SettlementRegime, Side, StrategyId, TickAssignment, TradeDate, Venue,
+    AccountId, AlgoId, BorrowAvailability, Continuity, DomainError, FeedHealth, Greeks, Instrument,
+    InstrumentId, InstrumentType, IntentId, JournalRef, LiquidityDepth, Listing, ListingStatus,
+    ListingTerms, LogicalNanos, OrderIntent, Paise, PricePaise, Product, Quantity, QuoteSnapshot,
+    RiskAssessment, RiskCheck, Segment, SettlementRegime, Side, StrategyId, TickAssignment,
+    TradeDate, Venue,
 };
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -101,6 +104,14 @@ fn policy() -> Result<RiskPolicy, DomainError> {
         max_price_deviation_ppm: 100_000,
         max_quote_age_ns: 1_000,
         allow_short: false,
+        max_strategy_exposure_paise: Paise(100_000),
+        max_sector_exposure_paise: None,
+        stress_scenario: None,
+        max_stress_loss_paise: None,
+        max_participation_ppm: None,
+        greek_limits: None,
+        max_borrow_quantity: None,
+        max_financing_cost_paise: None,
     })
 }
 
@@ -153,6 +164,15 @@ fn context() -> Result<RiskContext, DomainError> {
         pending_sell_quantity: Quantity::ZERO,
         gross_exposure_paise: Paise(0),
         pending_gross_exposure_paise: Paise(0),
+        strategy_exposure_paise: Paise(0),
+        sector_label: None,
+        sector_exposure_paise: Paise(0),
+        positions: Default::default(),
+        marks_paise: Default::default(),
+        depth: None,
+        greeks: None,
+        is_derivative: false,
+        borrow: None,
         daily_pnl: Paise(0),
         open_orders: 0,
         orders_last_second: 0,
@@ -729,5 +749,229 @@ fn product_eligibility_fails_closed_when_context_and_intent_venues_disagree() ->
     );
     assert!(!passed(&assessment, RiskCheck::ProductEligibility));
     assert!(!assessment.accepted);
+    Ok(())
+}
+
+#[test]
+fn strategy_exposure_aggregates_two_intents_under_the_order_cap() -> TestResult {
+    let mut raw = policy()?;
+    raw.max_strategy_exposure_paise = Paise(9_000);
+    let policy = ValidatedRiskPolicy::from_policy(&raw)?;
+    // Each intent alone is 5,000 paise, well under the 100,000 order cap.
+    let first = evaluate_risk(&intent(5, 1_000, Side::Buy)?, &policy, &context()?);
+    assert!(
+        passed(&first, RiskCheck::StrategyExposure),
+        "first intent passes"
+    );
+
+    let mut second_context = context()?;
+    second_context.strategy_exposure_paise = Paise(5_000);
+    let second = evaluate_risk(&intent(5, 1_000, Side::Buy)?, &policy, &second_context);
+    assert!(
+        !passed(&second, RiskCheck::StrategyExposure),
+        "10,000 paise projected strategy notional exceeds the 9,000 cap"
+    );
+    assert!(!second.accepted, "the over-cap strategy intent is denied");
+    Ok(())
+}
+
+#[test]
+fn sector_exposure_requires_a_label_and_enforces_the_cap() -> TestResult {
+    let mut raw = policy()?;
+    raw.max_sector_exposure_paise = Some(Paise(9_000));
+    let policy = ValidatedRiskPolicy::from_policy(&raw)?;
+    let base = context()?;
+
+    let unlabelled = evaluate_risk(&intent(1, 1_000, Side::Buy)?, &policy, &base);
+    assert!(
+        !passed(&unlabelled, RiskCheck::SectorExposure),
+        "an unlabelled instrument must fail closed once a sector cap is set"
+    );
+
+    let mut labelled = base.clone();
+    labelled.sector_label = Some("synthetic-bank".to_owned());
+    labelled.sector_exposure_paise = Paise(5_000);
+    let breach = evaluate_risk(&intent(5, 1_000, Side::Buy)?, &policy, &labelled);
+    assert!(
+        !passed(&breach, RiskCheck::SectorExposure),
+        "10,000 paise in one synthetic sector exceeds the 9,000 cap"
+    );
+
+    let mut within = labelled;
+    within.sector_exposure_paise = Paise(2_000);
+    let accepted = evaluate_risk(&intent(5, 1_000, Side::Buy)?, &policy, &within);
+    assert!(
+        passed(&accepted, RiskCheck::SectorExposure),
+        "7,000 paise in the sector is within the cap"
+    );
+    Ok(())
+}
+
+#[test]
+fn stress_scenario_projection_is_deterministic_and_fail_closed() -> TestResult {
+    let mut raw = policy()?;
+    raw.stress_scenario = Some(StressScenario {
+        price_shift_ppm: -100_000,
+        liquidity_haircut_ppm: 0,
+        correlation_multiplier_ppm: 1_000_000,
+    });
+    raw.max_stress_loss_paise = Some(Paise(100));
+    let validated = ValidatedRiskPolicy::from_policy(&raw)?;
+
+    let mut base = context()?;
+    let id = instrument_id()?;
+    base.positions.insert(id.clone(), 10);
+    base.marks_paise.insert(id.clone(), Paise(1_000));
+    // Exposure 10,000 (positions) + 5,000 (order) = 15,000; -10% = 1,500 loss.
+    let breach = evaluate_risk(&intent(5, 1_000, Side::Buy)?, &validated, &base);
+    assert!(
+        !passed(&breach, RiskCheck::StressLoss),
+        "a 1,500 paise projected loss exceeds the 100 cap"
+    );
+
+    let mut tiny = base.clone();
+    tiny.positions.insert(id, 0);
+    let accepted = evaluate_risk(&intent(1, 1_000, Side::Buy)?, &validated, &tiny);
+    assert!(
+        passed(&accepted, RiskCheck::StressLoss),
+        "a 100 paise projected loss equals the cap"
+    );
+
+    let mut unmarked = context()?;
+    unmarked.positions.insert(instrument_id()?, 10);
+    let denied = evaluate_risk(&intent(1, 1_000, Side::Buy)?, &validated, &unmarked);
+    assert!(
+        !passed(&denied, RiskCheck::StressLoss),
+        "a position without a mark fails the stress check closed"
+    );
+
+    let mut incomplete = policy()?;
+    incomplete.stress_scenario = raw.stress_scenario;
+    assert!(
+        ValidatedRiskPolicy::from_policy(&incomplete).is_err(),
+        "a scenario without a loss cap must not validate"
+    );
+    Ok(())
+}
+
+#[test]
+fn liquidity_participation_and_missing_depth_fail_closed() -> TestResult {
+    let mut raw = policy()?;
+    raw.max_participation_ppm = Some(100_000);
+    let policy = ValidatedRiskPolicy::from_policy(&raw)?;
+    let mut base = context()?;
+    base.depth = Some(LiquidityDepth {
+        displayed_quantity: Quantity::new(10)?,
+        adv_quantity: Quantity::new(100)?,
+    });
+    // 10 lots at 1,000 paise = 10,000; 10% participation = 1,000 paise.
+    let breach = evaluate_risk(&intent(5, 1_000, Side::Buy)?, &policy, &base);
+    assert!(
+        !passed(&breach, RiskCheck::LiquidityParticipation),
+        "5,000 paise consumes 50% of synthetic displayed depth"
+    );
+    let accepted = evaluate_risk(&intent(1, 1_000, Side::Buy)?, &policy, &base);
+    assert!(
+        passed(&accepted, RiskCheck::LiquidityParticipation),
+        "1,000 paise is exactly 10% of displayed depth"
+    );
+
+    let missing = evaluate_risk(&intent(1, 1_000, Side::Buy)?, &policy, &context()?);
+    assert!(
+        !passed(&missing, RiskCheck::LiquidityParticipation),
+        "a missing depth observation fails closed once the cap is configured"
+    );
+    Ok(())
+}
+
+#[test]
+fn derivative_greeks_fail_closed_and_respect_limits() -> TestResult {
+    let mut raw = policy()?;
+    raw.greek_limits = Some(GreekLimits {
+        max_abs_delta_notional_paise: 10_000,
+        max_abs_gamma: 50,
+        max_abs_vega: 100,
+        max_abs_theta: 50,
+    });
+    let policy = ValidatedRiskPolicy::from_policy(&raw)?;
+    let mut base = context()?;
+    base.is_derivative = true;
+    let missing = evaluate_risk(&intent(1, 1_000, Side::Buy)?, &policy, &base);
+    assert!(
+        !passed(&missing, RiskCheck::Greeks),
+        "a derivative without greeks must be denied"
+    );
+
+    base.greeks = Some(Greeks {
+        delta_notional_paise: 5_000,
+        gamma_scaled: 10,
+        vega_scaled: 101,
+        theta_scaled: 5,
+    });
+    let breach = evaluate_risk(&intent(1, 1_000, Side::Buy)?, &policy, &base);
+    assert!(
+        !passed(&breach, RiskCheck::Greeks),
+        "vega 101 exceeds the 100 limit"
+    );
+
+    base.greeks = Some(Greeks {
+        delta_notional_paise: 5_000,
+        gamma_scaled: 10,
+        vega_scaled: 100,
+        theta_scaled: 5,
+    });
+    let accepted = evaluate_risk(&intent(1, 1_000, Side::Buy)?, &policy, &base);
+    assert!(
+        passed(&accepted, RiskCheck::Greeks),
+        "greeks within every limit are accepted"
+    );
+    Ok(())
+}
+
+#[test]
+fn shorts_require_borrow_evidence_within_quantity_and_cost_caps() -> TestResult {
+    let mut raw = policy()?;
+    raw.allow_short = true;
+    raw.max_borrow_quantity = Some(Quantity::new(10)?);
+    raw.max_financing_cost_paise = Some(Paise(100));
+    let policy = ValidatedRiskPolicy::from_policy(&raw)?;
+    let mut base = context()?;
+    let short = intent(5, 1_000, Side::Sell)?;
+
+    let no_borrow = evaluate_risk(&short, &policy, &base);
+    assert!(
+        !passed(&no_borrow, RiskCheck::BorrowFinancing),
+        "a short without borrow evidence must be denied"
+    );
+
+    base.borrow = Some(BorrowAvailability {
+        available_quantity: Quantity::new(2)?,
+        financing_cost_paise: Paise(10),
+    });
+    let insufficient = evaluate_risk(&short, &policy, &base);
+    assert!(
+        !passed(&insufficient, RiskCheck::BorrowFinancing),
+        "borrow of 2 lots cannot cover a 5-lot short"
+    );
+
+    base.borrow = Some(BorrowAvailability {
+        available_quantity: Quantity::new(5)?,
+        financing_cost_paise: Paise(101),
+    });
+    let over_cost = evaluate_risk(&short, &policy, &base);
+    assert!(
+        !passed(&over_cost, RiskCheck::BorrowFinancing),
+        "financing cost 101 exceeds the 100 paise cap"
+    );
+
+    base.borrow = Some(BorrowAvailability {
+        available_quantity: Quantity::new(5)?,
+        financing_cost_paise: Paise(100),
+    });
+    let accepted = evaluate_risk(&short, &policy, &base);
+    assert!(
+        passed(&accepted, RiskCheck::BorrowFinancing),
+        "borrow at the quantity and cost caps is accepted"
+    );
     Ok(())
 }

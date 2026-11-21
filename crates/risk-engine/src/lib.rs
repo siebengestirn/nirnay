@@ -9,17 +9,64 @@
 //! is never evaluated; an evaluation returns every check so a rejection can
 //! be explained rather than inferred.
 
-use std::collections::BTreeSet;
-
-use serde::{Deserialize, Serialize};
-use trading_core::{
-    AccountId, AlgoId, DomainError, FeedHealth, Instrument, InstrumentId, LogicalNanos,
-    OrderIntent, Paise, Quantity, QuoteSnapshot, RiskAssessment, RiskCheck, RiskCheckResult, Side,
-    StrategyId, TradeDate, Venue,
+use std::collections::{
+    BTreeMap, //
+    BTreeSet,
 };
 
+use serde::{
+    Deserialize, //
+    Serialize,
+};
+use trading_core::{
+    AccountId, //
+    AlgoId,
+    BorrowAvailability,
+    DomainError,
+    FeedHealth,
+    Greeks,
+    Instrument,
+    InstrumentId,
+    LiquidityDepth,
+    LogicalNanos,
+    OrderIntent,
+    Paise,
+    Quantity,
+    QuoteSnapshot,
+    RiskAssessment,
+    RiskCheck,
+    RiskCheckResult,
+    Side,
+    StrategyId,
+    TradeDate,
+    Venue,
+};
+
+/// Deterministic, uncalibrated stress scenario. A negative `price_shift_ppm`
+/// is a downward parallel shift. Every term is an exact integer ratio in ppm;
+/// no floating point is used in projected-loss arithmetic.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StressScenario {
+    pub price_shift_ppm: i64,
+    pub liquidity_haircut_ppm: u32,
+    pub correlation_multiplier_ppm: u32,
+}
+
+/// Typed placeholder limits for synthetic per-instrument Greeks. Sensitivities
+/// use the same 10^6 fixed-point scaling as [`Greeks`].
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GreekLimits {
+    pub max_abs_delta_notional_paise: i64,
+    pub max_abs_gamma: i64,
+    pub max_abs_vega: i64,
+    pub max_abs_theta: i64,
+}
+
 /// Effective risk policy. All limits are mandatory; validation rejects an
-/// empty allowlist, a zero limit or an impossible collar.
+/// empty allowlist, a zero limit or an impossible collar. The sector, stress,
+/// liquidity, Greeks and borrow controls are opt-in: `None` means the control
+/// has no configured cap or reference data, and the corresponding check is
+/// inert. Once configured, each control fails closed on missing evidence.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RiskPolicy {
     pub version: String,
@@ -37,6 +84,14 @@ pub struct RiskPolicy {
     pub max_price_deviation_ppm: u32,
     pub max_quote_age_ns: u64,
     pub allow_short: bool,
+    pub max_strategy_exposure_paise: Paise,
+    pub max_sector_exposure_paise: Option<Paise>,
+    pub stress_scenario: Option<StressScenario>,
+    pub max_stress_loss_paise: Option<Paise>,
+    pub max_participation_ppm: Option<u32>,
+    pub greek_limits: Option<GreekLimits>,
+    pub max_borrow_quantity: Option<Quantity>,
+    pub max_financing_cost_paise: Option<Paise>,
 }
 
 impl RiskPolicy {
@@ -55,9 +110,51 @@ impl RiskPolicy {
             || self.max_orders_per_second == 0
             || self.max_price_deviation_ppm > 1_000_000
             || self.max_quote_age_ns == 0
+            || self.max_strategy_exposure_paise.0 <= 0
         {
             return Err(DomainError::InvalidInstrument(
                 "risk policy has invalid or empty limits".to_owned(),
+            ));
+        }
+        if self.max_sector_exposure_paise.is_some_and(|cap| cap.0 <= 0)
+            || self.max_stress_loss_paise.is_some_and(|cap| cap.0 <= 0)
+            || self
+                .max_participation_ppm
+                .is_some_and(|ppm| ppm == 0 || ppm > 1_000_000)
+            || self
+                .max_borrow_quantity
+                .is_some_and(|quantity| quantity.is_zero())
+            || self.max_financing_cost_paise.is_some_and(|cost| cost.0 < 0)
+        {
+            return Err(DomainError::InvalidInstrument(
+                "risk policy has an invalid optional limit".to_owned(),
+            ));
+        }
+        // A scenario without a loss cap (or a cap without a scenario) would
+        // silently disable the stress check: both must be configured together.
+        if self.stress_scenario.is_some() != self.max_stress_loss_paise.is_some() {
+            return Err(DomainError::InvalidInstrument(
+                "stress scenario and stress loss cap must be configured together".to_owned(),
+            ));
+        }
+        if let Some(scenario) = self.stress_scenario
+            && (scenario.price_shift_ppm.unsigned_abs() > 1_000_000
+                || scenario.liquidity_haircut_ppm > 1_000_000
+                || scenario.correlation_multiplier_ppm == 0
+                || scenario.correlation_multiplier_ppm > 10_000_000)
+        {
+            return Err(DomainError::InvalidInstrument(
+                "stress scenario ratios are outside the supported range".to_owned(),
+            ));
+        }
+        if let Some(limits) = self.greek_limits
+            && (limits.max_abs_delta_notional_paise < 0
+                || limits.max_abs_gamma < 0
+                || limits.max_abs_vega < 0
+                || limits.max_abs_theta < 0)
+        {
+            return Err(DomainError::InvalidInstrument(
+                "Greek limits cannot be negative".to_owned(),
             ));
         }
         Ok(())
@@ -113,6 +210,28 @@ pub struct RiskContext {
     pub pending_sell_quantity: Quantity,
     pub gross_exposure_paise: Paise,
     pub pending_gross_exposure_paise: Paise,
+    /// Current (pre-order) strategy exposure; the projection adds this order.
+    pub strategy_exposure_paise: Paise,
+    /// Synthetic sector label resolved by the authority; `None` when the
+    /// instrument has no sector mapping.
+    pub sector_label: Option<String>,
+    /// Current (pre-order) exposure in the resolved sector; the projection
+    /// adds this order.
+    pub sector_exposure_paise: Paise,
+    /// Signed lots held in this account, for deterministic stress projection.
+    pub positions: BTreeMap<InstrumentId, i64>,
+    /// Quote-derived exact marks by instrument; a position without a mark
+    /// fails the stress check closed.
+    pub marks_paise: BTreeMap<InstrumentId, Paise>,
+    /// Synthetic displayed depth and ADV for the intent's instrument.
+    pub depth: Option<LiquidityDepth>,
+    /// Synthetic Greeks for the intent's instrument.
+    pub greeks: Option<Greeks>,
+    /// Whether the instrument is flagged as a derivative in synthetic
+    /// reference metadata.
+    pub is_derivative: bool,
+    /// Synthetic short-borrow evidence for the intent's instrument.
+    pub borrow: Option<BorrowAvailability>,
     pub daily_pnl: Paise,
     pub open_orders: u32,
     pub orders_last_second: u32,
@@ -150,11 +269,18 @@ pub fn evaluate_risk(
     // Context boundary: gross-exposure claims must be valid before any
     // projection arithmetic uses them (a negative current exposure would
     // understate the projected total and pass the limit dishonestly).
-    let exposures_valid =
-        context.gross_exposure_paise.0 >= 0 && context.pending_gross_exposure_paise.0 >= 0;
-    let projected_exposure = notional(intent)
+    let exposures_valid = context.gross_exposure_paise.0 >= 0
+        && context.pending_gross_exposure_paise.0 >= 0
+        && context.strategy_exposure_paise.0 >= 0
+        && context.sector_exposure_paise.0 >= 0;
+    let order_notional = notional(intent);
+    let projected_exposure = order_notional
         .and_then(|order_value| order_value.checked_add(i128::from(context.gross_exposure_paise.0)))
         .and_then(|value| value.checked_add(i128::from(context.pending_gross_exposure_paise.0)));
+    let projected_strategy = order_notional
+        .and_then(|value| value.checked_add(i128::from(context.strategy_exposure_paise.0)));
+    let projected_sector = order_notional
+        .and_then(|value| value.checked_add(i128::from(context.sector_exposure_paise.0)));
     let checks = vec![
         check(
             RiskCheck::AccountAllowlist,
@@ -278,6 +404,38 @@ pub fn evaluate_risk(
             },
         ),
         check(
+            RiskCheck::StrategyExposure,
+            exposures_valid
+                && projected_strategy
+                    .is_some_and(|value| value <= i128::from(policy.max_strategy_exposure_paise.0)),
+            "projected strategy notional must fit the strategy cap",
+        ),
+        check(
+            RiskCheck::SectorExposure,
+            sector_allowed(policy, context, projected_sector),
+            "a configured sector cap requires a label and a projected notional within it",
+        ),
+        check(
+            RiskCheck::StressLoss,
+            stress_allowed(policy, context, order_notional),
+            "deterministic projected stress loss must fit the configured cap",
+        ),
+        check(
+            RiskCheck::LiquidityParticipation,
+            participation_allowed(policy, context, intent),
+            "order notional must fit the configured fraction of synthetic displayed depth",
+        ),
+        check(
+            RiskCheck::Greeks,
+            greeks_allowed(policy, context),
+            "a derivative-flagged instrument needs greeks within every configured limit",
+        ),
+        check(
+            RiskCheck::BorrowFinancing,
+            borrow_allowed(policy, context, intent),
+            "a short needs synthetic borrow evidence within the configured cost cap",
+        ),
+        check(
             RiskCheck::DailyLossLimit,
             i128::from(context.daily_pnl.0) > -i128::from(policy.max_daily_loss_paise.0),
             "daily loss must remain inside the configured limit",
@@ -379,6 +537,135 @@ fn price_within_collar(
     // bound is the absolute reference times the deviation tolerance.
     let rhs = midpoint.value().unsigned_abs() * u128::from(maximum_deviation_ppm);
     lhs <= rhs
+}
+
+/// Sector check. With no configured cap the control is inert; once configured,
+/// an unlabelled instrument cannot pass by default.
+fn sector_allowed(
+    policy: &ValidatedRiskPolicy,
+    context: &RiskContext,
+    projected: Option<i128>,
+) -> bool {
+    let Some(cap) = policy.max_sector_exposure_paise else {
+        return true;
+    };
+    context
+        .sector_label
+        .as_ref()
+        .is_some_and(|label| !label.trim().is_empty())
+        && projected.is_some_and(|value| value <= i128::from(cap.0))
+}
+
+/// Deterministic projected loss: parallel price shift over the exact notional
+/// of every marked position plus this order, after a liquidity haircut and a
+/// linear correlation multiplier. All ratios are integer ppm and overflow
+/// denies. A position without a mark fails closed.
+fn stress_allowed(
+    policy: &ValidatedRiskPolicy,
+    context: &RiskContext,
+    order_notional: Option<i128>,
+) -> bool {
+    let (Some(scenario), Some(cap)) = (policy.stress_scenario, policy.max_stress_loss_paise) else {
+        return true;
+    };
+    let Some(order) = order_notional.and_then(|value| u128::try_from(value.max(0)).ok()) else {
+        return false;
+    };
+    let mut exposure = order;
+    for (instrument_id, quantity) in &context.positions {
+        let Some(mark) = context.marks_paise.get(instrument_id) else {
+            return false;
+        };
+        let magnitude = u128::from(quantity.unsigned_abs());
+        let Some(value) = magnitude.checked_mul(u128::from(mark.0.unsigned_abs())) else {
+            return false;
+        };
+        let Some(next) = exposure.checked_add(value) else {
+            return false;
+        };
+        exposure = next;
+    }
+    let haircut = 1_000_000_u128.saturating_sub(u128::from(scenario.liquidity_haircut_ppm));
+    let loss = exposure
+        .checked_mul(haircut)
+        .and_then(|value| value.checked_div(1_000_000))
+        .and_then(|value| value.checked_mul(u128::from(scenario.price_shift_ppm.unsigned_abs())))
+        .and_then(|value| value.checked_div(1_000_000))
+        .and_then(|value| value.checked_mul(u128::from(scenario.correlation_multiplier_ppm)))
+        .and_then(|value| value.checked_div(1_000_000));
+    loss.is_some_and(|value| i128::try_from(value).is_ok_and(|loss| loss <= i128::from(cap.0)))
+}
+
+/// Synthetic participation check. The reference quantity is the smaller of
+/// displayed depth and ADV, valued at the intent's exact limit price; the
+/// order notional may consume at most `max_participation_ppm` of it.
+fn participation_allowed(
+    policy: &ValidatedRiskPolicy,
+    context: &RiskContext,
+    intent: &OrderIntent,
+) -> bool {
+    let Some(max_ppm) = policy.max_participation_ppm else {
+        return true;
+    };
+    let Some(depth) = context.depth else {
+        return false;
+    };
+    let quantity = depth.displayed_quantity.get().min(depth.adv_quantity.get());
+    let reference = i128::from(quantity).checked_mul(i128::from(intent.limit_price.get().0));
+    let allowance = reference
+        .and_then(|value| value.checked_mul(i128::from(max_ppm)))
+        .and_then(|value| value.checked_div(1_000_000));
+    notional(intent)
+        .is_some_and(|order| order >= 0 && allowance.is_some_and(|limit| order <= limit))
+}
+
+/// Synthetic Greeks check. A derivative-flagged instrument without greeks is
+/// denied even when no limits are configured; configured limits bound each
+/// absolute sensitivity.
+fn greeks_allowed(policy: &ValidatedRiskPolicy, context: &RiskContext) -> bool {
+    if !context.is_derivative {
+        return true;
+    }
+    let Some(greeks) = context.greeks else {
+        return false;
+    };
+    let Some(limits) = policy.greek_limits else {
+        return true;
+    };
+    let within = |observed: i64, limit: i64| {
+        i128::from(observed.unsigned_abs()) <= i128::from(limit.unsigned_abs())
+    };
+    within(
+        greeks.delta_notional_paise,
+        limits.max_abs_delta_notional_paise,
+    ) && within(greeks.gamma_scaled, limits.max_abs_gamma)
+        && within(greeks.vega_scaled, limits.max_abs_vega)
+        && within(greeks.theta_scaled, limits.max_abs_theta)
+}
+
+/// Synthetic borrow check. With no configured quantity cap the control is
+/// inert; a configured short must carry available borrow within the cap and,
+/// when a cost cap is configured, within that cost too.
+fn borrow_allowed(
+    policy: &ValidatedRiskPolicy,
+    context: &RiskContext,
+    intent: &OrderIntent,
+) -> bool {
+    if intent.side != Side::Sell {
+        return true;
+    }
+    let Some(max_quantity) = policy.max_borrow_quantity else {
+        return true;
+    };
+    let Some(borrow) = context.borrow else {
+        return false;
+    };
+    let quantity_ok = borrow.available_quantity.get() >= intent.quantity.get()
+        && borrow.available_quantity.get() <= max_quantity.get();
+    let cost_ok = policy
+        .max_financing_cost_paise
+        .is_none_or(|cap| borrow.financing_cost_paise.0 <= cap.0);
+    quantity_ok && cost_ok
 }
 
 fn position_allowed(

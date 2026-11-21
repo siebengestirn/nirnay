@@ -108,6 +108,14 @@ pub fn policy() -> Result<RiskPolicy, DomainError> {
         max_price_deviation_ppm: 100_000,
         max_quote_age_ns: 1_000,
         allow_short: false,
+        max_strategy_exposure_paise: Paise(1_000_000),
+        max_sector_exposure_paise: None,
+        stress_scenario: None,
+        max_stress_loss_paise: None,
+        max_participation_ppm: None,
+        greek_limits: None,
+        max_borrow_quantity: None,
+        max_financing_cost_paise: None,
     })
 }
 

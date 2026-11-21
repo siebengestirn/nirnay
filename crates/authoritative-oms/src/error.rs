@@ -12,6 +12,10 @@ pub enum OmsError {
     WriterPoisoned,
     #[error("client order id `{0}` already exists with different terms")]
     ConflictingClientOrder(String),
+    #[error("permit `{permit_id}` does not bind to the submitted intent")]
+    PermitDigestMismatch { permit_id: u64 },
+    #[error("permit `{permit_id}` was already consumed by an order")]
+    PermitAlreadyConsumed { permit_id: u64 },
     #[error("unknown client order id `{0}`")]
     UnknownOrder(String),
     #[error("unknown submission attempt `{0}`")]
