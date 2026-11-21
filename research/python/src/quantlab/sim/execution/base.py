@@ -2,16 +2,18 @@
 
 This reproduces the existing research semantics: displayed increments only,
 high-water queue tracking, explicit trade prints with a known aggressor for
-passive fills, fixed latency and square-root impact from a declared assumption.
-It declares ``queue_truth=unavailable`` and must never emit a FIFO claim.
+passive fills, declared fixed or seeded latency and square-root impact from an
+assumption.  It declares ``queue_truth=unavailable`` and must never emit a FIFO
+claim.  Seeded latency is a research assumption, not a calibrated venue law.
 """
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Protocol
 
-from ..events import from_jsonable, to_jsonable, digest
+from ..events import from_jsonable, is_sha256, to_jsonable, digest
 from .costs import (
     BPS,
     CostModel,
@@ -23,10 +25,52 @@ from .costs import (
 )
 
 _PRICING_SIDES = frozenset({"buy", "sell"})
+_LATENCY_SHAPES = frozenset({"fixed", "uniform"})
+_LATENCY_KINDS = frozenset({"order", "cancel"})
+_DRAW_SPACE = 1 << 64
 
 
 class QueueTruthUnavailable(ValueError):
     """Raised when a caller asks an MBP-only model for FIFO certainty."""
+
+
+def _require_provenance(artifact_sha256: str | None, assumption: str | None,
+                        name: str) -> None:
+    """Require exactly one declaration; the artifact is not calibrated here."""
+    if (artifact_sha256 is None) == (assumption is None):
+        raise ValueError(f"{name} requires exactly one of artifact_sha256 or assumption")
+    if artifact_sha256 is not None and not is_sha256(artifact_sha256):
+        raise ValueError(f"{name} artifact_sha256 must be a lowercase SHA-256 digest")
+    if assumption is not None and (not isinstance(assumption, str) or not assumption.strip()):
+        raise ValueError(f"{name} assumption must be a non-empty string")
+
+
+@dataclass(frozen=True, slots=True)
+class LatencyDistribution:
+    """Declared seeded latency shape; never a calibrated venue distribution."""
+
+    shape: str
+    min_ns: int
+    max_ns: int
+    artifact_sha256: str | None = None
+    assumption: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.shape not in _LATENCY_SHAPES:
+            raise ValueError(f"latency shape must be one of {sorted(_LATENCY_SHAPES)}")
+        for name in ("min_ns", "max_ns"):
+            value = getattr(self, name)
+            if type(value) is not int or value < 0:
+                raise ValueError(f"{name} must be a non-negative integer")
+        if self.max_ns < self.min_ns:
+            raise ValueError("max_ns cannot precede min_ns")
+        if self.shape == "fixed" and self.min_ns != self.max_ns:
+            raise ValueError("a fixed latency distribution requires min_ns == max_ns")
+        _require_provenance(self.artifact_sha256, self.assumption, "LatencyDistribution")
+
+    def digest(self) -> str:
+        """Return the canonical digest of the declared distribution."""
+        return digest(to_jsonable(self))
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +82,7 @@ class BaselineParams:
     max_participation: Decimal
     max_book_age_ns: int
     cost_model: CostModel
+    latency: LatencyDistribution | None = None
 
     def __post_init__(self) -> None:
         for name in ("order_latency_ns", "cancel_latency_ns", "max_book_age_ns"):
@@ -50,6 +95,23 @@ class BaselineParams:
             raise ValueError("max_participation must be in (0, 1]")
         if not isinstance(self.cost_model, CostModel):
             raise ValueError("cost_model must be a CostModel")
+        if self.latency is not None and not isinstance(self.latency, LatencyDistribution):
+            raise ValueError("latency must be a LatencyDistribution or None")
+
+    def latency_sample_ns(self, seed: int, context: str, kind: str) -> int:
+        """Return a seeded latency draw in ns; no wall clock or Python hash used."""
+        if kind not in _LATENCY_KINDS:
+            raise ValueError(f"latency kind must be one of {sorted(_LATENCY_KINDS)}")
+        if type(seed) is not int or not isinstance(context, str) or not context:
+            raise ValueError("a latency sample needs an integer seed and a context")
+        if self.latency is None:
+            return self.order_latency_ns if kind == "order" else self.cancel_latency_ns
+        if self.latency.shape == "fixed":
+            return self.latency.min_ns
+        material = f"{seed}:{kind}:{context}".encode("utf-8")
+        raw = int.from_bytes(hashlib.sha256(material).digest()[:8], "big")
+        span = self.latency.max_ns - self.latency.min_ns
+        return self.latency.min_ns + (span * raw) // _DRAW_SPACE
 
     def to_dict(self) -> dict[str, object]:
         """Return the canonical serializable form."""
@@ -74,9 +136,13 @@ class ExecutionModel(Protocol):
 
     def impact_bps(self, participation: Decimal) -> Decimal: ...
 
-    def activation_time_ns(self, event_time_ns: int) -> int: ...
+    def latency_sample(self, seed: int, context: str, kind: str) -> int: ...
 
-    def cancel_time_ns(self, event_time_ns: int) -> int: ...
+    def activation_time_ns(self, event_time_ns: int, *, seed: int = 0,
+                           context: str = "") -> int: ...
+
+    def cancel_time_ns(self, event_time_ns: int, *, seed: int = 0,
+                       context: str = "") -> int: ...
 
     def fifo_claim(self, venue: str, instrument: str) -> str: ...
 
@@ -114,17 +180,23 @@ class ConservativeMbpModel:
         """Return the declared impact displacement in basis points."""
         return self.params.cost_model.impact.impact_bps(participation)
 
-    def activation_time_ns(self, event_time_ns: int) -> int:
-        """Return the fixed-latency activation time."""
-        if type(event_time_ns) is not int or event_time_ns <= 0:
-            raise ValueError("event_time_ns must be a positive integer")
-        return event_time_ns + self.params.order_latency_ns
+    def latency_sample(self, seed: int, context: str, kind: str) -> int:
+        """Return the declared seeded latency draw for one order lifecycle step."""
+        return self.params.latency_sample_ns(seed, context, kind)
 
-    def cancel_time_ns(self, event_time_ns: int) -> int:
-        """Return the fixed-latency cancel-effective time."""
+    def activation_time_ns(self, event_time_ns: int, *, seed: int = 0,
+                           context: str = "") -> int:
+        """Return the activation time using the declared latency distribution."""
         if type(event_time_ns) is not int or event_time_ns <= 0:
             raise ValueError("event_time_ns must be a positive integer")
-        return event_time_ns + self.params.cancel_latency_ns
+        return event_time_ns + self.latency_sample(seed, context or "activation", "order")
+
+    def cancel_time_ns(self, event_time_ns: int, *, seed: int = 0,
+                       context: str = "") -> int:
+        """Return the cancel-effective time using the declared distribution."""
+        if type(event_time_ns) is not int or event_time_ns <= 0:
+            raise ValueError("event_time_ns must be a positive integer")
+        return event_time_ns + self.latency_sample(seed, context or "cancel", "cancel")
 
     def execution_price(self, base_price: Decimal, side: str, impact_bps: Decimal,
                         slippage_bps: Decimal) -> Decimal:

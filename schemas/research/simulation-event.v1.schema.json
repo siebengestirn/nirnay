@@ -81,15 +81,16 @@
     "new_limit_price": {"type": ["string", "null"]},
     "report_type": {
       "type": "string",
-      "enum": ["ack", "new", "reject", "fill", "cancel_ack", "expire"]
+      "enum": ["ack", "new", "reject", "fill", "cancel_ack", "expire", "charge", "latency_sample"]
     },
     "fees": {"type": "string"},
     "impact_cost": {"type": "string"},
     "spread_cost": {"type": "string"},
     "liquidity": {"type": ["string", "null"], "enum": ["maker", "taker", null]},
+    "sampled_ns": {"type": ["integer", "null"], "minimum": 0},
     "config_key": {"type": "string", "minLength": 1},
     "config_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-    "effective_ns": {"type": "integer", "minimum": 1}
+    "effective_ns": {"type": ["integer", "null"], "minimum": 1}
   },
   "allOf": [
     {
