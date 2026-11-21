@@ -28,6 +28,8 @@ pub enum OmsError {
     },
     #[error("broker event `{0}` was already recorded")]
     DuplicateBrokerEvent(String),
+    #[error("execution `{execution_id}` was delivered again with different content")]
+    FillContentConflict { execution_id: String },
     #[error("fill quantity exceeds the remaining order quantity")]
     OverFill,
     #[error("an ambiguous submission must be reconciled before retry; found `{0}`")]

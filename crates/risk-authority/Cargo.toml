@@ -10,11 +10,9 @@ description = "Stateful risk authority with atomic exposure reservation"
 [dependencies]
 risk-engine.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 trading-core.workspace = true
-
-[dev-dependencies]
-serde_json.workspace = true
 
 [lints]
 workspace = true

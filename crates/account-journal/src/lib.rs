@@ -62,6 +62,17 @@ pub struct StoredRecord {
     pub body: StoredBody,
 }
 
+/// Deterministic append-boundary faults for durability tests. Never set in
+/// production wiring.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum CommitFault {
+    BeforeHeader,
+    MidBody,
+    AfterBodyBeforeSync,
+    AfterSync,
+    Rollover,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VerificationReport {
     pub record_count: u64,
@@ -129,6 +140,7 @@ pub struct Journal {
     repaired_tail_bytes: u64,
     segment_count: u64,
     poisoned: bool,
+    commit_fault: Option<CommitFault>,
 }
 
 impl std::fmt::Debug for Journal {
@@ -156,6 +168,12 @@ impl Journal {
             run,
             next_sequence(self.records.last().map(|record| record.sequence))?,
         ))
+    }
+
+    /// Inject an append-boundary fault for deterministic crash tests. The
+    /// writer is poisoned on every fault; recovery is always a fresh open.
+    pub fn force_commit_fault(&mut self, fault: Option<CommitFault>) {
+        self.commit_fault = fault;
     }
 
     pub fn open(
@@ -219,6 +237,7 @@ impl Journal {
             repaired_tail_bytes: 0,
             segment_count: 0,
             poisoned: false,
+            commit_fault: None,
         };
         journal.load_segments()?;
         Ok(journal)
@@ -475,6 +494,7 @@ impl Journal {
         let sequence = next_sequence(self.records.last().map(|record| record.sequence))?;
         let hash = hash_record(sequence, self.previous_hash, &body_bytes);
         let frame_len = HEADER_LEN as u64 + body_bytes.len() as u64;
+        let mut rolled = false;
         if self.active_size > 0 && self.active_size.saturating_add(frame_len) > self.segment_limit {
             if self.active_file.sync_all().is_err() {
                 self.poisoned = true;
@@ -484,6 +504,15 @@ impl Journal {
                 self.poisoned = true;
                 return Err(JournalError::CommitOutcomeUnknown);
             }
+            rolled = true;
+        }
+        if rolled && self.commit_fault == Some(CommitFault::Rollover) {
+            self.poisoned = true;
+            return Err(JournalError::CommitOutcomeUnknown);
+        }
+        if self.commit_fault == Some(CommitFault::BeforeHeader) {
+            self.poisoned = true;
+            return Err(JournalError::CommitOutcomeUnknown);
         }
         let mut header = Vec::with_capacity(HEADER_LEN);
         header.extend_from_slice(&FILE_SIGNATURE);
@@ -500,9 +529,40 @@ impl Journal {
         header.extend_from_slice(self.previous_hash.as_bytes());
         header.extend_from_slice(hash.as_bytes());
 
-        if self.active_file.write_all(&header).is_err()
-            || self.active_file.write_all(&body_bytes).is_err()
-            || self.active_file.sync_data().is_err()
+        if self.active_file.write_all(&header).is_err() {
+            self.poisoned = true;
+            return Err(JournalError::CommitOutcomeUnknown);
+        }
+        match self.commit_fault {
+            Some(CommitFault::MidBody) => {
+                let split = body_bytes.len() / 2;
+                if self.active_file.write_all(&body_bytes[..split]).is_ok() {
+                    let _ = self.active_file.flush();
+                }
+                self.poisoned = true;
+                return Err(JournalError::CommitOutcomeUnknown);
+            }
+            Some(CommitFault::AfterBodyBeforeSync) => {
+                if self.active_file.write_all(&body_bytes).is_err() {
+                    self.poisoned = true;
+                    return Err(JournalError::CommitOutcomeUnknown);
+                }
+                self.poisoned = true;
+                return Err(JournalError::CommitOutcomeUnknown);
+            }
+            Some(CommitFault::AfterSync) => {
+                if self.active_file.write_all(&body_bytes).is_err()
+                    || self.active_file.sync_data().is_err()
+                {
+                    self.poisoned = true;
+                    return Err(JournalError::CommitOutcomeUnknown);
+                }
+                self.poisoned = true;
+                return Err(JournalError::CommitOutcomeUnknown);
+            }
+            Some(CommitFault::BeforeHeader | CommitFault::Rollover) | None => {}
+        }
+        if self.active_file.write_all(&body_bytes).is_err() || self.active_file.sync_data().is_err()
         {
             self.poisoned = true;
             return Err(JournalError::CommitOutcomeUnknown);

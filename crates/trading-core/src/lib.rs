@@ -36,9 +36,10 @@ pub use instrument::{
 };
 pub use model::{
     ChargeComponents, Continuity, DataQualityFlag, DecisionRecord, EventEnvelope, EventPayload,
-    EventTimes, FeedHealth, Fill, JournalRef, Order, OrderIntent, OrderStatus, Product,
-    QuoteSnapshot, ReconciliationReport, ReconciliationStatus, RiskAssessment, RiskCheck,
-    RiskCheckResult, SessionPhase, StoredBody,
+    EventTimes, FeedHealth, Fill, JournalRef, LedgerChargeStatus, LedgerPostingKind,
+    OpeningBalanceEvidence, Order, OrderIntent, OrderStatus, Product, QuoteSnapshot,
+    ReconciliationReport, ReconciliationStatus, RiskAssessment, RiskCheck, RiskCheckResult,
+    SessionPhase, StoredBody,
 };
 pub use money::{CheckedPaise, DoubledPaise, Lots, Paise, PricePaise, Quantity};
 pub use time::{LogicalNanos, TradeDate, UtcNanos};

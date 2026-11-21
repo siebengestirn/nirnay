@@ -8,14 +8,30 @@
 //! reconciliation with broker evidence. No strategy, risk, broker SDK, live
 //! routing or automatic deployment dependency exists here.
 
+pub mod account_projection;
 pub mod error;
 pub mod lifecycle;
+pub mod reconciliation;
 pub mod store;
 
+pub use account_projection::{
+    LEDGER_STREAM_ID, //
+    LedgerCursor,
+    LedgerState,
+    ProjectionError,
+    Projector,
+    ReplayVerification,
+};
 pub use error::OmsError;
 pub use lifecycle::{
     OmsOrderState, //
     OutboxState,
+};
+pub use reconciliation::{
+    ReconciliationDifference, //
+    ReconciliationInput,
+    ReconciliationOutcome,
+    reconcile,
 };
 pub use store::{
     BrokerOrderId, //

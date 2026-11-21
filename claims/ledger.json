@@ -377,6 +377,46 @@
         ]
       },
       "falsifier": "A BENCH-* counter is a hard-coded literal, a benchmark runs as a pass/fail gate in make check or CI, a latency threshold is asserted, or a dated record presents local synthetic numbers as deployment or throughput evidence."
+    },
+    {
+      "id": "CLM-030",
+      "statement": "Account projection is deterministic: EventId is derived from (scope, execution_id) with a separate SHA-256 content digest, the exact paise fold and evidenced opening balance are replay-confluent, and busts or charge confirmations resolve the active posting so reversals neither double-apply nor leave residual cash or charges.",
+      "status": "implemented",
+      "scope": {
+        "files": [
+          "crates/trading-core/src/model.rs",
+          "crates/authoritative-oms/src/account_projection.rs",
+          "crates/authoritative-oms/tests/account_ledger.rs"
+        ]
+      },
+      "falsifier": "Two delivery orders of the same fills yield different state digests; a duplicate delivery changes cash or position; a bust after a charge confirmation leaves non-zero cash or negative charges; a second confirmation with a different amount silently no-ops; or an opening without durable evidence is accepted."
+    },
+    {
+      "id": "CLM-031",
+      "statement": "Reconciliation classifies duplicate, conflicting, partial, late, out-of-order, unknown-delivery and unavailable cases from independently recomputed OMS and ledger state; every blocking anomaly is reflected in a Mismatch or Unavailable status, and such a report latches reconciliation_blocked until an authenticated operator resolves it.",
+      "status": "implemented",
+      "scope": {
+        "files": [
+          "crates/authoritative-oms/src/reconciliation.rs",
+          "crates/authoritative-oms/tests/account_ledger.rs",
+          "crates/risk-authority/src/authority.rs"
+        ]
+      },
+      "falsifier": "A reused execution id with different content is silently dropped; an unknown delivery is marked blocking but leaves status Matched; a poisoned OMS presents an empty observed view as a match; a latch clears without an authenticated operator resolution; or a fresh intent is reserved while a mismatch or unavailable report is active."
+    },
+    {
+      "id": "CLM-032",
+      "statement": "The health decision is made inside RiskAuthority under the reservation mutex over six typed versioned observations from registered producers; unregistered or forged tokens, missing, stale, wrong-version or structurally invalid observations are typed denials, an engaged kill switch persists across restart, and risk-reducing paths remain available when health is degraded.",
+      "status": "implemented",
+      "scope": {
+        "files": [
+          "crates/risk-authority/src/authority.rs",
+          "crates/risk-authority/src/observation.rs",
+          "crates/risk-authority/src/control.rs",
+          "crates/risk-authority/tests/authority.rs"
+        ]
+      },
+      "falsifier": "A caller can fabricate all six observations without registering owners, forge another owner's token, pass a safe_for_new_risk boolean or string verdict; a persisted engaged switch is cleared by unauthenticated replay or a release without evidenced reason; or a risk-reducing release/apply_fill is denied by a health condition."
     }
   ]
 }
