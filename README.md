@@ -383,6 +383,7 @@ once published; a new run adds a new dated file instead of rewriting history.
 | Dated evidence | `evidence/M3-5-1-FILL-EVENTS-2026-11-21.md` | typed durable execution events |
 | Dated evidence | `evidence/Q-TESTS-STYLE-2026-11-20.md` | q unit harness, style guide, added-lines gate and measured results |
 | Dated evidence | `evidence/A0-ARCHIVE-BUNDLE-2026-11-20.md` | archive Git-bundle defect, correction and verification |
+| Dated evidence | `evidence/PROGRAMME-2026-11-21.md` | external-review remediation programme and verified results |
 
 The current-state block above names the verified commit, date, CI run and
 scope. Update it in the PR that changes the verified baseline. Do not add a
