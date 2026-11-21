@@ -417,6 +417,29 @@
         ]
       },
       "falsifier": "A caller can fabricate all six observations without registering owners, forge another owner's token, pass a safe_for_new_risk boolean or string verdict; a persisted engaged switch is cleared by unauthenticated replay or a release without evidenced reason; or a risk-reducing release/apply_fill is denied by a health condition."
+    },
+    {
+      "id": "CLM-034",
+      "statement": "The research simulator consumes latency_seed through a declared distribution and records each draw, refuses artifact references that do not resolve to a dated fixture, charges typed borrow/margin/funding terms over logical time, blocks book and trade fills plus new orders during halt, emits one synthetic uncross at a declared price, rounds fills to effective-dated tick size, and recomputes ending cash from committed fills and charges. A local sim-replay driver is byte-stable across hash seeds and the trial store refuses duplicate or conflicting keys. No calibrated, FIFO, real-data, venue-truth, profitability or live-readiness claim is made; the ADR-M1-009 replay-run gate remains a PRECONDITION.",
+      "status": "implemented",
+      "scope": {
+        "files": [
+          "research/python/src/quantlab/sim/calibration.py",
+          "research/python/src/quantlab/sim/core.py",
+          "research/python/src/quantlab/sim/events.py",
+          "research/python/src/quantlab/sim/execution/base.py",
+          "research/python/src/quantlab/sim/replay.py",
+          "research/python/src/quantlab/sim/state.py",
+          "research/python/src/quantlab/sim/store.py",
+          "research/python/src/quantlab/cli.py",
+          "schemas/research/simulation-event.v1.schema.json",
+          "schemas/research/simulation-run-record.v1.schema.json",
+          "engineering/capabilities.json",
+          "claims/ledger.json",
+          "research/python/tests/test_sim_extensions.py"
+        ]
+      },
+      "falsifier": "Two fresh-process hash seeds yield different verified-equal fields; a fill precedes its sampled activation; a missing or mismatched artifact resolves or a summary says calibrated without a dated calibration result; borrow, margin or funding terms are charged with different typed math; a halt permits a book or trade fill or accepts a new order; a synthetic uncross fills more than once; an effective tick change does not round a later fill; the verifier copies committed ending cash instead of recomputing it; or the trial store overwrites an existing key."
     }
   ]
 }

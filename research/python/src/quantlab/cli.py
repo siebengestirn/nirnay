@@ -24,6 +24,7 @@ from .reporting.comparison import compare_experiments
 from .market import market_event_from_dict, canonical_bytes
 from .providers import FyersV3Normalizer, UpstoxV3Normalizer
 from .reconcile import reconcile_latest
+from .sim.replay import compare_records, read_record, replay_in_fresh_process
 from .point_in_time import (CorporateAction, PITDatasetBuilder, PITListing,
                             PITReferenceData, PITUniverseMembership,
                             verify_published_dataset, write_dataset)
@@ -384,6 +385,38 @@ def _cmd_paper_replay(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_sim_replay(args: argparse.Namespace) -> int:
+    """Offline research replay of one content-addressed simulation record."""
+    record = read_record(Path(args.record))
+    payload: dict[str, Any] = {
+        "schema_version": 1,
+        "record_sha256": record.record_sha256,
+        "hash_seed": args.hash_seed,
+        "replay_run_gate": "PRECONDITION: ADR-M1-009 section 9 item 1 is not satisfied",
+        "claim_basis": "implemented, not verified; local research-only replay driver",
+    }
+    if args.compare:
+        fresh = replay_in_fresh_process(record, python_hash_seed=args.hash_seed)
+        comparison = compare_records(record, fresh)
+        payload["comparison"] = {
+            "replayed_record_sha256": fresh.record_sha256,
+            "verified_equal": dict(sorted(comparison.verified_equal.items())),
+            "excluded_fields": list(comparison.excluded_fields),
+            "pnl_basis": comparison.pnl_basis,
+            "fields_equal": comparison.verified,
+        }
+    output = canonical_bytes(payload) + b"\n"
+    if args.output is not None:
+        target = Path(args.output)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open("xb") as stream:
+            stream.write(output)
+            stream.flush()
+            os.fsync(stream.fileno())
+    sys.stdout.buffer.write(output)
+    return 0
+
+
 def _cmd_normalize(args: argparse.Namespace) -> int:
     instrument_map = json.loads(args.instrument_map.read_text(encoding="utf-8"))
     if not isinstance(instrument_map, dict) or any(not isinstance(k, str) or not isinstance(v, str) or not v for k, v in instrument_map.items()):
@@ -680,6 +713,17 @@ def build_parser() -> argparse.ArgumentParser:
     replay.add_argument("--reference-revision", type=Path)
     replay.add_argument("--output", type=Path, required=True)
     replay.set_defaults(handler=_cmd_paper_replay)
+
+    sim_replay = sub.add_parser(
+        "sim-replay", help="offline fresh-process replay of a research simulation record")
+    sim_replay.add_argument("--record", type=Path, required=True)
+    sim_replay.add_argument("--compare", action="store_true",
+                            help="replay in a fresh process and compare verifier fields")
+    sim_replay.add_argument("--hash-seed", default="1",
+                            help="fixed fresh-process PYTHONHASHSEED (default: 1)")
+    sim_replay.add_argument("--output", type=Path,
+                            help="optional immutable output path for the JSON payload")
+    sim_replay.set_defaults(handler=_cmd_sim_replay)
 
     demo = sub.add_parser("demo", help="run deterministic synthetic EMA/backtest fixture")
     demo.set_defaults(handler=_cmd_demo)

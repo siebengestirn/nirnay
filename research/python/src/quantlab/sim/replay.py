@@ -63,6 +63,8 @@ class RunRecord:
     emitted_digest: str
     fills_digest: str
     fill_rows: tuple[dict[str, Any], ...]
+    charge_rows: tuple[dict[str, Any], ...]
+    cash_rows: tuple[dict[str, Any], ...]
     marks: dict[str, str]
     starting_cash: str
     ending_cash: str
@@ -76,10 +78,11 @@ class RunRecord:
     strategy_id: str
 
 
-def _row(fill: Any) -> dict[str, Any]:
+def _row(fill: Any, side: str) -> dict[str, Any]:
     return {
         "event_id": fill.event_id,
         "client_order_id": fill.client_order_id,
+        "side": side,
         "quantity": fill.quantity,
         "price": format(fill.price, "f"),
         "fees": format(fill.fees, "f"),
@@ -87,6 +90,37 @@ def _row(fill: Any) -> dict[str, Any]:
         "spread_cost": format(fill.spread_cost, "f"),
         "liquidity": fill.liquidity,
         "logical_time_ns": fill.logical_time_ns,
+    }
+
+
+def _charge_row(charge: Any) -> dict[str, Any]:
+    return {
+        "event_id": f"charge:{charge.instrument}:{charge.kind}:{charge.as_of_ns}",
+        "instrument": charge.instrument,
+        "kind": charge.kind,
+        "amount": format(charge.amount, "f"),
+        "held_ns": charge.held_ns,
+        "as_of_ns": charge.as_of_ns,
+        "logical_time_ns": charge.as_of_ns,
+        "rate_bps_per_day": format(charge.rate_bps_per_day, "f"),
+        "assumption": charge.assumption,
+    }
+
+
+def _cash_row(row: dict[str, Any], kind: str) -> dict[str, Any]:
+    """Return the exact cash delta implied by a committed fill or charge row."""
+    if kind == "fill":
+        sign = -1 if row["side"] == "buy" else 1
+        delta = sign * Decimal(row["price"]) * row["quantity"] - Decimal(row["fees"])
+    elif kind == "charge":
+        delta = -Decimal(row["amount"])
+    else:
+        raise ValueError(f"unknown cash row kind: {kind}")
+    return {
+        "event_id": row["event_id"],
+        "kind": kind,
+        "delta": format(delta, "f"),
+        "logical_time_ns": row["logical_time_ns"],
     }
 
 
@@ -105,7 +139,18 @@ def build_record(
         if input_events is None
         else tuple(input_events)
     )
-    fill_rows = tuple(_row(fill) for fill in result.fills)
+    orders = result.final_state.orders
+    fill_rows = tuple(
+        _row(fill, orders[fill.client_order_id].side) for fill in result.fills
+    )
+    charge_rows = tuple(_charge_row(item) for item in result.charges)
+    combined = (
+        *[_cash_row(row, "fill") for row in fill_rows],
+        *[_cash_row(row, "charge") for row in charge_rows],
+    )
+    cash_rows = tuple(sorted(combined, key=lambda row: (
+        row["logical_time_ns"], row["event_id"]
+    )))
     values = {
         "schema_version": 1,
         "run_id": run_id,
@@ -122,6 +167,8 @@ def build_record(
         "emitted_digest": digest([event_to_dict(item) for item in result.emitted]),
         "fills_digest": digest(fill_rows),
         "fill_rows": fill_rows,
+        "charge_rows": charge_rows,
+        "cash_rows": cash_rows,
         "marks": dict(sorted((k, format(v, "f")) for k, v in result.marks.items())),
         "starting_cash": format(result.final_state.starting_cash, "f"),
         "ending_cash": format(result.ending_cash, "f"),
@@ -176,7 +223,7 @@ def record_from_dict(data: Mapping[str, Any]) -> RunRecord:
     if data["schema_version"] != 1:
         raise ValueError("unsupported run record schema version")
     restored = dict(data)
-    for name in ("input_events", "model_digests", "fill_rows"):
+    for name in ("input_events", "model_digests", "fill_rows", "charge_rows", "cash_rows"):
         restored[name] = tuple(restored[name])
     restored["positions"] = tuple(tuple(row) for row in restored["positions"])
     return RunRecord(**restored)
@@ -223,15 +270,33 @@ class ComparisonResult:
 
 
 def verifier_recompute(record: RunRecord) -> tuple[dict[str, str], str, tuple[str, ...]]:
-    """Recompute P&L and costs from the committed fill stream and marks."""
+    """Recompute cash and P&L from committed fills, charges and marks only."""
     totals = {
         "fees": Decimal("0"),
         "impact_cost": Decimal("0"),
         "spread_cost": Decimal("0"),
     }
+    expected: dict[str, Decimal] = {}
     for row in record.fill_rows:
         for name in totals:
             totals[name] += Decimal(row[name])
+        expected[row["event_id"]] = Decimal(_cash_row(row, "fill")["delta"])
+    for row in record.charge_rows:
+        expected[row["event_id"]] = Decimal(_cash_row(row, "charge")["delta"])
+
+    cash = Decimal(record.starting_cash)
+    seen: set[str] = set()
+    consistent = True
+    for row in record.cash_rows:
+        event_id = row["event_id"]
+        delta = Decimal(row["delta"])
+        if event_id in seen or expected.get(event_id) != delta:
+            consistent = False
+        seen.add(event_id)
+        cash += delta
+    if seen != set(expected):
+        consistent = False
+
     marked_value = Decimal("0")
     residual: list[str] = []
     for instrument, quantity in record.positions:
@@ -241,28 +306,27 @@ def verifier_recompute(record: RunRecord) -> tuple[dict[str, str], str, tuple[st
             marked_value += Decimal(quantity) * Decimal(record.marks[instrument])
         else:
             residual.append(instrument)
-    net = (
-        Decimal(record.ending_cash)
-        + marked_value
-        - Decimal(record.starting_cash)
-    )
+    net = cash + marked_value - Decimal(record.starting_cash)
     gross = net + totals["fees"] + totals["impact_cost"] + totals["spread_cost"]
     recomputed = {
         "starting_cash": format(Decimal(record.starting_cash), "f"),
-        "ending_cash": format(Decimal(record.ending_cash), "f"),
+        "ending_cash": format(cash, "f"),
         "net_pnl": format(net, "f"),
         "gross_pnl": format(gross, "f"),
         "fees": format(totals["fees"], "f"),
         "impact_cost": format(totals["impact_cost"], "f"),
         "spread_cost": format(totals["spread_cost"], "f"),
     }
-    mismatches = tuple(
+    mismatches = [
         name for name in P_AND_L_FIELDS if getattr(record, name) != recomputed[name]
-    )
+    ]
+    if not consistent and "ending_cash" not in mismatches:
+        mismatches.append("ending_cash")
     if residual and not record.unmarked_residual:
-        mismatches += ("unmarked_residual",)
-    basis = "recomputed" if not mismatches else "excluded"
-    return recomputed, basis, mismatches
+        mismatches.append("unmarked_residual")
+    result = tuple(mismatches)
+    basis = "excluded" if result else "recomputed"
+    return recomputed, basis, result
 
 
 def compare_records(left: RunRecord, right: RunRecord) -> ComparisonResult:
