@@ -891,7 +891,7 @@ def build_parser() -> argparse.ArgumentParser:
     job.set_defaults(handler=_cmd_run_research_job)
 
 
-listing = sub.add_parser("list-experiments",
+    listing = sub.add_parser("list-experiments",
                              help="list registered and terminal experiment records")
     listing.add_argument("--registry", type=Path, required=True)
     listing.set_defaults(handler=_cmd_list_experiments)
