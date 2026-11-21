@@ -1,14 +1,21 @@
-"""Deterministic reference strategies for simulator tests.
+"""Deterministic reference strategies and public research signal functions.
 
-The former flat ``quantlab.strategies`` module is re-exported here unchanged;
-no new strategy family is claimed by the package move.
+The former flat ``quantlab.strategies`` module is re-exported unchanged. The
+additional signal modules are pure research candidates that emit intents only;
+they claim no alpha, profitability, data rights or live readiness.
 """
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Sequence
 
+from ..alpha_search import _ema
 from ..backtest import OrderIntent, StrategyContext
 from ..market import MarketEvent
+from .factor import assert_factor_budget, factor_weights
+from .mean_reversion import mean_reversion_signal
+from .momentum import momentum_signal
+from .statistical_arbitrage import PairIntent, pair_intents, pair_signals, spread_series
 
 
 class DeterministicEmaCross:
@@ -91,4 +98,40 @@ class DeterministicEmaCross:
                            self.instrument_id, side, quantity, limit)
 
 
-__all__ = ["DeterministicEmaCross"]
+def signals_for_family(
+    closes: Sequence[float],
+    family: str,
+    *,
+    lookback: int = 5,
+    threshold_bps: float = 0.0,
+    fast: int = 3,
+    slow: int = 10,
+) -> list[int]:
+    """Dispatch a public signal by declared family, refusing unknown names."""
+    if family == "momentum":
+        return momentum_signal(closes, lookback=lookback, threshold_bps=threshold_bps)
+    if family == "mean_reversion":
+        return mean_reversion_signal(closes, lookback=lookback, threshold_bps=threshold_bps)
+    if family == "ema_cross":
+        if fast >= slow or fast < 2 or slow < 2:
+            raise ValueError("EMA cross requires 2 <= fast < slow")
+        fast_values, slow_values = _ema(closes, fast), _ema(closes, slow)
+        output = [int(left > right) for left, right in zip(fast_values, slow_values)]
+        for index in range(min(slow, len(closes))):
+            output[index] = 0
+        return output
+    raise ValueError(f"unknown signal family: {family}")
+
+
+__all__ = [
+    "DeterministicEmaCross",
+    "PairIntent",
+    "assert_factor_budget",
+    "factor_weights",
+    "mean_reversion_signal",
+    "momentum_signal",
+    "pair_intents",
+    "pair_signals",
+    "signals_for_family",
+    "spread_series",
+]
