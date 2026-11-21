@@ -12,10 +12,15 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from .alpha_search import AlphaCosts, Bar, search_alpha
+from .alpha_search import AlphaCosts, Bar
 from .backtest import BacktestConfig, EventDrivenBacktester
 from .data_rights import ProductKey, REPLAY, authorize
 from .demo import run_demo
+from .experiments.registry import ExperimentRegistry
+from .experiments.schema import load_experiment
+from .experiments.search_adapter import run_registered_search
+from .reporting import research_report_bytes
+from .reporting.comparison import compare_experiments
 from .market import market_event_from_dict, canonical_bytes
 from .providers import FyersV3Normalizer, UpstoxV3Normalizer
 from .reconcile import reconcile_latest
@@ -582,18 +587,83 @@ def _cmd_alpha_search(args: argparse.Namespace) -> int:
                 bars.append(Bar(timestamp_ns=int(row["timestamp_ns"]), close=float(row["close"])))
             except (TypeError, ValueError) as exc:
                 raise ValueError(f"{args.csv}:{line}: invalid timestamp_ns or close") from exc
-    costs = AlphaCosts(brokerage_bps=args.brokerage_bps,
-                       exchange_and_regulatory_bps=args.exchange_regulatory_bps,
-                       taxes_bps=args.taxes_bps, spread_bps=args.spread_bps,
-                       slippage_bps=args.slippage_bps, market_impact_bps=args.market_impact_bps)
-    report = search_alpha(bars, costs=costs, periods_per_year=args.periods_per_year,
-                          require_statistical_significance=args.require_statistical_significance)
-    payload = json.dumps(report, sort_keys=True, indent=2, allow_nan=False) + "\n"
+    cost_overrides = {
+        "brokerage_bps": args.brokerage_bps,
+        "exchange_and_regulatory_bps": args.exchange_regulatory_bps,
+        "taxes_bps": args.taxes_bps,
+        "spread_bps": args.spread_bps,
+        "slippage_bps": args.slippage_bps,
+        "market_impact_bps": args.market_impact_bps,
+    }
+    costs = None
+    if any(value is not None for value in cost_overrides.values()):
+        defaults = AlphaCosts()
+        declared = {key: getattr(defaults, key) for key in cost_overrides}
+        declared.update({key: value for key, value in cost_overrides.items()
+                         if value is not None})
+        costs = AlphaCosts(**declared)
+    registry = ExperimentRegistry(args.registry)
+    report, receipt = run_registered_search(
+        registry, args.experiment_id, bars, costs=costs,
+        periods_per_year=args.periods_per_year,
+        require_statistical_significance=args.require_statistical_significance,
+    )
+    payload = research_report_bytes(report).decode("utf-8")
     if args.output:
         _write_new(args.output, payload.encode("utf-8"))
     else:
         print(payload, end="")
     # A rejected candidate is a valid research result, not a CLI execution error.
+    return 0 if receipt.status in {"completed", "rejected"} else 2
+
+
+def _cmd_register_experiment(args: argparse.Namespace) -> int:
+    record = load_experiment(args.record)
+    registry = ExperimentRegistry(args.registry)
+    receipt = registry.register(record)
+    payload: dict[str, Any] = {
+        "status": "registered", "experiment_id": receipt.experiment_id,
+        "sequence": receipt.sequence, "holdout_key": receipt.holdout_key,
+        "record_hash": receipt.record_hash, "previous_hash": receipt.previous_hash,
+    }
+    if args.kms_key_id:
+        from .kms_signing import AwsKmsEd25519Signer
+
+        signer = AwsKmsEd25519Signer.from_default_aws_credentials(
+            args.kms_key_id, region_name=args.kms_region
+        )
+        payload["head_signature"] = registry.sign_head(signer, args.kms_key_id)
+    print(json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False))
+    return 0
+
+
+def _cmd_claim_holdout(args: argparse.Namespace) -> int:
+    record = load_experiment(args.record)
+    registry = ExperimentRegistry(args.registry)
+    claim = registry.claim_holdout(record, claim_kind=args.claim_kind,
+                                   replicates=args.replicates)
+    print(json.dumps({"status": "holdout_claimed", "holdout_key": claim.holdout_key,
+                      "claim_kind": claim.claim_kind, "experiment_id": claim.experiment_id,
+                      "registered_at_utc": claim.registered_at_utc},
+                     sort_keys=True, separators=(",", ":"), allow_nan=False))
+    return 0
+
+
+def _cmd_compare_experiments(args: argparse.Namespace) -> int:
+    trusted: dict[str, str] = {}
+    for item in args.trusted_key:
+        key_id, separator, public_key = item.partition("=")
+        if not separator or not key_id or not public_key or key_id in trusted:
+            raise ValueError("--trusted-key must be unique KEY_ID=BASE64 values")
+        trusted[key_id] = public_key
+    if args.registry:
+        result = compare_experiments(args.left, args.right, registry=ExperimentRegistry(
+            args.registry), trusted_public_keys=trusted or None, dataset_dir=args.dataset)
+    else:
+        left = load_experiment(args.left)
+        right = load_experiment(args.right)
+        result = compare_experiments(left, right, dataset_dir=args.dataset)
+    print(research_report_bytes(result).decode("utf-8"), end="")
     return 0
 
 
@@ -657,17 +727,51 @@ def build_parser() -> argparse.ArgumentParser:
 
     alpha = sub.add_parser("alpha-search", help="bounded close-based candidate-family research screen")
     alpha.add_argument("csv", type=Path, help="chronological CSV with timestamp_ns,close")
+    alpha.add_argument("--registry", type=Path, required=True,
+                       help="experiment registry containing a prior registered record")
+    alpha.add_argument("--experiment-id", required=True,
+                       help="pre-registered experiment id; unregistered runs are refused")
     alpha.add_argument("--periods-per-year", type=float, default=252.0,
                        help="annualisation factor matching bar cadence; not inferred from timestamps")
-    alpha.add_argument("--brokerage-bps", type=float, default=2.0)
-    alpha.add_argument("--exchange-regulatory-bps", type=float, default=0.5)
-    alpha.add_argument("--taxes-bps", type=float, default=0.5)
-    alpha.add_argument("--spread-bps", type=float, default=2.0)
-    alpha.add_argument("--slippage-bps", type=float, default=1.0)
-    alpha.add_argument("--market-impact-bps", type=float, default=1.0)
+    alpha.add_argument("--brokerage-bps", type=float)
+    alpha.add_argument("--exchange-regulatory-bps", type=float)
+    alpha.add_argument("--taxes-bps", type=float)
+    alpha.add_argument("--spread-bps", type=float)
+    alpha.add_argument("--slippage-bps", type=float)
+    alpha.add_argument("--market-impact-bps", type=float)
     alpha.add_argument("--require-statistical-significance", action="store_true")
     alpha.add_argument("--output", type=Path)
     alpha.set_defaults(handler=_cmd_alpha_search)
+
+    register = sub.add_parser("register-experiment",
+                              help="register a frozen pre-registered experiment record")
+    register.add_argument("--registry", type=Path, required=True)
+    register.add_argument("--record", type=Path, required=True)
+    register.add_argument("--kms-key-id",
+                          help="optional AWS KMS Ed25519 key ARN for registry head signing")
+    register.add_argument("--kms-region", help="optional AWS region for the signing key")
+    register.set_defaults(handler=_cmd_register_experiment)
+
+    claim = sub.add_parser("claim-holdout",
+                           help="add an atomic holdout claim, normally verification-only")
+    claim.add_argument("--registry", type=Path, required=True)
+    claim.add_argument("--record", type=Path, required=True)
+    claim.add_argument("--claim-kind", choices=("selection", "verification_only"),
+                       default="verification_only")
+    claim.add_argument("--replicates", help="original experiment_id for verification-only claims")
+    claim.set_defaults(handler=_cmd_claim_holdout)
+
+    compare = sub.add_parser("compare-experiments",
+                             help="compare two frozen terminal experiments byte-stably")
+    compare.add_argument("--left", required=True,
+                         help="experiment id with --registry, else record file")
+    compare.add_argument("--right", required=True,
+                         help="experiment id with --registry, else record file")
+    compare.add_argument("--registry", type=Path)
+    compare.add_argument("--dataset", type=Path,
+                         help="optional published dataset for manifest binding")
+    compare.add_argument("--trusted-key", action="append", default=[], metavar="KEY_ID=BASE64")
+    compare.set_defaults(handler=_cmd_compare_experiments)
     return parser
 
 

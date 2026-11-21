@@ -86,7 +86,7 @@
       "status": "partial",
       "evidence_status": "Deterministic streaming EMA-cross fixture and bounded 25-candidate close-based candidate family; chronological train/validation/untouched holdout, flat segment portfolios, one-return embargo, explicit net costs, Holm correction, approximate HAC p-values, development-only CSCV/PBO and validation-only Deflated Sharpe diagnostics. Not arbitrary code generation or validated alpha; no market-data result is asserted.",
       "owner": "research",
-      "scope": "research/python/src/quantlab/strategies.py; research/python/src/quantlab/alpha_search.py"
+      "scope": "research/python/src/quantlab/strategies/ (package); research/python/src/quantlab/alpha_search.py"
     },
     {
       "id": "CAP-011",
@@ -255,6 +255,22 @@
       "evidence_status": "Every fill is persisted as a typed FillEvent with stable execution id, broker event id, order ids, side, quantity, price, currency, broker and receive timestamps, source, account scope, charges with Estimated/BrokerConfirmed status, schema version and provenance. Cumulative filled quantity/notional are no longer the only execution history. Duplicate ids are idempotent and unsupported schemas fail closed. This does not project events into the account journal or claim accounting correctness.",
       "owner": "oms",
       "scope": "crates/authoritative-oms/src/store.rs; crates/authoritative-oms/tests/fill_events.rs"
+    },
+    {
+      "id": "CAP-033",
+      "name": "Append-only experiment registry with atomic holdout claims",
+      "status": "implemented",
+      "evidence_status": "SQLite WAL/FULL insert-only store with predecessor hash chain, UPDATE/DELETE triggers, idempotent record decode and a UNIQUE selection-holdout claim index. Extended records bind dataset lineage, universe, feature version, strategy code digest, complete search space and attempted configurations, disjoint validation/holdout periods, costs and execution assumptions, results and diagnostics. alpha-search refuses unregistered runs; compare-experiments produces byte-stable output and rejects differing datasets, tampered, non-terminal or leaky records. Optional domain-separated Ed25519 head signature requires an explicit trusted key set. Dedicated tests exercise these falsifiers. Implemented, not independently verified or promoted; no alpha, profitability, data-right or live-readiness claim.",
+      "owner": "research",
+      "scope": "research/python/src/quantlab/experiments/; research/python/src/quantlab/validation/leakage_detection.py; research/python/src/quantlab/reporting/comparison.py; research/python/src/quantlab/cli.py; research/python/tests/test_experiment_registry.py; research/python/tests/test_experiment_comparison.py"
+    },
+    {
+      "id": "CAP-034",
+      "name": "Declarative feature lineage with point-in-time validation",
+      "status": "implemented",
+      "evidence_status": "FeatureLineage records a definition digest, as-of time, knowledge time and declaration digest in both DatasetManifest and DatasetRow. Publication and verification reject knowledge-after-as-of, as-of-after-event or as-of-after-creation declarations and detect edits to the lineage block. No new service or database. Dedicated tests cover builder binding, publication and tampering. Implemented, not independently verified; source completeness and data rights remain unverified.",
+      "owner": "research-data",
+      "scope": "research/python/src/quantlab/features/lineage.py; research/python/src/quantlab/point_in_time.py; research/python/tests/test_feature_lineage.py"
     },
     {
       "id": "CAP-032",

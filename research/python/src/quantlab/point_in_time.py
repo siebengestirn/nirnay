@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Any, Iterable, Protocol
 from zoneinfo import ZoneInfo
 
+from .features.lineage import (FeatureLineage, assert_feature_lineage, feature_lineage_digest,
+                               validate_feature_lineage)
 from .market import MarketEvent, canonical_bytes
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -36,6 +38,15 @@ def _valid_sha256(value: str) -> bool:
 def _utc_date(ns: int) -> date:
     # Integer-second conversion avoids float rounding across an IST midnight.
     return datetime.fromtimestamp(ns // 1_000_000_000, tz=timezone.utc).astimezone(IST).date()
+
+
+def _feature_observation_time_ns(event: dict[str, Any]) -> int:
+    """Select the same observation clock used by the point-in-time builder."""
+    for field in ("source_timestamp_ns", "last_trade_time_ns", "received_utc_ns"):
+        value = event.get(field)
+        if type(value) is int and value > 0:
+            return value
+    raise ValueError("event has no usable observation timestamp for feature validation")
 
 
 def _sha_file(path: Path) -> str:
@@ -335,6 +346,8 @@ class DatasetRow:
     split_price_factor_num: int
     split_price_factor_den: int
     point_in_time: bool
+    feature_lineage: FeatureLineage | None = None
+    feature_lineage_sha256: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {"event": self.event, "instrument_id": self.instrument_id, "venue": self.venue,
@@ -350,7 +363,10 @@ class DatasetRow:
                 "action_source_hashes": list(self.action_source_hashes),
                 "split_price_factor_num": self.split_price_factor_num,
                 "split_price_factor_den": self.split_price_factor_den,
-                "point_in_time": self.point_in_time}
+                "point_in_time": self.point_in_time,
+                "feature_lineage": None if self.feature_lineage is None
+                else self.feature_lineage.as_dict(),
+                "feature_lineage_sha256": self.feature_lineage_sha256}
 
 
 def _source_code_digest() -> str:
@@ -397,6 +413,8 @@ class DatasetManifest:
     input_sha256: str
     code_digest: str
     config_digest: str
+    feature_lineage: FeatureLineage | None = None
+    feature_lineage_sha256: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -409,9 +427,16 @@ class PITDatasetBuilder:
     def build(self, events: Iterable[MarketEvent], *, dataset_id: str,
               created_at_utc_ns: int, max_event_age_ns: int | None = None,
               universe_id: str | None = None,
-              input_sha256: str | None = None) -> tuple[list[DatasetRow], DatasetManifest]:
+              input_sha256: str | None = None,
+              feature_lineage: FeatureLineage | None = None
+              ) -> tuple[list[DatasetRow], DatasetManifest]:
         if not isinstance(dataset_id, str) or not dataset_id.strip() or type(created_at_utc_ns) is not int or created_at_utc_ns <= 0:
             raise ValueError("dataset_id and positive integer created_at_utc_ns are required")
+        if feature_lineage is not None:
+            validate_feature_lineage(feature_lineage, created_at_utc_ns=created_at_utc_ns)
+        feature_digest = None
+        if feature_lineage is not None:
+            feature_digest = feature_lineage_digest(feature_lineage)
         if max_event_age_ns is not None and (type(max_event_age_ns) is not int or max_event_age_ns < 0):
             raise ValueError("max_event_age_ns must be a non-negative integer")
         rows: list[DatasetRow] = []
@@ -485,6 +510,8 @@ class PITDatasetBuilder:
                 for action_id in revision_lineage
                 for source_hash in [next(a.source_sha256 for a in self.reference_data.actions if a.action_id == action_id)]
             }))
+            if feature_lineage is not None:
+                validate_feature_lineage(feature_lineage, event_utc_ns=observation_time_ns)
             used_listing_hashes.add(listing.source_sha256)
             used_action_hashes.update(action_source_hashes)
             row = DatasetRow(event=event.as_dict(), instrument_id=listing.instrument_id,
@@ -497,7 +524,9 @@ class PITDatasetBuilder:
                              action_revision_lineage=revision_lineage,
                              known_action_ids=known_action_ids, action_source_hashes=action_source_hashes,
                              split_price_factor_num=factor.numerator,
-                             split_price_factor_den=factor.denominator, point_in_time=True)
+                             split_price_factor_den=factor.denominator, point_in_time=True,
+                             feature_lineage=feature_lineage,
+                             feature_lineage_sha256=feature_digest)
             rows.append(row)
             providers.add(event.provider)
             event_hashes.add(event.raw_sha256)
@@ -557,7 +586,8 @@ class PITDatasetBuilder:
             adjustment_policy=manifest_body["adjustment_policy"],
             warnings=tuple(sorted(warnings)), data_sha256=data_digest,
             input_sha256=provenance_input, code_digest=code_digest,
-            config_digest=config_digest)
+            config_digest=config_digest, feature_lineage=feature_lineage,
+            feature_lineage_sha256=feature_digest)
         return rows, manifest
 
 
@@ -724,7 +754,10 @@ def verify_published_dataset(dataset_dir: str | Path, *,
     if not isinstance(dataset, dict) or not isinstance(artifacts, dict) or "events.jsonl" not in artifacts:
         raise ValueError("dataset manifest or artifact map is invalid")
     expected_manifest_fields = set(DatasetManifest.__dataclass_fields__)
-    if set(dataset) != expected_manifest_fields:
+    optional_manifest_fields = {"feature_lineage", "feature_lineage_sha256"}
+    if not expected_manifest_fields - optional_manifest_fields <= set(dataset) or not set(
+        dataset
+    ) <= expected_manifest_fields:
         raise ValueError("dataset manifest fields do not match the active schema contract")
     if dataset.get("schema_version") != 1 or dataset.get("timezone") != "Asia/Kolkata":
         raise ValueError("unsupported dataset manifest schema or timezone")
@@ -732,6 +765,13 @@ def verify_published_dataset(dataset_dir: str | Path, *,
         raise ValueError("dataset creation timestamp is invalid")
     if not isinstance(dataset.get("dataset_id"), str) or not dataset["dataset_id"]:
         raise ValueError("dataset identity is invalid")
+    if dataset.get("feature_lineage") is not None:
+        try:
+            assert_feature_lineage(dataset["feature_lineage"],
+                                   dataset.get("feature_lineage_sha256"),
+                                   created_at_utc_ns=dataset["created_at_utc_ns"])
+        except ValueError as exc:
+            raise ValueError(f"dataset manifest feature lineage is invalid: {exc}") from exc
     actual_names = {entry.name for entry in root.iterdir()}
     signature_path = root / "signature.json"
     if signature_path.is_symlink():
@@ -762,6 +802,15 @@ def verify_published_dataset(dataset_dir: str | Path, *,
         raise ValueError("dataset row_count differs from events.jsonl")
     if any(not isinstance(row.get("event"), dict) or row.get("point_in_time") is not True for row in rows):
         raise ValueError("dataset includes rows without canonical event and point-in-time flag")
+    for row in rows:
+        if row.get("feature_lineage") is None and row.get("feature_lineage_sha256") is None:
+            continue
+        try:
+            assert_feature_lineage(row.get("feature_lineage"),
+                                   row.get("feature_lineage_sha256"),
+                                   event_utc_ns=_feature_observation_time_ns(row["event"]))
+        except ValueError as exc:
+            raise ValueError(f"dataset row feature lineage is invalid: {exc}") from exc
     canonical_digest = hashlib.sha256(b"\n".join(canonical_bytes(row) for row in rows)).hexdigest()
     if dataset.get("data_sha256") != canonical_digest:
         raise ValueError("canonical data_sha256 differs from dataset rows")

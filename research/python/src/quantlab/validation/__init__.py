@@ -3,6 +3,7 @@
 Implements combinatorially symmetric cross-validation (CSCV) as an estimate of
 the Probability of Backtest Overfitting (PBO), plus a documented approximate
 Deflated Sharpe diagnostic. These are research diagnostics, not proof of alpha.
+The former flat ``quantlab.validation`` module is re-exported here unchanged.
 """
 from __future__ import annotations
 
@@ -11,6 +12,7 @@ import math
 from statistics import NormalDist
 from typing import Sequence
 
+from .leakage_detection import assert_no_holdout_leakage, detect_holdout_leakage
 
 _EULER_GAMMA = 0.5772156649015329
 _NORMAL = NormalDist()
@@ -59,13 +61,17 @@ def cscv_pbo(candidate_returns: Sequence[Sequence[float]], *, blocks: int = 8,
     index_blocks = [list(range(i * block_size, (i + 1) * block_size)) for i in range(blocks)]
     splits = list(itertools.combinations(range(blocks), blocks // 2))
     if len(splits) > max_combinations:
-        raise ValueError(f"CSCV has {len(splits)} splits, above max_combinations={max_combinations}")
+        raise ValueError(
+            f"CSCV has {len(splits)} splits, above max_combinations={max_combinations}"
+        )
     lambdas: list[float] = []
     below_median = 0
     for in_blocks in splits:
         in_set = set(in_blocks)
         in_indices = [idx for block in in_blocks for idx in index_blocks[block]]
-        out_indices = [idx for block in range(blocks) if block not in in_set for idx in index_blocks[block]]
+        out_indices = [
+            idx for block in range(blocks) if block not in in_set for idx in index_blocks[block]
+        ]
         in_scores = [_sharpe([row[i] for i in in_indices]) for row in matrix]
         winner = max(range(len(matrix)), key=lambda i: (in_scores[i], -i))
         out_scores = [_sharpe([row[i] for i in out_indices]) for row in matrix]
@@ -88,7 +94,8 @@ def cscv_pbo(candidate_returns: Sequence[Sequence[float]], *, blocks: int = 8,
         "observations_used": usable,
         "observations_omitted_from_tail": length - usable,
         "candidate_count": len(matrix),
-        "interpretation": "fraction of symmetric splits whose in-sample winner ranks below the OOS median",
+        "interpretation": "fraction of symmetric splits whose in-sample winner ranks "
+                          "below the OOS median",
         "lambdas": [round(x, 12) for x in lambdas],
         "uses_final_holdout": False,
     }
@@ -139,3 +146,11 @@ def deflated_sharpe_ratio(returns: Sequence[float], *, trials: int) -> dict[str,
         "trials": trials,
         "method": "approximate_DSR_expected_max_normal",
     }
+
+
+__all__ = [
+    "assert_no_holdout_leakage",
+    "cscv_pbo",
+    "deflated_sharpe_ratio",
+    "detect_holdout_leakage",
+]
