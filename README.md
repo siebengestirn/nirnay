@@ -5,7 +5,7 @@
 **Release status:** research/paper engineering candidate. This repository is not a certified broker-connected trading system, not a SEBI/exchange-approved algo product, and not evidence of profitable alpha. Live order routing is hard-disabled. Every capability statement below distinguishes code present from external verification still required.
 
 <!-- CURRENT-STATE
-code_commit: 448622f5f2019aa168325c28df75845d37a802cf
+code_commit: 4aa16a6c4ac9c6db7dd9bdc3c35b33a7d6258d6d
 verified_on: 2026-11-20
 ci_run: 44865283018
 scope: make check + CI 44865283018 on be0dbbd (12/12)
@@ -371,6 +371,7 @@ once published; a new run adds a new dated file instead of rewriting history.
 | Canonical | `SECURITY.md` | disclosure and secret handling |
 | Canonical | `engineering/verification-policy.md` | claim-state vocabulary |
 | Canonical | `engineering/q-kdb-style.md` | q / kdb+ (KDB-X) style rules and their authoritative sources |
+| Canonical | `engineering/research/compute-and-validation.md` | local opt-in research jobs, validation reports and owner-gated compute gaps |
 | Dated evidence | `BUILD-RESULTS.md` | owner-maintained bundle record; do not edit |
 | Dated evidence | `evidence/VERIFICATION-2026-11-17.md` | executed checks and boundaries |
 | Dated evidence | `evidence/UPGRADE-VERIFICATION-2026-11-13.md` | implementation inventory and upgrade gates |
@@ -384,6 +385,7 @@ once published; a new run adds a new dated file instead of rewriting history.
 | Dated evidence | `evidence/Q-TESTS-STYLE-2026-11-20.md` | q unit harness, style guide, added-lines gate and measured results |
 | Dated evidence | `evidence/A0-ARCHIVE-BUNDLE-2026-11-20.md` | archive Git-bundle defect, correction and verification |
 | Dated evidence | `evidence/PROGRAMME-2026-11-21.md` | external-review remediation programme and verified results |
+| Dated evidence | `evidence/PERFORMANCE-2026-11-21.md` | local synthetic benchmark observations on `ec0b216`, with toolchain, hardware, commands, distributions, hashes and scope limits |
 
 The current-state block above names the verified commit, date, CI run and
 scope. Update it in the PR that changes the verified baseline. Do not add a
