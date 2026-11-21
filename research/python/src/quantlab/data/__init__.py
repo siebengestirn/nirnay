@@ -11,6 +11,10 @@ from typing import Any
 from ..point_in_time import (CorporateAction, DatasetManifest, DatasetRow, PITDatasetBuilder,
                              PITListing, PITReferenceData, PITUniverseMembership,
                              verify_published_dataset, write_dataset)
+from .corporate_actions import (SUPPORTED_KINDS, SyntheticCorporateAction,
+                                UnsupportedCorporateAction, adjustment_factor,
+                                adjustment_factors)
+from .universe import UniverseMembershipRow, UniverseSpec
 
 _LINEAGE_FIELDS = (
     "data_sha256",
@@ -48,6 +52,11 @@ def dataset_identity_from_manifest(manifest: dict[str, Any] | DatasetManifest) -
 
 
 __all__ = [
+    "SUPPORTED_KINDS",
+    "SyntheticCorporateAction",
+    "UnsupportedCorporateAction",
+    "UniverseMembershipRow",
+    "UniverseSpec",
     "CorporateAction",
     "DatasetManifest",
     "DatasetRow",
@@ -55,6 +64,8 @@ __all__ = [
     "PITListing",
     "PITReferenceData",
     "PITUniverseMembership",
+    "adjustment_factor",
+    "adjustment_factors",
     "dataset_identity_from_manifest",
     "dataset_lineage_from_manifest",
     "verify_published_dataset",

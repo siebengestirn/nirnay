@@ -13,6 +13,9 @@ from statistics import NormalDist
 from typing import Sequence
 
 from .leakage_detection import assert_no_holdout_leakage, detect_holdout_leakage
+from .multiple_testing import holm_adjust
+from .robustness import (parameter_sensitivity, robustness_digest,
+                         segment_stability)
 
 _EULER_GAMMA = 0.5772156649015329
 _NORMAL = NormalDist()
@@ -153,4 +156,8 @@ __all__ = [
     "cscv_pbo",
     "deflated_sharpe_ratio",
     "detect_holdout_leakage",
+    "holm_adjust",
+    "parameter_sensitivity",
+    "robustness_digest",
+    "segment_stability",
 ]

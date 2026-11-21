@@ -700,6 +700,25 @@ def _cmd_compare_experiments(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_list_experiments(args: argparse.Namespace) -> int:
+    registry = ExperimentRegistry(args.registry)
+    experiments = [
+        {
+            "experiment_id": row.experiment_id,
+            "status": row.status,
+            "sequence": row.sequence,
+            "registered_at_utc": row.registered_at_utc,
+            "attempted_configs": len(row.body.get("attempted_configs", [])),
+            "holdout_key": row.holdout_key,
+            "record_hash": row.record_hash,
+        }
+        for row in registry.records()
+    ]
+    payload = {"status": "listed", "count": len(experiments), "experiments": experiments}
+    print(json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="quantlab", description="Nirnay deterministic quantitative research tools")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -816,6 +835,11 @@ def build_parser() -> argparse.ArgumentParser:
                          help="optional published dataset for manifest binding")
     compare.add_argument("--trusted-key", action="append", default=[], metavar="KEY_ID=BASE64")
     compare.set_defaults(handler=_cmd_compare_experiments)
+
+    listing = sub.add_parser("list-experiments",
+                             help="list registered and terminal experiment records")
+    listing.add_argument("--registry", type=Path, required=True)
+    listing.set_defaults(handler=_cmd_list_experiments)
     return parser
 
 
