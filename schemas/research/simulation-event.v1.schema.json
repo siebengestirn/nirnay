@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nirnay.local/schemas/research/simulation-event.v1.schema.json",
+  "title": "Nirnay simulation event v1",
+  "description": "Frozen typed simulation event with fail-closed lineage and origin class",
+  "type": "object",
+  "required": [
+    "event_type",
+    "event_id",
+    "source_frame_sha256",
+    "instrument_id",
+    "venue",
+    "logical_time_ns",
+    "available_time_ns",
+    "origin_class",
+    "derived_from",
+    "source_sequence",
+    "schema_version"
+  ],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "TradePrint",
+        "BookSnapshot",
+        "BookDelta",
+        "AuctionPhase",
+        "MarketStatus",
+        "InstrumentChange",
+        "OrderAdd",
+        "OrderModify",
+        "OrderCancel",
+        "ExecutionReport",
+        "ConfigChange"
+      ]
+    },
+    "event_id": {"type": "string", "minLength": 1},
+    "source_frame_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "instrument_id": {"type": "string", "minLength": 1},
+    "venue": {"type": "string", "minLength": 1},
+    "logical_time_ns": {"type": "integer", "minimum": 1},
+    "available_time_ns": {"type": "integer", "minimum": 0},
+    "origin_class": {
+      "type": "string",
+      "enum": [
+        "exchange_event",
+        "sdk_callback",
+        "raw_wire_frame",
+        "local_receive",
+        "reconstructed",
+        "simulated",
+        "synthetic"
+      ]
+    },
+    "derived_from": {"type": "array", "items": {"type": "string"}},
+    "lineage": {"type": "array", "items": {"type": "string"}},
+    "source_sequence": {"type": "integer", "minimum": 0},
+    "schema_version": {"const": 1},
+    "certification_ref": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+    "price": {"type": "string"},
+    "quantity": {"type": "integer", "minimum": 0},
+    "aggressor_side": {"type": ["string", "null"], "enum": ["buy", "sell", null]},
+    "exchange_sequence": {"type": ["integer", "null"], "minimum": 1},
+    "bids": {"type": "array", "items": {"$ref": "#/$defs/level"}},
+    "asks": {"type": "array", "items": {"$ref": "#/$defs/level"}},
+    "updates": {"type": "array", "items": {"$ref": "#/$defs/level"}},
+    "side": {"type": "string", "enum": ["bid", "ask", "buy", "sell"]},
+    "depth_granularity": {"type": "string", "enum": ["mbp", "mbo"]},
+    "phase": {"type": "string", "enum": ["pre_open", "uncross", "close"]},
+    "status": {"type": "string", "enum": ["halt", "circuit", "resume", "open"]},
+    "effective_until_ns": {"type": ["integer", "null"], "minimum": 1},
+    "reason": {"type": ["string", "null"]},
+    "field": {"type": "string", "enum": ["tick_size", "lot_size", "symbol", "expiry"]},
+    "new_value": {"type": "string"},
+    "old_value": {"type": ["string", "null"]},
+    "client_order_id": {"type": "string", "minLength": 1},
+    "venue_order_id": {"type": ["string", "null"]},
+    "limit_price": {"type": "string"},
+    "time_in_force_ns": {"type": "integer", "minimum": 1},
+    "new_quantity": {"type": ["integer", "null"], "minimum": 1},
+    "new_limit_price": {"type": ["string", "null"]},
+    "report_type": {
+      "type": "string",
+      "enum": ["ack", "new", "reject", "fill", "cancel_ack", "expire"]
+    },
+    "fees": {"type": "string"},
+    "impact_cost": {"type": "string"},
+    "spread_cost": {"type": "string"},
+    "liquidity": {"type": ["string", "null"], "enum": ["maker", "taker", null]},
+    "config_key": {"type": "string", "minLength": 1},
+    "config_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "effective_ns": {"type": "integer", "minimum": 1}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"origin_class": {"const": "exchange_event"}}, "required": ["origin_class"]},
+      "then": {"required": ["certification_ref"]}
+    },
+    {
+      "if": {"properties": {"event_type": {"const": "TradePrint"}}, "required": ["event_type"]},
+      "then": {"required": ["price", "quantity"]}
+    },
+    {
+      "if": {"properties": {"event_type": {"const": "BookSnapshot"}}, "required": ["event_type"]},
+      "then": {"required": ["bids", "asks", "depth_granularity"]}
+    },
+    {
+      "if": {"properties": {"event_type": {"const": "BookDelta"}}, "required": ["event_type"]},
+      "then": {"required": ["side", "updates", "depth_granularity"]}
+    },
+    {
+      "if": {"properties": {"event_type": {"const": "ExecutionReport"}}, "required": ["event_type"]},
+      "then": {"required": ["client_order_id", "report_type"]}
+    },
+    {
+      "if": {
+        "properties": {"event_type": {"const": "ExecutionReport"}, "report_type": {"const": "fill"}},
+        "required": ["event_type", "report_type"]
+      },
+      "then": {"required": ["quantity", "price", "liquidity"]}
+    }
+  ],
+  "$defs": {
+    "level": {
+      "type": "object",
+      "required": ["price", "quantity"],
+      "properties": {
+        "price": {"type": "string"},
+        "quantity": {"type": "integer", "minimum": 0},
+        "order_count": {"type": ["integer", "null"], "minimum": 0}
+      },
+      "additionalProperties": false
+    }
+  }
+}
