@@ -52,11 +52,16 @@ record. Independently reopened OMS stores report identical state digests.
 
 ## Source digests (SHA-256)
 
-- `crates/trading-core/src/risk.rs`: `fb1587755dd62b682e4b48ea659bc3c21599d4c8bbe0550a9def2ef76cdac5cd`
-- `crates/risk-engine/src/lib.rs`: `7c0eb780b1997a172f388d1f8b76b0df1623d426e6f2bf7a9de340159c69c937`
-- `crates/risk-authority/src/authority.rs`: `22f63113a147615e2ddfa0f2da9b28f734ce7916cac039c0eec4c3fe83ee95c6`
-- `crates/authoritative-oms/src/store.rs`: `fccb1f83f9f9b8d1cd2b536fa79bf63657fc284fea337e41c8bf684692811369`
-- `apps/paper-runner/tests/recovery_drill.rs`: `49357d9b0885207f450a3651bf5037921dffe29a0e9ace69b1432c5de8a8d463`
+- `crates/trading-core/src/risk.rs`:
+  `fb1587755dd62b682e4b48ea659bc3c21599d4c8bbe0550a9def2ef76cdac5cd`
+- `crates/risk-engine/src/lib.rs`:
+  `7c0eb780b1997a172f388d1f8b76b0df1623d426e6f2bf7a9de340159c69c937`
+- `crates/risk-authority/src/authority.rs`:
+  `22f63113a147615e2ddfa0f2da9b28f734ce7916cac039c0eec4c3fe83ee95c6`
+- `crates/authoritative-oms/src/store.rs`:
+  `fccb1f83f9f9b8d1cd2b536fa79bf63657fc284fea337e41c8bf684692811369`
+- `apps/paper-runner/tests/recovery_drill.rs`:
+  `49357d9b0885207f450a3651bf5037921dffe29a0e9ace69b1432c5de8a8d463`
 
 ## Boundaries and blocked items
 
