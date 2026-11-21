@@ -37,6 +37,8 @@ _ORDER_STATUSES = frozenset(
         "fill",
         "cancel_ack",
         "expire",
+        "charge",
+        "latency_sample",
     }
 )
 _REPORT_TYPES = _ORDER_STATUSES
@@ -362,6 +364,7 @@ class InstrumentChange(EventEnvelope):
     field: str
     new_value: str
     old_value: str | None = None
+    effective_ns: int | None = None
 
     def __post_init__(self) -> None:
         EventEnvelope.__post_init__(self)
@@ -371,6 +374,8 @@ class InstrumentChange(EventEnvelope):
             frozenset({"tick_size", "lot_size", "symbol", "expiry"}),
         )
         _require_text(self.new_value, "new_value")
+        if self.effective_ns is not None:
+            _require_int(self.effective_ns, "effective_ns", 1)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -469,6 +474,8 @@ class ExecutionReport(EventEnvelope):
     spread_cost: Decimal = Decimal("0")
     liquidity: str | None = None
     reason: str | None = None
+    sampled_ns: int | None = None
+    effective_ns: int | None = None
 
     def __post_init__(self) -> None:
         EventEnvelope.__post_init__(self)
@@ -483,11 +490,21 @@ class ExecutionReport(EventEnvelope):
                 raise ValueError("price must be positive")
         if self.liquidity is not None:
             _require_choice(self.liquidity, "liquidity", frozenset({"maker", "taker"}))
+        if self.sampled_ns is not None:
+            _require_int(self.sampled_ns, "sampled_ns")
+        if self.effective_ns is not None:
+            _require_int(self.effective_ns, "effective_ns", 1)
         if self.report_type == "fill":
             if self.quantity <= 0 or self.price is None or self.liquidity is None:
                 raise ValueError("a fill report requires quantity, price and liquidity")
         if self.report_type == "reject" and not self.reason:
             raise ValueError("a reject report requires a reason")
+        if self.report_type == "charge" and self.reason is None:
+            raise ValueError("a charge report requires a declared assumption reason")
+        if self.report_type == "latency_sample" and (
+            self.sampled_ns is None or self.effective_ns is None or not self.reason
+        ):
+            raise ValueError("a latency sample requires sampled_ns, effective_ns and reason")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

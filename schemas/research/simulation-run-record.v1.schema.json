@@ -50,6 +50,8 @@
     "emitted_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "fills_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "fill_rows": {"type": "array", "items": {"$ref": "#/$defs/fillRow"}},
+    "charge_rows": {"type": "array", "items": {"$ref": "#/$defs/chargeRow"}},
+    "cash_rows": {"type": "array", "items": {"$ref": "#/$defs/cashRow"}},
     "marks": {"type": "object", "additionalProperties": {"type": "string"}},
     "starting_cash": {"type": "string"},
     "ending_cash": {"type": "string"},
@@ -88,12 +90,43 @@
       "properties": {
         "event_id": {"type": "string"},
         "client_order_id": {"type": "string"},
+        "side": {"type": "string", "enum": ["buy", "sell"]},
         "quantity": {"type": "integer", "minimum": 1},
         "price": {"type": "string"},
         "fees": {"type": "string"},
         "impact_cost": {"type": "string"},
         "spread_cost": {"type": "string"},
         "liquidity": {"type": "string", "enum": ["maker", "taker"]},
+        "logical_time_ns": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "chargeRow": {
+      "type": "object",
+      "required": [
+        "event_id", "instrument", "kind", "amount", "held_ns", "as_of_ns",
+        "logical_time_ns", "rate_bps_per_day", "assumption"
+      ],
+      "properties": {
+        "event_id": {"type": "string"},
+        "instrument": {"type": "string"},
+        "kind": {"type": "string", "enum": ["borrow", "funding"]},
+        "amount": {"type": "string"},
+        "held_ns": {"type": "integer", "minimum": 1},
+        "as_of_ns": {"type": "integer", "minimum": 1},
+        "logical_time_ns": {"type": "integer", "minimum": 1},
+        "rate_bps_per_day": {"type": "string"},
+        "assumption": {"type": ["string", "null"]}
+      },
+      "additionalProperties": false
+    },
+    "cashRow": {
+      "type": "object",
+      "required": ["event_id", "kind", "delta", "logical_time_ns"],
+      "properties": {
+        "event_id": {"type": "string"},
+        "kind": {"type": "string", "enum": ["fill", "charge"]},
+        "delta": {"type": "string"},
         "logical_time_ns": {"type": "integer", "minimum": 1}
       },
       "additionalProperties": false

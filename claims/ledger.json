@@ -473,6 +473,124 @@
         ]
       },
       "falsifier": "A torn OMS or account-journal tail is accepted on recovery, a poisoned writer mutates state, an engaged switch clears across restart, a later Matched reconciliation clears a digest-mismatch latch without authenticated resolution, or the ledger replay fails on the committed prefix. This in-process drill is not independent certification, HA failover, multi-region recovery or certified broker delivery, all of which remain BLOCKED."
+    },
+    {
+      "id": "CLM-034",
+      "statement": "The research simulator consumes latency_seed through a declared distribution and records each draw, refuses artifact references that do not resolve to a dated fixture, charges typed borrow/margin/funding terms over logical time, blocks book and trade fills plus new orders during halt, emits one synthetic uncross at a declared price, rounds fills to effective-dated tick size, and recomputes ending cash from committed fills and charges. A local sim-replay driver is byte-stable across hash seeds and the trial store refuses duplicate or conflicting keys. No calibrated, FIFO, real-data, venue-truth, profitability or live-readiness claim is made; the ADR-M1-009 replay-run gate remains a PRECONDITION.",
+      "status": "implemented",
+      "scope": {
+        "files": [
+          "research/python/src/quantlab/sim/calibration.py",
+          "research/python/src/quantlab/sim/core.py",
+          "research/python/src/quantlab/sim/events.py",
+          "research/python/src/quantlab/sim/execution/base.py",
+          "research/python/src/quantlab/sim/replay.py",
+          "research/python/src/quantlab/sim/state.py",
+          "research/python/src/quantlab/sim/store.py",
+          "research/python/src/quantlab/cli.py",
+          "schemas/research/simulation-event.v1.schema.json",
+          "schemas/research/simulation-run-record.v1.schema.json",
+          "engineering/capabilities.json",
+          "claims/ledger.json",
+          "research/python/tests/test_sim_extensions.py"
+        ]
+      },
+      "falsifier": "Two fresh-process hash seeds yield different verified-equal fields; a fill precedes its sampled activation; a missing or mismatched artifact resolves or a summary says calibrated without a dated calibration result; borrow, margin or funding terms are charged with different typed math; a halt permits a book or trade fill or accepts a new order; a synthetic uncross fills more than once; an effective tick change does not round a later fill; the verifier copies committed ending cash instead of recomputing it; or the trial store overwrites an existing key."
+    },
+    {
+      "id": "CLM-033",
+      "statement": "Technical, volatility and statistical features are pure causal functions of synthetic Decimal OHLCV bars, emit timestamped rows bound to a bitemporal FeatureLineage, and produce byte-identical earlier rows after a future extreme bar is appended.",
+      "status": "implemented",
+      "scope": {
+        "files": [
+          "research/python/src/quantlab/_canonical.py",
+          "research/python/src/quantlab/features/_common.py",
+          "research/python/src/quantlab/features/technical.py",
+          "research/python/src/quantlab/features/volatility.py",
+          "research/python/src/quantlab/features/statistical.py",
+          "research/python/tests/test_feature_computation.py"
+        ]
+      },
+      "falsifier": "An earlier feature value changes when a future bar is appended, a rolling window reads forward, a lineage with knowledge after as-of is accepted, or a changed definition or row digest still verifies."
+    },
+    {
+      "id": "CLM-037",
+      "statement": "Momentum and mean-reversion signals are public and byte-identical to the existing screen; factor weights are net-flat and normalize to a declared gross budget; two-leg spread intents are causal; unknown strategy families are refused.",
+      "status": "implemented",
+      "scope": {
+        "files": [
+          "research/python/src/quantlab/strategies/momentum.py",
+          "research/python/src/quantlab/strategies/mean_reversion.py",
+          "research/python/src/quantlab/strategies/factor.py",
+          "research/python/src/quantlab/strategies/statistical_arbitrage.py",
+          "research/python/src/quantlab/strategies/__init__.py",
+          "research/python/tests/test_strategy_families.py"
+        ]
+      },
+      "falsifier": "A promoted signal differs from alpha_search._signals on the same closes, an appended future bar changes an earlier signal, a factor portfolio leaves its gross budget or is not net-flat, or an undeclared family is accepted."
+    },
+    {
+      "id": "CLM-038",
+      "statement": "A registered grid search evaluates only configurations inside the declared search space after a still-open registration, persists every attempted configuration including losers, and appends its terminal record only under the existing complete-accounting and holdout contracts; walk-forward declarations reject split/holdout overlap and missing embargo.",
+      "status": "implemented",
+      "scope": {
+        "files": [
+          "research/python/src/quantlab/experiments/parameter_search.py",
+          "research/python/src/quantlab/experiments/walk_forward.py",
+          "research/python/tests/test_parameter_search.py",
+          "research/python/tests/test_experiment_walk_forward.py"
+        ]
+      },
+      "falsifier": "An evaluator is called before registration or with an out-of-space config, attempted counts differ from expected_trials or omit losers, a terminal record is appended without a prior registered claim, or a split touching the holdout or lacking embargo passes geometry validation."
+    },
+    {
+      "id": "CLM-039",
+      "statement": "Robustness diagnostics use only development observations and declare no final-holdout use; performance, risk and attribution reports carry recomputable digests, reject non-finite inputs and reconcile attribution components to the synthetic total within a declared tolerance.",
+      "status": "implemented",
+      "scope": {
+        "files": [
+          "research/python/src/quantlab/_canonical.py",
+          "research/python/src/quantlab/validation/robustness.py",
+          "research/python/src/quantlab/reporting/performance.py",
+          "research/python/src/quantlab/reporting/risk.py",
+          "research/python/src/quantlab/reporting/attribution.py",
+          "research/python/tests/test_robustness.py",
+          "research/python/tests/test_reporting_performance.py",
+          "research/python/tests/test_reporting_risk.py",
+          "research/python/tests/test_reporting_attribution.py"
+        ]
+      },
+      "falsifier": "A sign-reversing segment is called stable, a diagnostic that reads holdout indices passes terminal append, a tampered report digest verifies, a non-finite input yields a report, or attribution components fail to reconcile to the declared total."
+    },
+    {
+      "id": "CLM-040",
+      "statement": "Universe selection over synthetic membership rows excludes facts first known after as_of_ns and binds the selection with a digest; exact Decimal adjustment factors exist for split and bonus only, with a typed refusal for rights, merger, demerger and demonstration kinds.",
+      "status": "implemented",
+      "scope": {
+        "files": [
+          "research/python/src/quantlab/_canonical.py",
+          "research/python/src/quantlab/data/universe.py",
+          "research/python/src/quantlab/data/corporate_actions.py",
+          "research/python/tests/test_universe.py",
+          "research/python/tests/test_corporate_actions.py"
+        ]
+      },
+      "falsifier": "A membership known after as_of_ns enters the universe, a superseded or invalid membership is selected, an unsupported action returns a finite factor, or a cancelled action changes a price factor."
+    },
+    {
+      "id": "CLM-041",
+      "statement": "Simulation namespace modules are direct re-exports of canonical sim objects with no duplicated behavior, and the list-experiments CLI exposes registered and rejected terminal records together with their attempted-config counts.",
+      "status": "implemented",
+      "scope": {
+        "files": [
+          "research/python/src/quantlab/simulation/event_replay.py",
+          "research/python/src/quantlab/simulation/execution.py",
+          "research/python/src/quantlab/cli.py",
+          "research/python/tests/test_simulation_namespace.py",
+          "research/python/tests/test_cli_pipeline.py"
+        ]
+      },
+      "falsifier": "A re-exported symbol is not the identical canonical object, a tampered fill digest still compares equal, rejected records or their attempt counts are omitted from the CLI listing, or a re-export module defines its own engine behavior."
     }
   ]
 }
