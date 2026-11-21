@@ -19,6 +19,10 @@ def read_symbols(path: Path) -> tuple[str, ...]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Capture FYERS Data Socket SDK callbacks")
+    parser.add_argument(
+        "--registry", type=Path, required=True,
+        help="explicit path to the source-product rights registry (no default)",
+    )
     parser.add_argument("--watchlist", type=Path, default=Path("configs/providers/fyers-watchlist.txt"))
     parser.add_argument("--output", type=Path, default=Path("data/market-sessions/fyers"))
     parser.add_argument("--queue-capacity", type=int, default=16_384)
@@ -36,6 +40,7 @@ def main(argv: list[str] | None = None) -> int:
             symbols=read_symbols(args.watchlist),
             entitlement_ref=entitlement,
             output_root=args.output,
+            registry_path=args.registry,
             queue_capacity=args.queue_capacity,
             include_depth=not args.no_depth,
             max_symbols=args.max_symbols,

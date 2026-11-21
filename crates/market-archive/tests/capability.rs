@@ -4,8 +4,12 @@
 
 use market_archive::{
     CapabilityError, //
+    DataOperation,
     DepthModel,
+    EvidenceSource,
     MarketDataRequirement,
+    PermissionState,
+    ProductKey,
     SourceProductRegistry,
 };
 
@@ -15,6 +19,40 @@ const REGISTRY: &str = include_str!("../../../configs/providers/source-products.
 
 fn registry() -> Result<SourceProductRegistry, Box<dyn std::error::Error>> {
     Ok(SourceProductRegistry::from_bytes(REGISTRY.as_bytes())?)
+}
+
+fn product_key() -> ProductKey {
+    ProductKey::new("upstox", "full", "NSE", "Cash")
+}
+
+fn registry_with(
+    operation: DataOperation,
+    state: &str,
+    verified: bool,
+) -> Result<SourceProductRegistry, Box<dyn std::error::Error>> {
+    let mut value: serde_json::Value = serde_json::from_str(REGISTRY)?;
+    value["products"][0]["rights"][operation.as_str()]["state"] =
+        serde_json::Value::String(state.to_owned());
+    if verified {
+        value["products"][0]["entitlement"]["verified"] = serde_json::Value::Bool(true);
+    }
+    Ok(SourceProductRegistry::from_bytes(&serde_json::to_vec(
+        &value,
+    )?)?)
+}
+
+fn requirement_for(operation: DataOperation) -> MarketDataRequirement {
+    let mut need = requirement();
+    match operation {
+        DataOperation::Capture => need.requires_capture = true,
+        DataOperation::Store => need.requires_store = true,
+        DataOperation::Replay => need.requires_replay = true,
+        DataOperation::Backup => need.requires_backup = true,
+        DataOperation::InternalAnalytics => need.requires_internal_analytics = true,
+        DataOperation::ExternalRedistribution => need.requires_external_redistribution = true,
+        DataOperation::Retention => need.requires_retention = true,
+    }
+    need
 }
 
 fn requirement() -> MarketDataRequirement {
@@ -28,8 +66,13 @@ fn requirement() -> MarketDataRequirement {
         requires_trade_prints: false,
         requires_clean_snapshot: true,
         requires_source_continuity: false,
+        requires_capture: false,
         requires_store: false,
         requires_replay: false,
+        requires_backup: false,
+        requires_internal_analytics: false,
+        requires_external_redistribution: false,
+        requires_retention: false,
     }
 }
 
@@ -260,6 +303,152 @@ fn rights_review_requires_written_evidence() -> TestResult {
         assert!(
             review.required_evidence.iter().any(|item| item == required),
             "{required} must be in the written-evidence checklist"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn checked_in_registry_grants_no_operation_to_any_product() -> TestResult {
+    let registry = registry()?;
+    for product in &registry.products {
+        let name = &product.product;
+        assert!(
+            !product.entitlement.verified,
+            "{name} has no verified entitlement"
+        );
+        for operation in DataOperation::ALL {
+            assert_eq!(
+                product.rights.right_for(operation).state,
+                PermissionState::Unknown,
+                "{name} is UNKNOWN for {operation:?}"
+            );
+            assert!(
+                registry.authorize(&product.key(), operation).is_err(),
+                "{name} is denied for {operation:?}"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn all_seven_operations_fail_closed_for_unknown_and_prohibited() -> TestResult {
+    let registry = registry()?;
+    let key = product_key();
+    for operation in DataOperation::ALL {
+        assert!(
+            matches!(
+                registry.authorize(&key, operation),
+                Err(CapabilityError::MissingRight(_))
+            ),
+            "{operation:?} is denied when UNKNOWN"
+        );
+    }
+    for state in ["UNKNOWN", "PROHIBITED"] {
+        for operation in DataOperation::ALL {
+            let modified = registry_with(operation, state, true)?;
+            assert!(
+                matches!(
+                    modified.authorize(&key, operation),
+                    Err(CapabilityError::MissingRight(_))
+                ),
+                "{operation:?} is denied when {state}"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn a_permitted_operation_authorizes_only_that_operation() -> TestResult {
+    let key = product_key();
+    for operation in DataOperation::ALL {
+        let allowed = registry_with(operation, "PERMITTED", true)?;
+        assert!(
+            allowed.authorize(&key, operation).is_ok(),
+            "{operation:?} is authorized by its own PERMITTED right"
+        );
+        for other in DataOperation::ALL {
+            if other == operation {
+                continue;
+            }
+            assert!(
+                allowed.authorize(&key, other).is_err(),
+                "{other:?} stays denied when only {operation:?} is PERMITTED"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn persistence_operations_require_a_verified_entitlement() -> TestResult {
+    let key = product_key();
+    for operation in DataOperation::ALL {
+        let unverified = registry_with(operation, "PERMITTED", false)?;
+        if operation.is_persistence() {
+            assert!(
+                matches!(
+                    unverified.authorize(&key, operation),
+                    Err(CapabilityError::EntitlementUnverified(_))
+                ),
+                "{operation:?} needs a verified entitlement"
+            );
+        } else {
+            assert!(
+                unverified.authorize(&key, operation).is_ok(),
+                "{operation:?} does not persist data and needs no entitlement check"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn every_requirement_flag_is_checked_in_evaluate() -> TestResult {
+    for operation in DataOperation::ALL {
+        let denied = registry()?.evaluate(&requirement_for(operation));
+        assert!(
+            matches!(denied, Err(CapabilityError::MissingRight(_))),
+            "requires_{operation:?} is enforced by evaluate"
+        );
+        let allowed = registry_with(operation, "PERMITTED", true)?;
+        assert!(
+            allowed.evaluate(&requirement_for(operation)).is_ok(),
+            "requires_{operation:?} passes only with its right"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn schema_coherence_is_enforced_by_evaluate() -> TestResult {
+    let mut value: serde_json::Value = serde_json::from_str(REGISTRY)?;
+    value["products"][0]["snapshot"] = serde_json::Value::Bool(false);
+    let incoherent = SourceProductRegistry::from_bytes(&serde_json::to_vec(&value)?)?;
+    assert!(
+        matches!(
+            incoherent.evaluate(&requirement()),
+            Err(CapabilityError::InvalidRegistry(_))
+        ),
+        "snapshot_only with snapshot=false is refused at runtime"
+    );
+    Ok(())
+}
+
+#[test]
+fn retention_period_has_no_fabricated_duration() -> TestResult {
+    for product in &registry()?.products {
+        let name = &product.product;
+        assert_eq!(
+            product.rights.retention_period.duration_days, None,
+            "{name} declares no written retention duration"
+        );
+        assert_eq!(
+            product.rights.retention_period.basis,
+            EvidenceSource::None,
+            "{name} records retention-period evidence as absent"
         );
     }
     Ok(())

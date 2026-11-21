@@ -13,6 +13,11 @@ from quantlab.market import canonical_bytes
 
 SRC = Path(__file__).resolve().parents[1] / "src"
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "canonical-events.example.jsonl"
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+PERMIT_REGISTRY = FIXTURES / "registry-replay-permitted.test.json"
+DENY_REGISTRY = (
+    Path(__file__).resolve().parents[3] / "configs" / "providers" / "source-products.v1.json"
+)
 
 
 def _events(directory: Path, mutate=None) -> Path:
@@ -28,7 +33,7 @@ def _events(directory: Path, mutate=None) -> Path:
 
 def _run(events: Path, output: Path, reference: Path | None = None) -> int:
     argv = ["paper-replay", "--events", str(events), "--provider", "upstox",
-            "--output", str(output)]
+            "--output", str(output), "--registry", str(PERMIT_REGISTRY)]
     if reference:
         argv += ["--reference-revision", str(reference)]
     return main(argv)
@@ -57,7 +62,8 @@ def test_unresolved_instrument_and_missing_lineage_fail(tmp_path):
 def test_provider_mismatch_fails(tmp_path):
     events = _events(tmp_path / "provider", lambda rows: rows[0].update(provider="fyers"))
     assert main(["paper-replay", "--events", str(events), "--provider", "upstox",
-                 "--output", str(tmp_path / "out.json")]) == 2
+                 "--output", str(tmp_path / "out.json"),
+                 "--registry", str(PERMIT_REGISTRY)]) == 2
 
 
 def test_reference_binding_must_match_projection_sidecar(tmp_path):
@@ -86,8 +92,17 @@ def test_fresh_process_replay_is_byte_identical(tmp_path):
         env = dict(os.environ, PYTHONPATH=str(SRC))
         result = subprocess.run(
             [sys.executable, "-m", "quantlab.cli", "paper-replay", "--events", str(events),
-             "--provider", "upstox", "--output", str(output)],
+             "--provider", "upstox", "--output", str(output),
+             "--registry", str(PERMIT_REGISTRY)],
             env=env, capture_output=True, text=True, check=False)
         assert result.returncode == 0, result.stderr
         outputs.append(output.read_bytes())
     assert outputs[0] == outputs[1]
+
+
+def test_replay_denied_by_registry_emits_no_output(tmp_path):
+    events = _events(tmp_path / "denied")
+    output = tmp_path / "denied.json"
+    assert main(["paper-replay", "--events", str(events), "--provider", "upstox",
+                 "--output", str(output), "--registry", str(DENY_REGISTRY)]) == 2
+    assert not output.exists(), "denied replay emits no frames or output"

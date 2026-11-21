@@ -14,6 +14,7 @@ from typing import Any
 
 from .alpha_search import AlphaCosts, Bar, search_alpha
 from .backtest import BacktestConfig, EventDrivenBacktester
+from .data_rights import ProductKey, REPLAY, authorize
 from .demo import run_demo
 from .market import market_event_from_dict, canonical_bytes
 from .providers import FyersV3Normalizer, UpstoxV3Normalizer
@@ -269,6 +270,10 @@ def _normalize_upstox_bounded(args: argparse.Namespace, normalizer: UpstoxV3Norm
 
 CANONICAL_EVENT_SCHEMA_VERSION = 1
 NORMALIZER_VERSIONS = {"upstox": "upstox-v3-v1", "fyers": "fyers-v3-v1"}
+PAPER_REPLAY_PRODUCTS = {
+    "upstox": ProductKey("upstox", "full", "NSE", "Cash"),
+    "fyers": ProductKey("fyers", "data_socket", "NSE", "Cash"),
+}
 
 
 def _bind_reference_revision(path: Path, instrument_map: dict[str, str],
@@ -331,6 +336,8 @@ def reference_revision_digest(path: Path) -> str:
 
 
 def _cmd_paper_replay(args: argparse.Namespace) -> int:
+    # Rights are checked before any event file is read or output is published.
+    authorize(args.registry, PAPER_REPLAY_PRODUCTS[args.provider], REPLAY)
     source = Path(args.events).read_bytes()
     events = [market_event_from_dict(row) for row in _iter_jsonl(Path(args.events))]
     if not events:
@@ -594,6 +601,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="quantlab", description="Nirnay deterministic quantitative research tools")
     sub = parser.add_subparsers(dest="command", required=True)
     replay = sub.add_parser("paper-replay", help="consume canonical projection in the paper engine")
+    replay.add_argument(
+        "--registry", type=Path, required=True,
+        help="explicit path to the source-product rights registry (no default)",
+    )
     replay.add_argument("--events", type=Path, required=True)
     replay.add_argument("--provider", choices=("upstox", "fyers"), required=True)
     replay.add_argument("--reference-revision", type=Path)
