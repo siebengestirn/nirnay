@@ -236,7 +236,7 @@ mod tests {
             "nan",
             "--1",
             "−1",
-            "１２",
+            "\u{FF11}\u{FF12}",
         ] {
             assert!(parse_micros(value).is_err(), "{value} should be rejected");
         }
