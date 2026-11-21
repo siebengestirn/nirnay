@@ -272,7 +272,7 @@ class TradePrint(EventEnvelope):
     exchange_sequence: int | None = None
 
     def __post_init__(self) -> None:
-        super().__post_init__()
+        EventEnvelope.__post_init__(self)
         _require_decimal(self.price, "price")
         if self.price <= 0:
             raise ValueError("price must be positive")
@@ -297,7 +297,7 @@ class BookSnapshot(EventEnvelope):
     depth_granularity: str = "mbp"
 
     def __post_init__(self) -> None:
-        super().__post_init__()
+        EventEnvelope.__post_init__(self)
         _validate_levels(self.bids, "bids", allow_zero=False)
         _validate_levels(self.asks, "asks", allow_zero=False)
         _require_choice(self.depth_granularity, "depth_granularity", _DEPTH_GRANULARITIES)
@@ -318,7 +318,7 @@ class BookDelta(EventEnvelope):
     depth_granularity: str = "mbp"
 
     def __post_init__(self) -> None:
-        super().__post_init__()
+        EventEnvelope.__post_init__(self)
         _require_choice(self.side, "side", frozenset({"bid", "ask"}))
         _validate_levels(self.updates, "updates", allow_zero=True)
         _require_choice(self.depth_granularity, "depth_granularity", _DEPTH_GRANULARITIES)
@@ -332,7 +332,7 @@ class AuctionPhase(EventEnvelope):
     reference_price: Decimal | None = None
 
     def __post_init__(self) -> None:
-        super().__post_init__()
+        EventEnvelope.__post_init__(self)
         _require_choice(self.phase, "phase", _AUCTION_PHASES)
         if self.reference_price is not None:
             _require_decimal(self.reference_price, "reference_price")
@@ -347,7 +347,7 @@ class MarketStatus(EventEnvelope):
     reason: str = ""
 
     def __post_init__(self) -> None:
-        super().__post_init__()
+        EventEnvelope.__post_init__(self)
         _require_choice(self.status, "status", _MARKET_STATUSES)
         if self.effective_until_ns is not None:
             _require_int(self.effective_until_ns, "effective_until_ns", 1)
@@ -364,7 +364,7 @@ class InstrumentChange(EventEnvelope):
     old_value: str | None = None
 
     def __post_init__(self) -> None:
-        super().__post_init__()
+        EventEnvelope.__post_init__(self)
         _require_choice(
             self.field,
             "field",
@@ -408,7 +408,7 @@ class OrderAdd(EventEnvelope):
     time_in_force_ns: int = 60_000_000_000
 
     def __post_init__(self) -> None:
-        super().__post_init__()
+        EventEnvelope.__post_init__(self)
         OrderIntent(
             client_order_id=self.client_order_id,
             instrument_id=self.instrument_id,
@@ -431,7 +431,7 @@ class OrderModify(EventEnvelope):
     new_limit_price: Decimal | None = None
 
     def __post_init__(self) -> None:
-        super().__post_init__()
+        EventEnvelope.__post_init__(self)
         _require_text(self.client_order_id, "client_order_id")
         if self.new_quantity is not None:
             _require_int(self.new_quantity, "new_quantity", 1)
@@ -451,7 +451,7 @@ class OrderCancel(EventEnvelope):
     venue_order_id: str | None = None
 
     def __post_init__(self) -> None:
-        super().__post_init__()
+        EventEnvelope.__post_init__(self)
         _require_text(self.client_order_id, "client_order_id")
 
 
@@ -471,7 +471,7 @@ class ExecutionReport(EventEnvelope):
     reason: str | None = None
 
     def __post_init__(self) -> None:
-        super().__post_init__()
+        EventEnvelope.__post_init__(self)
         _require_text(self.client_order_id, "client_order_id")
         _require_choice(self.report_type, "report_type", _REPORT_TYPES)
         _require_int(self.quantity, "quantity")
@@ -499,7 +499,7 @@ class ConfigChange(EventEnvelope):
     effective_ns: int
 
     def __post_init__(self) -> None:
-        super().__post_init__()
+        EventEnvelope.__post_init__(self)
         _require_text(self.config_key, "config_key")
         _require_sha256(self.config_digest, "config_digest")
         _require_int(self.effective_ns, "effective_ns", 1)
