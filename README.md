@@ -5,7 +5,7 @@
 **Release status:** research/paper engineering candidate. This repository is not a certified broker-connected trading system, not a SEBI/exchange-approved algo product, and not evidence of profitable alpha. Live order routing is hard-disabled. Every capability statement below distinguishes code present from external verification still required.
 
 <!-- CURRENT-STATE
-code_commit: af40103fe1ff7d573fec78c426c66792d0acdf85
+code_commit: a1cd8dd0f585d9b9e2da1f5c47526e71a53f7e07
 verified_on: 2026-11-20
 ci_run: 44855708189
 scope: make check + CI 44855708189 on c9020c2 (12/12)
